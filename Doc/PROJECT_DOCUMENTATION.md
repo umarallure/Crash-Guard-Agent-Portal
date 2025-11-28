@@ -1,7 +1,7 @@
-# Unlimited Insurance Automation Agents Portal
+# Crash Guard Automation Agents Portal
 
 ## Overview
-The Unlimited Insurance Automation Agents Portal is a web application designed to streamline insurance lead verification workflows for agents. It supports both Buffer-to-Licensed Agent and Direct Licensed Agent processes, integrates with Supabase for backend operations, and automates notifications and Google Sheets updates for lead management.
+The Crash Guard Automation Agents Portal is a web application designed to streamline insurance lead verification workflows for agents. It supports both Buffer-to-Licensed Agent and Direct Licensed Agent processes, integrates with Supabase for backend operations, and automates notifications and Google Sheets updates for lead management.
 
 ---
 
@@ -169,4 +169,4 @@ See `Verification-Workflow-Testing-Scenarios.md` for detailed test cases coverin
 ---
 
 ## License
-This project is proprietary and intended for internal use by Unlimited Insurance Automation Portal agents and administrators.
+This project is proprietary and intended for internal use by Crash Guard Automation Portal agents and administrators.

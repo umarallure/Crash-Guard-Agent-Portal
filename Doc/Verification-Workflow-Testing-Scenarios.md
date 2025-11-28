@@ -1,6 +1,6 @@
 # Verification Workflow Testing Scenarios
 
-This document outlines detailed testing scenarios for both Buffer-to-Licensed Agent and Direct Licensed Agent workflows in the Unlimited Insurance Automation Portal. Each scenario includes expected actions, status transitions, and UI/notification outcomes.
+This document outlines detailed testing scenarios for both Buffer-to-Licensed Agent and Direct Licensed Agent workflows in the Crash Guard Automation Portal. Each scenario includes expected actions, status transitions, and UI/notification outcomes.
 
 ---
 

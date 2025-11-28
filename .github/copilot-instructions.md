@@ -1,7 +1,7 @@
 # AI Coding Assistant Instructions for Agents Portal
 
 ## Project Overview
-This is the **Unlimited Insurance Automation Agents Portal** - a React/TypeScript application for managing insurance lead verification workflows. The system supports complex agent workflows with real-time status updates, notifications, and Google Sheets integration.
+This is the **Crash Guard Automation Agents Portal** - a React/TypeScript application for managing insurance lead verification workflows. The system supports complex agent workflows with real-time status updates, notifications, and Google Sheets integration.
 
 ## Core Architecture
 
