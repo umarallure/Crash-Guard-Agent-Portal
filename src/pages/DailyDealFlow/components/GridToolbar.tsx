@@ -24,8 +24,6 @@ interface GridToolbarProps {
   onLeadVendorFilterChange: (value: string) => void;
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
-  carrierFilter: string;
-  onCarrierFilterChange: (value: string) => void;
   callResultFilter: string;
   onCallResultFilterChange: (value: string) => void;
   retentionFilter: string;
@@ -52,8 +50,6 @@ export const GridToolbar = ({
   onLeadVendorFilterChange,
   statusFilter,
   onStatusFilterChange,
-  carrierFilter,
-  onCarrierFilterChange,
   callResultFilter,
   onCallResultFilterChange,
   retentionFilter,
@@ -160,22 +156,6 @@ export const GridToolbar = ({
     "Disconnected"
   ];
 
-  const carrierOptions = [
-    "All Carriers",
-    "Liberty",
-    "SBLI",
-    "Corebridge",
-    "MOH",
-    "Transamerica",
-    "RNA",
-    "AMAM",
-    "GTL",
-    "Aetna",
-    "Americo",
-    "CICA",
-    "N/A"
-  ];
-
   const callResultOptions = [
     "All Call Results",
     "Underwriting",
@@ -226,7 +206,6 @@ export const GridToolbar = ({
     onLicensedAgentFilterChange(ALL_OPTION);
     onLeadVendorFilterChange(ALL_OPTION);
     onStatusFilterChange(ALL_OPTION);
-    onCarrierFilterChange(ALL_OPTION);
     onCallResultFilterChange(ALL_OPTION);
     onRetentionFilterChange(ALL_OPTION);
     onIncompleteUpdatesFilterChange(ALL_OPTION);
@@ -237,7 +216,6 @@ export const GridToolbar = ({
     (licensedAgentFilter && licensedAgentFilter !== ALL_OPTION) || 
     (leadVendorFilter && leadVendorFilter !== ALL_OPTION) || 
     (statusFilter && statusFilter !== ALL_OPTION) || 
-    (carrierFilter && carrierFilter !== ALL_OPTION) || 
     (callResultFilter && callResultFilter !== ALL_OPTION) ||
     (retentionFilter && retentionFilter !== ALL_OPTION) ||
     (incompleteUpdatesFilter && incompleteUpdatesFilter !== ALL_OPTION);
@@ -393,7 +371,7 @@ export const GridToolbar = ({
       </div>
 
       {/* Second Row: Additional Filters */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
         {/* Buffer Agent Filter */}
         <div>
           <Label className="text-sm font-medium">
@@ -468,26 +446,6 @@ export const GridToolbar = ({
               {statusOptions.map((status) => (
                 <SelectItem key={status} value={status === "All Statuses" ? ALL_OPTION : status}>
                   {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Carrier Filter */}
-        <div>
-          <Label className="text-sm font-medium">
-            Carrier
-            {carrierFilter && carrierFilter !== ALL_OPTION && <span className="text-blue-600 ml-1">●</span>}
-          </Label>
-          <Select value={carrierFilter || ALL_OPTION} onValueChange={onCarrierFilterChange}>
-            <SelectTrigger className={cn("mt-1", carrierFilter && carrierFilter !== ALL_OPTION && "ring-2 ring-blue-200")}>
-              <SelectValue placeholder="All Carriers" />
-            </SelectTrigger>
-            <SelectContent>
-              {carrierOptions.map((carrier) => (
-                <SelectItem key={carrier} value={carrier === "All Carriers" ? ALL_OPTION : carrier}>
-                  {carrier}
                 </SelectItem>
               ))}
             </SelectContent>

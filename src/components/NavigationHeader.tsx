@@ -26,8 +26,8 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
   const [isBufferAgent, setIsBufferAgent] = useState(false);
   const [bufferLoading, setBufferLoading] = useState(true);
   
-  const isBen = user?.id === '424f4ea8-1b8c-4c0f-bc13-3ea699900c79';
-  const isAuthorizedUser = user?.id === '424f4ea8-1b8c-4c0f-bc13-3ea699900c79' || user?.id === '9c004d97-b5fb-4ed6-805e-e2c383fe8b6f' || user?.id === 'c2f07638-d3d2-4fe9-9a65-f57395745695' || user?.id === '30b23a3f-df6b-40af-85d1-84d3e6f0b8b4'|| user?.id === 'd68d18e4-9deb-4282-b4d0-1e6e6a0789e9';
+  const isBen = user?.id === '89da43d0-db34-4ffe-b6f1-8ca2453d2d76';
+  const isAuthorizedUser = user?.id === '89da43d0-db34-4ffe-b6f1-8ca2453d2d76';
   const hasNavigationAccess = canAccessNavigation(user?.id);
   
   // Licensed agents, center users, buffer agents, and Ben should see navigation menu
@@ -148,22 +148,13 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                 {isLicensedAgent && !licensedLoading && (
                   <>
                     <DropdownMenuLabel>Licensed Agent</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => navigate('/commission-portal')}>
-                      <DollarSign className="mr-2 h-4 w-4" />
-                      Commission Portal
-                    </DropdownMenuItem>
+                    
                     <DropdownMenuItem onClick={() => navigate('/licensed-agent-inbox')}>
                       <Inbox className="mr-2 h-4 w-4" />
                       Task Inbox
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/deal-flow-lookup')}>
-                      <Search className="mr-2 h-4 w-4" />
-                      Deal Flow & Policy Lookup
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/agent-licensing')}>
-                      <ShieldCheck className="mr-2 h-4 w-4" />
-                      Find Eligible Agents
-                    </DropdownMenuItem>
+                    
+      
                     <DropdownMenuItem onClick={() => navigate('/dashboard')}>
                       <User className="mr-2 h-4 w-4" />
                       Dashboard
@@ -226,36 +217,12 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                     )}
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>Tools</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => navigate('/bulk-lookup')}>
-                      <Search className="mr-2 h-4 w-4" />
-                      Bulk Lookup
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/deal-flow-lookup')}>
-                      <Search className="mr-2 h-4 w-4" />
-                      Deal Flow & Policy Lookup
-                    </DropdownMenuItem>
+                    
+                    
                     <DropdownMenuItem onClick={() => navigate('/ghl-sync')}>
                       <Zap className="mr-2 h-4 w-4" />
                       GHL Sync Portal
                     </DropdownMenuItem>
-                    {canAccessAgentFinder && (
-                      <DropdownMenuItem onClick={() => navigate('/agent-licensing')}>
-                        <ShieldCheck className="mr-2 h-4 w-4" />
-                        Find Eligible Agents
-                      </DropdownMenuItem>
-                    )}
-                    {isBen && (
-                      <DropdownMenuItem onClick={() => navigate('/agent-eligibility')}>
-                        <ShieldCheck className="mr-2 h-4 w-4" />
-                        Agent Eligibility Management
-                      </DropdownMenuItem>
-                    )}
-                    {isAdmin && (
-                      <DropdownMenuItem onClick={() => navigate('/user-management')}>
-                        <Users className="mr-2 h-4 w-4" />
-                        User Management
-                      </DropdownMenuItem>
-                    )}
                     <DropdownMenuItem onClick={() => navigate('/dashboard')}>
                       <User className="mr-2 h-4 w-4" />
                       Dashboard

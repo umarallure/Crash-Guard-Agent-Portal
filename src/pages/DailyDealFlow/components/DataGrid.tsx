@@ -85,7 +85,7 @@ export const DataGrid = ({
 
   const columns = [
     "S.No", "Date", "Lead Vendor", "Insured Name", "Phone Number", "Buffer Agent", "Agent", "Licensed Account", "Status",
-    "Call Result", "Carrier", "Product Type", "Draft Date", "MP", "Face Amount", "Notes"
+    "Call Result", "Notes"
   ];
   
   // Add Actions column only for users with write permissions
