@@ -9,7 +9,6 @@ import CenterProtectedRoute from "@/components/CenterProtectedRoute";
 import LicensedAgentProtectedRoute from "@/components/LicensedAgentProtectedRoute";
 import { AgentActivityDashboard } from "@/components/AgentActivityDashboard";
 import ReportsPage from "./pages/Reports";
-import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import CenterAuth from "./pages/CenterAuth";
 import Dashboard from "./pages/Dashboard";
@@ -48,7 +47,7 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<Auth />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/center-auth" element={<CenterAuth />} />
             <Route 

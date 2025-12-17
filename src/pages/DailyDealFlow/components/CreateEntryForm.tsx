@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getTodayDateEST, getCurrentDateEST } from "@/lib/dateUtils";
+import { useCenters } from "@/hooks/useCenters";
 
 interface CreateEntryFormProps {
   onSuccess: () => void;
@@ -63,32 +64,6 @@ const callResultOptions = [
   "Submitted", "Underwriting", "Not Submitted"
 ];
 
-const leadVendorOptions = [
-  "Ark Tech", "GrowthOnics BPO", "Maverick", "Omnitalk BPO", "Vize BPO",
-  "Corebiz", "Digicon", "Ambition", "Benchmark", "Poshenee", "Plexi",
-  "Gigabite", "Everline solution", "Progressive BPO", "Cerberus BPO",
-  "NanoTech", "Optimum BPO", "Ethos BPO", "Trust Link", "Crown Connect BPO",
-  "Quotes BPO", "Zupax Marketing", "Argon Comm", "Care Solutions",
-  "Cutting Edge", "Next Era", "Rock BPO", "Avenue Consultancy",
-  "AJ BPO", "Pro Solutions BPO", "Emperor BPO",
-  "Networkize",
-  "LightVerse BPO",
-  "TechPlanet",
-  "Leads BPO",
-  "StratiX BPO",
-  "Helix BPO",
-  "Exito BPO",
-  "Lumenix BPO",
-  "All-Star BPO",
-  "DownTown BPO",
-  "Livik BPO",
-  "NexGen BPO",
-  "Quoted-Leads BPO",
-  "SellerZ BPO",
-  "Venom BPO",
-  "WinBPO"
-];
-
 // Function to generate unique CB submission ID
 const generateCBSubmissionId = (): string => {
   const timestamp = Date.now().toString().slice(-8); // Last 8 digits of timestamp
@@ -100,6 +75,7 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const { leadVendors } = useCenters();
 
   // Form state - Initialize with today's date and generated submission ID
   const [formData, setFormData] = useState(() => {
@@ -133,7 +109,7 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
   const [selectedDate, setSelectedDate] = useState<Date>(getCurrentDateEST());
   const [selectedDraftDate, setSelectedDraftDate] = useState<Date | undefined>();
 
-  const updateField = (field: string, value: any) => {
+  const updateField = <K extends keyof typeof formData>(field: K, value: (typeof formData)[K]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -336,7 +312,7 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
                     <SelectValue placeholder="Select lead vendor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {leadVendorOptions.map((vendor) => (
+                    {leadVendors.map((vendor) => (
                       <SelectItem key={vendor} value={vendor}>
                         {vendor}
                       </SelectItem>

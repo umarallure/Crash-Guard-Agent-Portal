@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
 import { Search, X, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCenters } from "@/hooks/useCenters";
 
 interface GridToolbarProps {
   searchTerm: string;
@@ -60,6 +61,7 @@ export const GridToolbar = ({
 }: GridToolbarProps) => {
   // Special constant to represent "All" selections (cannot use empty string with Radix UI)
   const ALL_OPTION = "__ALL__";
+  const { leadVendors } = useCenters();
   // Filter options (these should match your database values)
   const bufferAgentOptions = [
     "All Buffer Agents",
@@ -87,57 +89,6 @@ export const GridToolbar = ({
     "N/A"
   ];
 
-  const leadVendorOptions = [
-    "All Lead Vendors",
-    "Ark Tech",
-    "GrowthOnics BPO",
-    "Maverick",
-    "Omnitalk BPO",
-    "Vize BPO",
-    "Corebiz",
-    "Digicon",
-    "Ambition",
-    "TechPlanet",
-    "StratiX BPO",
-    "Argon Comm",
-    "AJ BPO",
-    "Pro Solutions BPO",
-    "Emperor BPO",
-    "Benchmark",
-    "Poshenee",
-    "Plexi",
-    "Gigabite",
-    "Everline solution",
-    "Progressive BPO",
-    "Cerberus BPO",
-    "NanoTech",
-    "Optimum BPO",
-    "Ethos BPO",
-    "Trust Link",
-    "Crown Connect BPO",
-    "Quotes BPO",
-    "Zupax Marketing",
-    "Argon Communications",
-    "Care Solutions",
-    "Cutting Edge",
-    "Next Era",
-    "Rock BPO",
-    "Avenue Consultancy",
-    "Networkize",
-    "LightVerse BPO",
-    "Leads BPO",
-    "Helix BPO",
-    "Exito BPO",
-    "Lumenix BPO",
-    "All-Star BPO",
-    "DownTown BPO",
-    "Livik BPO",
-    "NexGen BPO",
-    "Quoted-Leads BPO",
-    "SellerZ BPO",
-    "Venom BPO",
-    "WinBPO"
-  ];
 
   const statusOptions = [
     "All Statuses",
@@ -423,8 +374,9 @@ export const GridToolbar = ({
               <SelectValue placeholder="All Lead Vendors" />
             </SelectTrigger>
             <SelectContent>
-              {leadVendorOptions.map((vendor) => (
-                <SelectItem key={vendor} value={vendor === "All Lead Vendors" ? ALL_OPTION : vendor}>
+              <SelectItem value={ALL_OPTION}>All Lead Vendors</SelectItem>
+              {leadVendors.map((vendor) => (
+                <SelectItem key={vendor} value={vendor}>
                   {vendor}
                 </SelectItem>
               ))}

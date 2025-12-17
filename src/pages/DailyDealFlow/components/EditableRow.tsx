@@ -15,6 +15,7 @@ import { DailyDealFlowRow } from "../DailyDealFlowPage";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getCurrentTimestampEST } from "@/lib/dateUtils";
+import { useCenters } from "@/hooks/useCenters";
 
 // Helper function to create Date object from YYYY-MM-DD string without timezone conversion
 const createDateFromString = (dateString: string): Date => {
@@ -90,22 +91,6 @@ const callResultOptions = [
   "Submitted", "Underwriting", "Not Submitted"
 ];
 
-const leadVendorOptions = [
-  "Ark Tech", "GrowthOnics BPO", "Maverick", "Omnitalk BPO", "Vize BPO",
-  "Corebiz", "Digicon", "Ambition", "Benchmark", "Poshenee", "Plexi",
-  "Gigabite", "Everline solution", "Progressive BPO", "Cerberus BPO",
-  "NanoTech", "Optimum BPO", "Ethos BPO", "Trust Link", "Crown Connect BPO",
-  "Quotes BPO", "Zupax Marketing", "Argon Communications", "Care Solutions",
-  "Cutting Edge", "Next Era", "Rock BPO", "Avenue Consultancy",
-  "AJ BPO", "Pro Solutions BPO", "Emperor BPO",
-  "Networkize",
-  "LightVerse BPO",
-  "StratiX BPO",
-  "Leads BPO",
-  "Helix BPO",
-  "Exito BPO"
-];
-
 export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePermissions = true, isDuplicate = false }: EditableRowProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<DailyDealFlowRow>(row);
@@ -114,6 +99,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
   const [isDeleting, setIsDeleting] = useState(false);
   const prevRowId = useRef(row.id);
   const { toast } = useToast();
+  const { leadVendors } = useCenters();
 
   // Reset edit state when dialog closes
   useEffect(() => {
@@ -168,37 +154,37 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
 
   // Lead Vendor color coding
   const getLeadVendorBadge = (vendor?: string) => {
-    const colors: { [key: string]: string } = {
-      'Ark Tech': 'bg-blue-500 text-white',
-      'GrowthOnics BPO': 'bg-green-500 text-white',
-      'Maverick': 'bg-purple-500 text-white',
-      'Omnitalk BPO': 'bg-orange-500 text-white',
-      'Vize BPO': 'bg-red-500 text-white',
-      'Corebiz': 'bg-indigo-500 text-white',
-      'Digicon': 'bg-pink-500 text-white',
-      'Ambition': 'bg-teal-500 text-white',
-      'Benchmark': 'bg-yellow-600 text-white',
-      'Poshenee': 'bg-cyan-500 text-white',
-      'Plexi': 'bg-emerald-500 text-white',
-      'Gigabite': 'bg-rose-500 text-white',
-      'Everline solution': 'bg-violet-500 text-white',
-      'Progressive BPO': 'bg-amber-500 text-white',
-      'Cerberus BPO': 'bg-slate-500 text-white',
-      'NanoTech': 'bg-lime-500 text-white',
-      'Optimum BPO': 'bg-fuchsia-500 text-white',
-      'Ethos BPO': 'bg-sky-500 text-white',
-      'Trust Link': 'bg-stone-500 text-white',
-      'Crown Connect BPO': 'bg-neutral-500 text-white',
-      'Quotes BPO': 'bg-zinc-500 text-white',
-      'Zupax Marketing': 'bg-red-600 text-white',
-      'Argon Communications': 'bg-blue-600 text-white',
-      'Care Solutions': 'bg-green-600 text-white',
-      'Cutting Edge': 'bg-purple-600 text-white',
-      'Next Era': 'bg-orange-600 text-white',
-      'Rock BPO': 'bg-gray-600 text-white',
-      'Avenue Consultancy': 'bg-pink-600 text-white',
-    };
-    return colors[vendor || ''] || 'bg-gray-400 text-white';
+    if (!vendor) return 'bg-gray-400 text-white';
+
+    const palette = [
+      'bg-blue-500 text-white',
+      'bg-green-500 text-white',
+      'bg-purple-500 text-white',
+      'bg-orange-500 text-white',
+      'bg-red-500 text-white',
+      'bg-indigo-500 text-white',
+      'bg-pink-500 text-white',
+      'bg-teal-500 text-white',
+      'bg-yellow-600 text-white',
+      'bg-cyan-500 text-white',
+      'bg-emerald-500 text-white',
+      'bg-rose-500 text-white',
+      'bg-violet-500 text-white',
+      'bg-amber-500 text-white',
+      'bg-slate-500 text-white',
+      'bg-lime-500 text-white',
+      'bg-fuchsia-500 text-white',
+      'bg-sky-500 text-white',
+      'bg-stone-500 text-white',
+      'bg-neutral-500 text-white',
+      'bg-zinc-500 text-white',
+    ];
+
+    let hash = 0;
+    for (let i = 0; i < vendor.length; i++) {
+      hash = (hash * 31 + vendor.charCodeAt(i)) >>> 0;
+    }
+    return palette[hash % palette.length];
   };
 
   // Status color badge
@@ -359,12 +345,12 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
     return structuredNotes + '\n\n' + existingNotes;
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setIsSaving(true);
     try {
       // Check if status is being changed to "Pending Approval" and generate structured notes
       let finalEditData = { ...editData };
-      
+
       if (editData.status === "Pending Approval" && row.status !== "Pending Approval") {
         // Generate structured notes for pending approval
         const structuredNotes = generatePendingApprovalNotes(
@@ -375,7 +361,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
           editData.face_amount || null,
           editData.draft_date || null
         );
-        
+
         // Combine with existing notes
         const combinedNotes = combineNotes(structuredNotes, editData.notes || '');
         finalEditData = {
@@ -420,16 +406,16 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [editData, onUpdate, row.id, row.status, toast]);
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setEditData(row);
     setIsEditing(false);
     // Close the dialog if it's open
     if (showDetailsDialog) {
       setShowDetailsDialog(false);
     }
-  };
+  }, [row, showDetailsDialog]);
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -467,7 +453,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
     }
   };
 
-  const updateField = useCallback((field: keyof DailyDealFlowRow, value: any) => {
+  const updateField = useCallback(<K extends keyof DailyDealFlowRow>(field: K, value: DailyDealFlowRow[K]) => {
     setEditData(prev => ({ ...prev, [field]: value }));
   }, []);
 
@@ -526,7 +512,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
                     <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {leadVendorOptions.map(option => (
+                    {leadVendors.map(option => (
                       <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}
                   </SelectContent>
@@ -848,7 +834,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
         )}
       </DialogContent>
     </Dialog>
-  ), [showDetailsDialog, handleDialogOpenChange, isEditing, editData, row, isSaving, handleCancel, handleSave]); // Add all dependencies
+  ), [showDetailsDialog, handleDialogOpenChange, isEditing, editData, row, isSaving, handleCancel, handleSave, leadVendors, updateField]); // Add all dependencies
 
   if (isEditing) {
     return (
@@ -895,7 +881,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
                 <SelectValue placeholder="Vendor" />
               </SelectTrigger>
               <SelectContent>
-                {leadVendorOptions.map(option => (
+                {leadVendors.map(option => (
                   <SelectItem key={option} value={option}>{option}</SelectItem>
                 ))}
               </SelectContent>
