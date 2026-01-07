@@ -17,6 +17,7 @@ import { getTodayDateEST, getCurrentTimestampEST, formatDateESTLocale } from "@/
 import { supabase } from "@/integrations/supabase/client";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { AppFixTaskTypeSelector } from "@/components/AppFixTaskTypeSelector";
+import { useCenters } from "@/hooks/useCenters";
 
 interface CallResultFormProps {
   submissionId: string;
@@ -96,10 +97,6 @@ const licensedAccountOptions = [
   "Tatumn",
   "Noah",
   "N/A"
-];
-
-const leadVendorOptions = [
-"Zupax Marketing"
 ];
 
 const incompleteTransferReasonOptions = [
@@ -453,6 +450,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess }: CallRe
   const [passengersCount, setPassengersCount] = useState("");
   
   const { toast } = useToast();
+  const { leadVendors, loading: centersLoading } = useCenters();
 
   // Load existing call result data
   useEffect(() => {
@@ -1408,7 +1406,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess }: CallRe
                       <SelectValue placeholder="Select lead vendor" />
                     </SelectTrigger>
                     <SelectContent>
-                      {leadVendorOptions.map((vendor) => (
+                      {leadVendors.map((vendor) => (
                         <SelectItem key={vendor} value={vendor}>
                           {vendor}
                         </SelectItem>
