@@ -451,7 +451,7 @@ export const VerificationPanel = ({ sessionId, onTransferReady }: VerificationPa
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 400px)', minHeight: '500px' }}>
+      <CardContent className="space-y-4 flex-1 min-h-0 overflow-y-auto">
         {sortedItems.map((item) => (
           <div key={item.id} className="space-y-2">
             <div className="flex items-center gap-2">

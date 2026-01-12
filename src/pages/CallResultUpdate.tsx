@@ -270,7 +270,7 @@ const CallResultUpdate = () => {
             {/* Main Content - 50/50 Split */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               {/* Verification Panel - Left Half */}
-              <div>
+              <div className="lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
                 <VerificationPanel 
                   sessionId={verificationSessionId}
                   onTransferReady={handleTransferReady}
