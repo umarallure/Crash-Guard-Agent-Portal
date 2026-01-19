@@ -105,8 +105,22 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
   const statusMatches = useMemo(() => {
     const query = (editData.status ?? "").toString().trim().toLowerCase();
     if (!query) return statusOptions;
-    return statusOptions.filter((option) => option.toLowerCase().includes(query));
-  }, [editData.status]);
+
+    // Keep all options, but put matches at the top while preserving relative order within groups
+    const matches: string[] = [];
+    const nonMatches: string[] = [];
+
+    statusOptions.forEach((option) => {
+      const lower = option.toLowerCase();
+      if (lower.includes(query)) {
+        matches.push(option);
+      } else {
+        nonMatches.push(option);
+      }
+    });
+
+    return [...matches, ...nonMatches];
+  }, [statusOptions, editData.status]);
 
   useEffect(() => {
     const fetchClosers = async () => {

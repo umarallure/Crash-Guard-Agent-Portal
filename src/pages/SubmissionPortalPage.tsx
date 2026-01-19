@@ -11,9 +11,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, RefreshCw, Eye } from "lucide-react";
+import { Loader2, RefreshCw, Pencil } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAttorneys } from "@/hooks/useAttorneys";
 
@@ -169,6 +178,13 @@ const SubmissionPortalPage = () => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<StageKey | null>(null);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editRow, setEditRow] = useState<SubmissionPortalRow | null>(null);
+  const [editStage, setEditStage] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editStageOpen, setEditStageOpen] = useState(false);
 
   const { toast } = useToast();
   const { attorneys } = useAttorneys();
@@ -627,6 +643,14 @@ const SubmissionPortalPage = () => {
 
   const getStageDisplayLabel = (label: string) => label.replace(/^Stage\s+\d+\s*:\s*/i, "");
 
+  const allStageOptions = useMemo(() => buildAllowedStatuses(), []);
+
+  const editStageMatches = useMemo(() => {
+    const query = (editStage || '').trim().toLowerCase();
+    if (!query) return allStageOptions;
+    return allStageOptions.filter((label) => label.toLowerCase().includes(query));
+  }, [allStageOptions, editStage]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -641,6 +665,73 @@ const SubmissionPortalPage = () => {
   const handleView = (row: SubmissionPortalRow) => {
     if (!row?.id) return;
     navigate(`/daily-deal-flow/lead/${encodeURIComponent(row.id)}`);
+  };
+
+  const handleOpenEdit = (row: SubmissionPortalRow) => {
+    setEditRow(row);
+    setEditStage((row.status || '').trim());
+    setEditNotes((row.notes || '').trim());
+    setEditStageOpen(false);
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editRow) return;
+    const nextStage = (editStage || '').trim();
+    if (!nextStage) return;
+
+    try {
+      setEditSaving(true);
+
+      const { error: flowError } = await supabase
+        .from('daily_deal_flow')
+        .update({ status: nextStage, notes: editNotes })
+        .eq('id', editRow.id);
+
+      if (flowError) throw flowError;
+
+      const notesText = (editNotes || '').trim();
+      if (notesText) {
+        try {
+          const { error: slackError } = await supabase.functions.invoke('disposition-change-slack-alert', {
+            body: {
+              leadId: editRow.id,
+              submissionId: editRow.submission_id ?? null,
+              leadVendor: editRow.lead_vendor ?? '',
+              insuredName: editRow.insured_name ?? null,
+              clientPhoneNumber: editRow.client_phone_number ?? null,
+              previousDisposition: editRow.status ?? null,
+              newDisposition: nextStage,
+              notes: notesText,
+            },
+          });
+          if (slackError) {
+            console.warn('Slack alert invoke failed:', slackError);
+          }
+        } catch (e) {
+          console.warn('Slack alert invoke threw:', e);
+        }
+      }
+
+      setData((prev) => prev.map((r) => (r.id === editRow.id ? { ...r, status: nextStage, notes: editNotes } : r)));
+      setFilteredData((prev) => prev.map((r) => (r.id === editRow.id ? { ...r, status: nextStage, notes: editNotes } : r)));
+
+      toast({
+        title: 'Transfer Updated',
+        description: 'Stage and notes updated successfully.',
+      });
+
+      setEditOpen(false);
+    } catch (e) {
+      console.error('Error updating stage/notes:', e);
+      toast({
+        title: 'Error',
+        description: 'Failed to update stage/notes',
+        variant: 'destructive',
+      });
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   return (
@@ -767,6 +858,7 @@ const SubmissionPortalPage = () => {
                               <Card
                                 key={row.id}
                                 draggable
+                                onClick={() => handleView(row)}
                                 onDragStart={(e) => {
                                   e.dataTransfer.effectAllowed = 'move';
                                   e.dataTransfer.setData('text/plain', row.id);
@@ -790,8 +882,16 @@ const SubmissionPortalPage = () => {
                                       </div>
                                     </div>
                                     <div className="shrink-0">
-                                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleView(row)}>
-                                        <Eye className="h-4 w-4" />
+                                      <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenEdit(row);
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" />
                                       </Button>
                                     </div>
                                   </div>
@@ -854,6 +954,79 @@ const SubmissionPortalPage = () => {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) {
+            setEditRow(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Edit Transfer</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Stage</Label>
+              <div className="relative">
+                <Input
+                  value={editStage}
+                  placeholder="Type stage..."
+                  onFocus={() => setEditStageOpen(true)}
+                  onChange={(e) => {
+                    setEditStage(e.target.value);
+                    setEditStageOpen(true);
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => setEditStageOpen(false), 150);
+                  }}
+                />
+
+                {editStageOpen && (
+                  <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                    {editStageMatches.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">No matching found.</div>
+                    ) : (
+                      editStageMatches.map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setEditStage(label);
+                            setEditStageOpen(false);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={5} />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSaveEdit} disabled={editSaving || !editStage}>
+              {editSaving ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
