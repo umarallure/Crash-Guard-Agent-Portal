@@ -27,6 +27,9 @@ import { useNavigate } from "react-router-dom";
 import { useAttorneys } from "@/hooks/useAttorneys";
 
 const kanbanStages = [
+  { key: "stage_9", label: "Pending Signature" },
+  { key: "stage_10", label: "Pending Police Report" },
+  { key: "stage_11", label: "Signed & Police Report Pending" },
   { key: "stage_1", label: "Information Verification" },
   { key: "stage_2", label: "Attorney Submission" },
   { key: "stage_3", label: "Insurance Verification" },
@@ -35,9 +38,6 @@ const kanbanStages = [
   { key: "stage_6", label: "Retainer Signed Pending" },
   { key: "stage_7", label: "Retainer Signed" },
   { key: "stage_8", label: "Attorney Decision" },
-  { key: "stage_9", label: "Pending Signature" },
-  { key: "stage_10", label: "Pending Police Report" },
-  { key: "stage_11", label: "Signed & Police Report Pending" },
 ] as const;
 
 type StageKey = (typeof kanbanStages)[number]["key"];

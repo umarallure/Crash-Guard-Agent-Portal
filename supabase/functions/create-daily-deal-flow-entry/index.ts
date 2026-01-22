@@ -12,7 +12,6 @@ serve(async (req)=>{
   }
   try {
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    // Get parameters from request body
     const { 
       lead_vendor, 
       insured_name, 
@@ -22,7 +21,6 @@ serve(async (req)=>{
       ghl_location_id, 
       ghl_opportunity_id,
       ghl_contact_id,
-      // Accident and incident fields
       accident_date,
       prior_attorney_involved,
       prior_attorney_details,
@@ -39,10 +37,11 @@ serve(async (req)=>{
       passengers_count,
       contact_name,
       contact_number,
-      contact_address
+      contact_address,
+      status,
+      call_result
     } = await req.json();
     
-    // Validate required fields
     if (!submission_id) {
       throw new Error('Missing required field: submission_id');
     }
@@ -52,7 +51,6 @@ serve(async (req)=>{
     
     console.log('Creating daily deal flow entry for submission:', submission_id);
     
-    // Log GHL fields if provided
     if (ghl_location_id) {
       console.log('GHL Location ID:', ghl_location_id);
     }
@@ -62,7 +60,6 @@ serve(async (req)=>{
     if (ghl_contact_id) {
       console.log('GHL Contact ID:', ghl_contact_id);
     }
-    // Check if entry already exists
     const { data: existingEntry } = await supabase.from('daily_deal_flow').select('id').eq('submission_id', submission_id).maybeSingle();
     if (existingEntry) {
       return new Response(JSON.stringify({
@@ -77,7 +74,6 @@ serve(async (req)=>{
         }
       });
     }
-    // Insert new entry
     const { data, error } = await supabase.from('daily_deal_flow').insert({
       submission_id,
       lead_vendor,
@@ -87,7 +83,6 @@ serve(async (req)=>{
       ghl_location_id,
       ghl_opportunity_id,
       ghlcontactid: ghl_contact_id,
-      // Accident and incident fields
       accident_date,
       prior_attorney_involved: prior_attorney_involved !== undefined ? prior_attorney_involved : false,
       prior_attorney_details,
@@ -105,12 +100,11 @@ serve(async (req)=>{
       contact_name,
       contact_number,
       contact_address,
-      // Other fields will be NULL initially
       buffer_agent: null,
       agent: null,
       licensed_agent_account: null,
-      status: null,
-      call_result: null,
+      status: status ?? null,
+      call_result: call_result ?? null,
       carrier: null,
       product_type: null,
       draft_date: null,

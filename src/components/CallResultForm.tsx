@@ -1100,7 +1100,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
       // Determine status based on application submission
       let finalStatus = status;
       if (applicationSubmitted === true) {
-        finalStatus = "Submitted";
+        finalStatus = qualifiedStage || "Submitted";
       }
 
       // Map status for sheet value

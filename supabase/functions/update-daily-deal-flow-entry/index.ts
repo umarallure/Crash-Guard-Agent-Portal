@@ -112,8 +112,8 @@ const mapStatusToSheetValue = (userSelectedStatus)=>{
 const determineFinalStatus = (applicationSubmitted, sentToUnderwriting, originalStatus)=>{
   let finalStatus = "";
   if (applicationSubmitted === true) {
-    // Always "Pending Approval" for submitted applications
-    finalStatus = "Pending Approval";
+    // Preserve provided status (e.g., qualified stage) exactly as sent
+    finalStatus = originalStatus || 'Pending Approval';
   } else if (applicationSubmitted === false) {
     finalStatus = mapStatusToSheetValue(originalStatus || 'Not Submitted');
   } else {
