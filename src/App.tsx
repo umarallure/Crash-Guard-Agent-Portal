@@ -27,10 +27,12 @@ import TransferPortalPage from "./pages/TransferPortalPage";
 import SubmissionPortalPage from "./pages/SubmissionPortalPage";
 import RetainersKanbanPage from "./pages/RetainersKanbanPage";
 import BulkLookupPage from "./pages/BulkLookupPage";
+import GHLSyncPage from "./pages/GHLSyncPage/GHLSyncPage";
+import SalesMapPage from "./pages/SalesMapPage";
+import OrderFulfillmentPage from "./pages/OrderFulfillmentPage";
 import DealFlowLookup from "./pages/DealFlowLookup";
 import AgentLicensing from "./pages/AgentLicensing";
 import { AgentEligibilityPage } from "./pages/AgentEligibilityPage";
-import GHLSyncPage from "./pages/GHLSyncPage/GHLSyncPage";
 import BufferPerformanceReport from "./pages/BufferPerformanceReport";
 import LicensedAgentPerformanceReport from "./pages/LicensedAgentPerformanceReport";
 import LicensedAgentInbox from "./pages/LicensedAgentInbox";
@@ -74,6 +76,27 @@ const App = () => (
                   </AppShell>
                 </ProtectedRoute>
               } 
+            />
+            <Route
+              path="/sales-map"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Sales Map">
+                    <SalesMapPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/order-fulfillment"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Order Fulfillment">
+                    <OrderFulfillmentPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
             />
 
             <Route 

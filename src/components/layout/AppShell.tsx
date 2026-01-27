@@ -4,6 +4,8 @@ import {
   BarChart3,
   Grid3X3,
   LayoutDashboard,
+  Map,
+  Package,
   Users,
   LogOut,
   Zap,
@@ -174,6 +176,18 @@ const AppShell = ({
         to: '/daily-deal-flow',
         icon: <Grid3X3 className="h-4 w-4 text-current" />,
         show: (isAuthorizedUser && hasNavigationAccess) || restricted,
+      },
+      {
+        label: 'Sales Map',
+        to: '/sales-map',
+        icon: <Map className="h-4 w-4 text-current" />,
+        show: isAuthorizedUser && hasNavigationAccess && !restricted,
+      },
+      {
+        label: 'Order Fulfillment',
+        to: '/order-fulfillment',
+        icon: <Package className="h-4 w-4 text-current" />,
+        show: isAuthorizedUser && hasNavigationAccess && !restricted,
       },
       {
         label: 'Transfer Portal',
