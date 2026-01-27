@@ -9,6 +9,7 @@ import { LeadInfoCard } from "@/components/LeadInfoCard";
 import { CallResultForm } from "@/components/CallResultForm";
 import { StartVerificationModal } from "@/components/StartVerificationModal";
 import { VerificationPanel } from "@/components/VerificationPanel";
+import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { TopVerificationProgress } from "@/components/TopVerificationProgress";
 
@@ -165,7 +166,7 @@ const CallResultUpdate = () => {
         if (error) throw error;
 
         const seeded: Record<string, string> = {};
-        (items || []).forEach((item: any) => {
+        (items || []).forEach((item: { field_name: string; verified_value: unknown; original_value: unknown }) => {
           const value = item.verified_value ?? item.original_value ?? '';
           if (!value || value === 'null' || value === 'undefined') return;
           seeded[item.field_name] = String(value);
@@ -445,6 +446,17 @@ const CallResultUpdate = () => {
                 ) : null}
               </CardContent>
             </Card>
+
+            <OrderRecommendationsCard
+              submissionId={submissionId!}
+              leadId={lead.id}
+              leadOverrides={{
+                state: lead.state,
+                insured: lead.insured ?? null,
+                prior_attorney_involved: lead.prior_attorney_involved ?? null,
+              }}
+              currentAssignedAttorneyId={assignedAttorneyId || null}
+            />
           </>
         ) : (
           /* Original layout when no verification panel */
@@ -474,6 +486,17 @@ const CallResultUpdate = () => {
                   ) : null}
                 </CardContent>
               </Card>
+
+              <OrderRecommendationsCard
+                submissionId={submissionId!}
+                leadId={lead.id}
+                leadOverrides={{
+                  state: lead.state,
+                  insured: lead.insured ?? null,
+                  prior_attorney_involved: lead.prior_attorney_involved ?? null,
+                }}
+                currentAssignedAttorneyId={assignedAttorneyId || null}
+              />
             </div>
             
             {/* Call Result Form */}

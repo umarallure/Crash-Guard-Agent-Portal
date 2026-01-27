@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
+import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +24,8 @@ type DailyDealFlowRecord = {
   lead_vendor: string | null;
   date: string | null;
   insured_name: string | null;
+  state: string | null;
+  zip_code?: string | null;
   buffer_agent: string | null;
   agent: string | null;
   licensed_agent_account: string | null;
@@ -49,6 +52,7 @@ type DailyDealFlowRecord = {
   ghlcontactid: string | null;
   sync_status: string | null;
   accident_date: string | null;
+  accident_last_12_months: boolean | null;
   prior_attorney_involved: boolean | null;
   prior_attorney_details: string | null;
   medical_attention: string | null;
@@ -56,6 +60,9 @@ type DailyDealFlowRecord = {
   accident_location: string | null;
   accident_scenario: string | null;
   insured: boolean | null;
+  is_injured: boolean | null;
+  received_medical_treatment: boolean | null;
+  currently_represented: boolean | null;
   injuries: string | null;
   vehicle_registration: string | null;
   insurance_company: string | null;
@@ -144,7 +151,7 @@ const DailyDealFlowLeadDetailsPage = () => {
 
     if (lead.submission_id) {
       try {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from('leads')
           .select('additional_notes, created_at, updated_at')
           .eq('submission_id', lead.submission_id)
@@ -228,7 +235,7 @@ const DailyDealFlowLeadDetailsPage = () => {
   const fetchNotes = async (leadId: string) => {
     setNotesLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('lead_notes')
         .select('id, lead_id, submission_id, note, created_at, created_by, author_name, source')
         .eq('lead_id', leadId)
@@ -304,10 +311,7 @@ const DailyDealFlowLeadDetailsPage = () => {
 
     setSaving(true);
     try {
-      const updatePayload: Partial<DailyDealFlowRecord> = { ...form };
-      delete (updatePayload as any).id;
-      delete (updatePayload as any).created_at;
-      delete (updatePayload as any).updated_at;
+      const { id: _id, created_at: _createdAt, updated_at: _updatedAt, ...updatePayload } = form;
 
       const { data, error } = await supabase
         .from("daily_deal_flow")
@@ -612,6 +616,28 @@ const DailyDealFlowLeadDetailsPage = () => {
                     </Select>
                   </Field>
                 </div>
+
+                {record?.submission_id ? (
+                  <div className="mt-6">
+                    <OrderRecommendationsCard
+                      submissionId={record.submission_id}
+                      leadId={null}
+                      leadOverrides={{
+                        state: record.state ?? null,
+                        insured: record.insured ?? null,
+                        prior_attorney_involved: record.prior_attorney_involved ?? null,
+                        currently_represented: record.currently_represented ?? null,
+                        is_injured: record.is_injured ?? null,
+                        received_medical_treatment: record.received_medical_treatment ?? null,
+                        accident_last_12_months: record.accident_last_12_months ?? null,
+                      }}
+                      currentAssignedAttorneyId={form?.assigned_attorney_id ?? null}
+                      onAssigned={({ lawyerId }) => {
+                        setAssignedAttorneyId(lawyerId)
+                      }}
+                    />
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           </TabsContent>
