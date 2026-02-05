@@ -13,13 +13,11 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getCurrentTimestampEST, formatDateToEST } from "@/lib/dateUtils";
 import { useCenters } from "@/hooks/useCenters";
-import { useAttorneys } from "@/hooks/useAttorneys";
 
 const NewCallback = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { leadVendors, loading: centersLoading } = useCenters();
-  const { attorneys, loading: attorneysLoading } = useAttorneys();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form state
@@ -37,8 +35,7 @@ const NewCallback = () => {
   const [leadVendor, setLeadVendor] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
   const [submissionDate, setSubmissionDate] = useState<Date>();
-  const [assignedAttorneyId, setAssignedAttorneyId] = useState<string>("");
-
+  
   // Generate unique submission ID
   const generateSubmissionId = () => {
     const timestamp = Date.now();
@@ -107,9 +104,6 @@ const NewCallback = () => {
         submissionId,
         fromCallback: "true",
       });
-      if (assignedAttorneyId) {
-        params.set("assignedAttorneyId", assignedAttorneyId);
-      }
       navigate(`/call-result-update?${params.toString()}`);
 
     } catch (error) {
@@ -187,22 +181,6 @@ const NewCallback = () => {
                         {leadVendors.map((vendor) => (
                           <SelectItem key={vendor} value={vendor}>
                             {vendor}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <Label htmlFor="assignedAttorney">Assign Attorney</Label>
-                    <Select value={assignedAttorneyId || undefined} onValueChange={setAssignedAttorneyId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={attorneysLoading ? "Loading attorneys..." : "Select attorney"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {attorneys.map((a) => (
-                          <SelectItem key={a.user_id} value={a.user_id}>
-                            {a.full_name || a.primary_email || a.user_id}
                           </SelectItem>
                         ))}
                       </SelectContent>
