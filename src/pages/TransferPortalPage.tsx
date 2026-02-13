@@ -102,6 +102,9 @@ const TransferPortalPage = () => {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [selectedStage, setSelectedStage] = useState<"all" | string>("all");
 
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+
   const kanbanPageSize = 25;
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
@@ -366,7 +369,7 @@ const TransferPortalPage = () => {
             const authorName =
               displayName || (user?.user_metadata as any)?.full_name || emailPrefix || user?.id || null;
 
-            const { error: insertErr } = await supabase.from('lead_notes').insert({
+            const { error: insertErr } = await (supabase as any).from('lead_notes').insert({
               lead_id: editRow.id,
               submission_id: (editRow as any).submission_id ?? null,
               note: trimmedNote,
@@ -549,6 +552,41 @@ const TransferPortalPage = () => {
     }
 
     setNoteCounts(counts);
+  };
+
+  const getStatusForStage = (stageKey: string): string => {
+    const stage = kanbanStages.find((s) => s.key === stageKey);
+    return (stage?.label || '').trim() || stageKey;
+  };
+
+  const handleDropToStage = async (rowId: string, stageKey: string) => {
+    const nextStatus = getStatusForStage(stageKey);
+
+    const prev = data;
+    const next = prev.map((r) => (r.id === rowId ? { ...r, status: nextStatus } : r));
+    setData(next);
+
+    try {
+      const { error } = await supabase
+        .from('daily_deal_flow')
+        .update({ status: nextStatus })
+        .eq('id', rowId);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Status Updated',
+        description: `Transfer updated to "${nextStatus}"`,
+      });
+    } catch (e) {
+      console.error('Error updating transfer status:', e);
+      setData(prev);
+      toast({
+        title: 'Error',
+        description: 'Failed to update transfer status',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleExport = () => {
@@ -810,7 +848,21 @@ const TransferPortalPage = () => {
                   return (
                     <Card
                       key={stage.key}
-                      className={`flex min-h-[560px] w-[26rem] flex-col bg-muted/20 ${stageTheme[stage.key].column}`}
+                      className={
+                        `flex min-h-[560px] w-[26rem] flex-col bg-muted/20 ${stageTheme[stage.key].column}` +
+                        (dragOverStage === stage.key ? ' ring-2 ring-primary/30' : '')
+                      }
+                      onDragOver={(e) => e.preventDefault()}
+                      onDragEnter={() => setDragOverStage(stage.key)}
+                      onDragLeave={() => setDragOverStage((prev) => (prev === stage.key ? null : prev))}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const droppedId = e.dataTransfer.getData('text/plain');
+                        if (!droppedId) return;
+                        handleDropToStage(droppedId, stage.key);
+                        setDraggingId(null);
+                        setDragOverStage(null);
+                      }}
                     >
                       <CardHeader className="flex flex-row items-center justify-between border-b px-3 py-2">
                         <CardTitle className="text-sm font-semibold">
@@ -827,8 +879,19 @@ const TransferPortalPage = () => {
                           pageRows.map((row) => (
                             <Card
                               key={row.id}
+                              draggable
                               className="relative w-full cursor-pointer transition hover:shadow-md"
                               onClick={() => handleView(row)}
+                              onDragStart={(e) => {
+                                e.dataTransfer.effectAllowed = 'move';
+                                e.dataTransfer.setData('text/plain', row.id);
+                                setDraggingId(row.id);
+                              }}
+                              onDragEnd={() => {
+                                setDraggingId(null);
+                                setDragOverStage(null);
+                              }}
+                              style={draggingId === row.id ? { opacity: 0.7 } : undefined}
                             >
                               <CardContent className="p-2">
                                 <Button
