@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getCurrentTimestampEST } from "@/lib/dateUtils";
 import { useCenters } from "@/hooks/useCenters";
+import { usePipelineStages } from "@/hooks/usePipelineStages";
 import type { AttorneyProfile } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
 
@@ -59,7 +60,7 @@ const productTypeOptions = [
   "Preferred", "Standard", "Graded", "Modified", "GI", "Immediate", "Level", "ROP", "N/A"
 ];
 
-const submissionPortalStageOptions = [
+const submissionPortalStageOptionsFallback = [
   "Information Verification",
   "Attorney Submission",
   "Insurance Verification",
@@ -70,20 +71,17 @@ const submissionPortalStageOptions = [
   "Attorney Decision",
 ];
 
-const statusOptions = Array.from(
-  new Set([
-    "Needs BPO Callback",
-    "Not Interested",
-    "Pending Approval",
-    "Previously Sold BPO",
-    "Returned To Center - DQ",
-    "Application Withdrawn",
-    "Call Back Fix",
-    "Incomplete Transfer",
-    "DQ'd Can't be sold",
-    ...submissionPortalStageOptions
-  ])
-);
+const baseStatusOptions = [
+  "Needs BPO Callback",
+  "Not Interested",
+  "Pending Approval",
+  "Previously Sold BPO",
+  "Returned To Center - DQ",
+  "Application Withdrawn",
+  "Call Back Fix",
+  "Incomplete Transfer",
+  "DQ'd Can't be sold",
+];
 
 const callResultOptions = [
   "Qualified", "Underwriting", "Not Qualified"
@@ -101,12 +99,21 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
   const prevRowId = useRef(row.id);
   const { toast } = useToast();
   const { leadVendors } = useCenters();
+  const { stages: dbSubmissionStages } = usePipelineStages("submission_portal");
+
+  const submissionPortalStageOptions = useMemo(() => {
+    const fromDb = (dbSubmissionStages ?? []).map((s) => s.label).filter((l): l is string => Boolean(l && l.trim()));
+    return fromDb.length > 0 ? fromDb : submissionPortalStageOptionsFallback;
+  }, [dbSubmissionStages]);
+
+  const statusOptions = useMemo(() => {
+    return Array.from(new Set([...baseStatusOptions, ...submissionPortalStageOptions]));
+  }, [submissionPortalStageOptions]);
 
   const statusMatches = useMemo(() => {
     const query = (editData.status ?? "").toString().trim().toLowerCase();
     if (!query) return statusOptions;
 
-    // Keep all options, but put matches at the top while preserving relative order within groups
     const matches: string[] = [];
     const nonMatches: string[] = [];
 
