@@ -101,6 +101,23 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
   const { leadVendors } = useCenters();
   const { stages: dbSubmissionStages } = usePipelineStages("submission_portal");
 
+  const submissionStageLabelByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    (dbSubmissionStages ?? []).forEach((s) => {
+      if (s?.key && s?.label) map.set(s.key, s.label);
+    });
+    return map;
+  }, [dbSubmissionStages]);
+
+  const submissionStageKeyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    (dbSubmissionStages ?? []).forEach((s) => {
+      const label = (s?.label ?? "").trim();
+      if (label && s?.key) map.set(label.toLowerCase(), s.key);
+    });
+    return map;
+  }, [dbSubmissionStages]);
+
   const submissionPortalStageOptions = useMemo(() => {
     const fromDb = (dbSubmissionStages ?? []).map((s) => s.label).filter((l): l is string => Boolean(l && l.trim()));
     return fromDb.length > 0 ? fromDb : submissionPortalStageOptionsFallback;
@@ -110,8 +127,13 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
     return Array.from(new Set([...baseStatusOptions, ...submissionPortalStageOptions]));
   }, [submissionPortalStageOptions]);
 
+  const statusDisplayValue = useMemo(() => {
+    const current = (editData.status ?? "").toString();
+    return submissionStageLabelByKey.get(current) ?? current;
+  }, [editData.status, submissionStageLabelByKey]);
+
   const statusMatches = useMemo(() => {
-    const query = (editData.status ?? "").toString().trim().toLowerCase();
+    const query = statusDisplayValue.trim().toLowerCase();
     if (!query) return statusOptions;
 
     const matches: string[] = [];
@@ -127,7 +149,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
     });
 
     return [...matches, ...nonMatches];
-  }, [statusOptions, editData.status]);
+  }, [statusOptions, statusDisplayValue]);
 
   useEffect(() => {
     const fetchClosers = async () => {
@@ -376,6 +398,15 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
       // Check if status is being changed to "Pending Approval" and generate structured notes
       let finalEditData = { ...editData };
 
+      const maybeStatusLabel = (finalEditData.status ?? "").toString().trim();
+      const mappedStageKey = submissionStageKeyByLabel.get(maybeStatusLabel.toLowerCase());
+      if (mappedStageKey) {
+        finalEditData = {
+          ...finalEditData,
+          status: mappedStageKey,
+        };
+      }
+
       if (editData.status === "Pending Approval" && row.status !== "Pending Approval") {
         // Generate structured notes for pending approval
         const structuredNotes = generatePendingApprovalNotes(
@@ -431,7 +462,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
               insuredName: row.insured_name ?? null,
               clientPhoneNumber: row.client_phone_number ?? null,
               previousDisposition: row.status ?? null,
-              newDisposition: row.status ?? null,
+              newDisposition: finalEditData.status ?? null,
               notes: updatedNotes,
               noteOnly: true,
             },
@@ -457,7 +488,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
     } finally {
       setIsSaving(false);
     }
-  }, [editData, onUpdate, row.id, row.status, row.notes, row.submission_id, row.lead_vendor, row.insured_name, row.client_phone_number, toast]);
+  }, [editData, onUpdate, row.id, row.status, row.notes, row.submission_id, row.lead_vendor, row.insured_name, row.client_phone_number, toast, submissionStageKeyByLabel]);
 
   const handleCancel = useCallback(() => {
     setEditData(row);
@@ -651,7 +682,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
                 <div className="relative">
                   <Input
                     className="mt-1"
-                    value={editData.status || ""}
+                    value={statusDisplayValue}
                     placeholder="Type status..."
                     onFocus={() => setStatusOpen(true)}
                     onChange={(e) => {
@@ -675,7 +706,8 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
                             className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
-                              updateField('status', option);
+                              const stageKey = submissionStageKeyByLabel.get(option.toLowerCase());
+                              updateField('status', stageKey ?? option);
                               setStatusOpen(false);
                             }}
                           >
@@ -687,7 +719,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
                   )}
                 </div>
               ) : (
-                <div className="mt-1 p-2 bg-muted rounded">{row.status || 'N/A'}</div>
+                <div className="mt-1 p-2 bg-muted rounded">{(submissionStageLabelByKey.get(row.status ?? '') ?? row.status) || 'N/A'}</div>
               )}
             </div>
 
@@ -889,7 +921,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
         )}
       </DialogContent>
     </Dialog>
-  ), [showDetailsDialog, handleDialogOpenChange, isEditing, editData, row, isSaving, handleCancel, handleSave, leadVendors, updateField]); // Add all dependencies
+  ), [showDetailsDialog, handleDialogOpenChange, isEditing, editData, row, isSaving, handleCancel, handleSave, leadVendors, updateField, agentOptions, statusDisplayValue, statusMatches, statusOpen, submissionStageKeyByLabel, submissionStageLabelByKey]); // Add all dependencies
 
   if (isEditing) {
     return (
@@ -985,7 +1017,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
           <td className="border border-border px-3 py-2">
             <div className="relative">
               <Input
-                value={editData.status || ''}
+                value={statusDisplayValue}
                 onChange={(e) => {
                   updateField('status', e.target.value);
                   setStatusOpen(true);
@@ -1010,7 +1042,8 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
                         className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-accent hover:text-accent-foreground"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
-                          updateField('status', option);
+                          const stageKey = submissionStageKeyByLabel.get(option.toLowerCase());
+                          updateField('status', stageKey ?? option);
                           setStatusOpen(false);
                         }}
                       >
@@ -1097,6 +1130,8 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
     return profile?.full_name?.trim() || profile?.primary_email?.trim() || '';
   })();
 
+  const rowStatusDisplay = submissionStageLabelByKey.get(row.status ?? '') ?? row.status ?? '';
+
   return (
     <>
       <tr className={`${getStatusColor(row.status)} ${isDuplicate ? 'bg-yellow-50' : ''} hover:bg-muted/50 transition-colors border`}>
@@ -1146,7 +1181,7 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
         <td className="border border-border px-2 py-2 text-sm w-32">
           {row.status ? (
             <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap inline-block ${getStatusBadge(row.status)}`}>
-              {row.status.length > 16 ? row.status.substring(0, 16) + '...' : row.status}
+              {rowStatusDisplay.length > 16 ? rowStatusDisplay.substring(0, 16) + '...' : rowStatusDisplay}
             </span>
           ) : ''}
         </td>
