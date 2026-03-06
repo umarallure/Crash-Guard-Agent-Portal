@@ -19,6 +19,7 @@ const Auth = () => {
   const navigate = useNavigate();
 
   const ensureAgentRoleOrSignOut = useCallback(async (userId: string): Promise<boolean> => {
+    const allowedRoles = new Set(["agent", "admin", "super_admin"]);
     const client = (await import('@/integrations/supabase/client')).supabase;
     const untypedClient = client as unknown as {
       from: (table: string) => {
@@ -37,9 +38,9 @@ const Auth = () => {
       .maybeSingle();
 
     const roleFromAppUsers = appUserError ? null : (appUser?.role as string | null | undefined);
-    const hasAgentRoleInAppUsers = roleFromAppUsers === 'agent';
+    const hasAllowedRoleInAppUsers = roleFromAppUsers ? allowedRoles.has(roleFromAppUsers) : false;
 
-    if (hasAgentRoleInAppUsers) {
+    if (hasAllowedRoleInAppUsers) {
       return true;
     }
 
@@ -47,7 +48,7 @@ const Auth = () => {
       .from('user_roles')
       .select('id')
       .eq('user_id', userId)
-      .eq('role', 'agent')
+      .in('role', Array.from(allowedRoles))
       .eq('is_active', true)
       .limit(1)
       .maybeSingle();
