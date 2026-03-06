@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { format } from "date-fns";
-import { ArrowLeft, Loader2, Pencil, Save, X } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, Plus, Save, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 type DailyDealFlowRecord = {
   id: string;
@@ -114,6 +115,9 @@ const DailyDealFlowLeadDetailsPage = () => {
   const [notesLoading, setNotesLoading] = useState(false);
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [legacyNotes, setLegacyNotes] = useState<LegacyNote[]>([]);
+  const [newNote, setNewNote] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
 
   const [record, setRecord] = useState<DailyDealFlowRecord | null>(null);
   const [form, setForm] = useState<DailyDealFlowRecord | null>(null);
@@ -231,6 +235,98 @@ const DailyDealFlowLeadDetailsPage = () => {
 
     run();
   }, [id, toast]);
+
+  const handleSaveNote = async () => {
+    const trimmedNote = newNote.trim();
+    if (!trimmedNote || !record) {
+      toast({
+        title: "Error",
+        description: "Please enter a note",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingNote(true);
+    try {
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+
+      const user = userData?.user;
+      const createdBy = user?.id || null;
+      const emailPrefix = user?.email ? user.email.split('@')[0] : null;
+
+      let displayName: string | null = null;
+      if (user?.id) {
+        try {
+          const { data: profileData } = await (supabase as any)
+            .from('profiles')
+            .select('display_name')
+            .eq('user_id', user.id)
+            .limit(1);
+
+          const raw = Array.isArray(profileData) ? profileData?.[0]?.display_name : profileData?.display_name;
+          displayName = typeof raw === 'string' ? raw.trim() : null;
+          if (displayName && displayName.length === 0) displayName = null;
+        } catch (e) {
+          console.warn('Failed to fetch profile display_name', e);
+        }
+      }
+
+      const authorName =
+        displayName || (user?.user_metadata as any)?.full_name || emailPrefix || user?.id || null;
+
+      const { error: insertErr } = await (supabase as any).from('lead_notes').insert({
+        lead_id: record.id,
+        submission_id: record.submission_id ?? null,
+        note: trimmedNote,
+        source: 'Daily Deal Flow',
+        created_by: createdBy,
+        author_name: authorName,
+      });
+
+      if (insertErr) throw insertErr;
+
+      try {
+        const { error: slackError } = await supabase.functions.invoke('disposition-change-slack-alert', {
+          body: {
+            leadId: record.id,
+            submissionId: record.submission_id ?? null,
+            leadVendor: record.lead_vendor ?? '',
+            insuredName: record.insured_name ?? null,
+            clientPhoneNumber: record.client_phone_number ?? null,
+            previousDisposition: record.status ?? null,
+            newDisposition: record.status ?? null,
+            notes: trimmedNote,
+            noteOnly: true,
+          },
+        });
+        if (slackError) {
+          console.warn('Slack alert invoke failed:', slackError);
+        }
+      } catch (e) {
+        console.warn('Slack alert invoke threw:', e);
+      }
+
+      toast({
+        title: "Success",
+        description: "Note added successfully",
+      });
+
+      setNewNote("");
+      setNoteDialogOpen(false);
+      await fetchNotes(record.id);
+    } catch (error) {
+      console.error("Error saving note:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save note",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   const fetchNotes = async (leadId: string) => {
     setNotesLoading(true);
@@ -447,7 +543,6 @@ const DailyDealFlowLeadDetailsPage = () => {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="agents">Closers</TabsTrigger>
               <TabsTrigger value="accident">Accident</TabsTrigger>
-              <TabsTrigger value="integrations">Integrations</TabsTrigger>
             </TabsList>
           </div>
 
@@ -806,74 +901,58 @@ const DailyDealFlowLeadDetailsPage = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="integrations">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <Field label="GHL Location ID">
-                    <Input
-                      className={inputCls}
-                      value={form.ghl_location_id ?? ""}
-                      onChange={(e) => setString("ghl_location_id", e.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                  <Field label="GHL Opportunity ID">
-                    <Input
-                      className={inputCls}
-                      value={form.ghl_opportunity_id ?? ""}
-                      onChange={(e) => setString("ghl_opportunity_id", e.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                  <Field label="GHL Contact ID">
-                    <Input
-                      className={inputCls}
-                      value={form.ghlcontactid ?? ""}
-                      onChange={(e) => setString("ghlcontactid", e.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                  <Field label="Sync Status">
-                    <Input
-                      className={inputCls}
-                      value={form.sync_status ?? ""}
-                      onChange={(e) => setString("sync_status", e.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                  <Field label="Carrier Attempted 1">
-                    <Input
-                      className={inputCls}
-                      value={form.carrier_attempted_1 ?? ""}
-                      onChange={(e) => setString("carrier_attempted_1", e.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                  <Field label="Carrier Attempted 2">
-                    <Input
-                      className={inputCls}
-                      value={form.carrier_attempted_2 ?? ""}
-                      onChange={(e) => setString("carrier_attempted_2", e.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                  <Field label="Carrier Attempted 3">
-                    <Input
-                      className={inputCls}
-                      value={form.carrier_attempted_3 ?? ""}
-                      onChange={(e) => setString("carrier_attempted_3", e.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           <TabsContent value="notes">
             <Card>
               <CardContent className="pt-6">
+                <div className="mb-4">
+                  <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Note
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Add Note</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <Textarea
+                          placeholder="Enter your note..."
+                          value={newNote}
+                          onChange={(e) => setNewNote(e.target.value)}
+                          rows={6}
+                          disabled={savingNote}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setNoteDialogOpen(false);
+                              setNewNote("");
+                            }}
+                            disabled={savingNote}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleSaveNote}
+                            disabled={savingNote || !newNote.trim()}
+                          >
+                            {savingNote ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              "Save Note"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
                 {notesLoading ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />

@@ -83,6 +83,7 @@ const SubmissionPortalPage = () => {
 
   // --- Dynamic pipeline stages from DB ---
   const { stages: dbSubmissionStages, loading: stagesLoading } = usePipelineStages("submission_portal");
+  const { stages: dbTransferStages } = usePipelineStages("transfer_portal");
 
   // --- Derive parent stages (kanban columns) from flat DB stages ---
   const parentStages = useMemo(() => deriveParentStages(dbSubmissionStages), [dbSubmissionStages]);
@@ -145,12 +146,35 @@ const SubmissionPortalPage = () => {
     return parent.label;
   };
 
-  const buildAllowedStatuses = () => {
-    // Include all full DB stage labels (with reasons) + parent-only labels
-    const fullLabels = dbSubmissionStages.map((s) => s.label);
-    const parentLabels = parentStages.map((s) => s.label);
-    return Array.from(new Set([...fullLabels, ...parentLabels]));
+  const getStatusKeyForStage = (columnStageKey: string) => {
+    const exact = dbSubmissionStages.find((s) => s.key === columnStageKey);
+    if (exact?.key) return exact.key;
+    const matches = (dbSubmissionStages ?? []).filter((s) => {
+      const { parent } = parseStageLabel((s?.label ?? '').trim());
+      if (!parent) return false;
+      const parentStage = parentStages.find((p) => p.label === parent);
+      return parentStage?.key === columnStageKey;
+    });
+
+    if (matches.length > 0) {
+      const sorted = [...matches].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+      return sorted[0]?.key ?? columnStageKey;
+    }
+
+    return columnStageKey;
   };
+
+  const buildAllowedStatuses = () => {
+    const stageKeys = dbSubmissionStages.map((s) => s.key);
+    const stageLabels = dbSubmissionStages.map((s) => s.label);
+    return Array.from(new Set([...stageKeys, ...stageLabels]));
+  };
+
+  const transferStatusSet = useMemo(() => {
+    const keys = (dbTransferStages ?? []).map((s) => (s?.key ?? "").trim()).filter(Boolean);
+    const labels = (dbTransferStages ?? []).map((s) => (s?.label ?? "").trim()).filter(Boolean);
+    return new Set<string>([...keys, ...labels]);
+  }, [dbTransferStages]);
 
   const [data, setData] = useState<SubmissionPortalRow[]>([]);
   const [filteredData, setFilteredData] = useState<SubmissionPortalRow[]>([]);
@@ -216,7 +240,16 @@ const SubmissionPortalPage = () => {
 
     // Apply status filter
     if (statusFilter !== "__ALL__") {
-      filtered = filtered.filter(record => record.status === statusFilter);
+      const selectedStageLabel = dbSubmissionStages.find((s) => s.key === statusFilter)?.label;
+      const selectedParentLabel = parentStages.find((s) => s.key === statusFilter)?.label;
+      filtered = filtered.filter((record) => {
+        const current = (record.status || '').trim();
+        if (!current) return false;
+        if (current === statusFilter) return true;
+        if (selectedStageLabel && current === selectedStageLabel) return true;
+        if (selectedParentLabel && current === selectedParentLabel) return true;
+        return false;
+      });
     }
 
     // Apply lead vendor filter
@@ -268,10 +301,8 @@ const SubmissionPortalPage = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
 
-  // Function to generate verification log summary showing complete call workflow
   const generateVerificationLogSummary = (logs: CallLog[], submission?: any): string => {
     if (!logs || logs.length === 0) {
-      // Fallback to data from submission/call_results table if available
       if (submission && submission.has_submission_data) {
         const workflow = [];
         
@@ -398,11 +429,11 @@ const SubmissionPortalPage = () => {
       setRefreshing(true);
 
       const allowedStatuses = buildAllowedStatuses();
+      const allowedStatusSet = new Set(allowedStatuses.map((s) => (s || '').toString().trim()).filter(Boolean));
 
       let transfersQuery = supabase
         .from('daily_deal_flow')
         .select('*')
-        .in('status', allowedStatuses)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false });
 
@@ -422,12 +453,18 @@ const SubmissionPortalPage = () => {
         return;
       }
 
+      const normalizedTransferData = (Array.isArray(transferData) ? transferData : []).filter((row) => {
+        const status = (row as { status?: string | null }).status;
+        const normalized = (status || "").toString().trim();
+        if (!normalized) return true;
+        // Exclude Transfer Portal pipeline leads from Submission Portal view
+        return !transferStatusSet.has(normalized);
+      });
+
       // Get submission portal data for entries that exist
       let submissionQuery = (supabase as any)
         .from('submission_portal')
         .select('*');
-
-      submissionQuery = submissionQuery.in('status', allowedStatuses);
 
       // Apply date filter if set
       if (dateFilter) {
@@ -444,29 +481,25 @@ const SubmissionPortalPage = () => {
         // Continue with just transfer data
       }
 
-      // Create a map of submission data by submission_id for quick lookup
-      const submissionMap = new Map();
-      const submissionData = submissionDataRaw ?? [];
-      setData(submissionData);
+      const normalizedSubmissionData = Array.isArray(submissionDataRaw) ? submissionDataRaw : [];
 
-      if (submissionData) {
-        submissionData.forEach((sub: any) => {
-          submissionMap.set(sub.submission_id, sub);
-        });
-      }
+      // Create a map of submission data by submission_id for quick lookup
+      const submissionMap = new Map<string, any>();
+      normalizedSubmissionData.forEach((row: any) => {
+        if (row.submission_id) {
+          submissionMap.set(row.submission_id, row);
+        }
+      });
 
       // Merge transfer data with submission data
-      const mergedData = ((transferData ?? []) as unknown as SubmissionPortalRow[])?.map(transfer => {
+      const mergedData = normalizedTransferData.map((transfer: any) => {
         const submission = submissionMap.get(transfer.submission_id);
-        
+
         if (submission) {
-          // Merge submission data with transfer data
-          // IMPORTANT: daily_deal_flow is the authoritative source for status/notes,
-          // so we explicitly re-apply transfer.status and transfer.notes after the spread.
           return {
             ...transfer,
             ...submission,
-            // daily_deal_flow status & notes always win
+            // Prefer transfer's current status/notes (source of truth for kanban)
             status: transfer.status,
             notes: transfer.notes,
             // Keep transfer data for fields that might be missing in submission
@@ -481,20 +514,20 @@ const SubmissionPortalPage = () => {
             monthly_premium: submission.monthly_premium || transfer.monthly_premium,
             face_amount: submission.face_amount || transfer.face_amount,
             // Mark as having submission data
-            has_submission_data: true
-          };
-        } else {
-          // No submission data - show transfer data with missing label
-          const isCallback = Boolean((transfer as any).from_callback) || Boolean((transfer as any).is_callback);
-          return {
-            ...transfer,
-            // Mark as missing submission data
-            has_submission_data: false,
-            verification_logs: "Update log missing - No submission data found",
-            source_type: isCallback ? 'callback' : 'zapier',
+            has_submission_data: true,
           };
         }
-      }) || [];
+
+        // No submission data - show transfer data with missing label
+        const isCallback = Boolean((transfer as any).from_callback) || Boolean((transfer as any).is_callback);
+        return {
+          ...transfer,
+          // Mark as missing submission data
+          has_submission_data: false,
+          verification_logs: "Update log missing - No submission data found",
+          source_type: isCallback ? 'callback' : 'zapier',
+        };
+      });
 
       const mergedWithSourceType = mergedData.map((row) => {
         const isCallback = Boolean((row as any).from_callback) || Boolean((row as any).is_callback);
@@ -687,16 +720,17 @@ const SubmissionPortalPage = () => {
   };
 
   const handleDropToStage = async (rowId: string, stageKey: string) => {
-    const nextStatus = getStatusForStage(stageKey);
+    const nextStatusKey = getStatusKeyForStage(stageKey);
+    const nextStatusLabel = dbSubmissionStages.find((s) => s.key === nextStatusKey)?.label ?? getStatusForStage(stageKey);
 
     const prev = data;
-    const next = prev.map((r) => (r.id === rowId ? { ...r, status: nextStatus } : r));
+    const next = prev.map((r) => (r.id === rowId ? { ...r, status: nextStatusKey } : r));
     setData(next);
 
     try {
       const { error: transferError } = await supabase
         .from('daily_deal_flow')
-        .update({ status: nextStatus })
+        .update({ status: nextStatusKey })
         .eq('id', rowId);
 
       if (transferError) throw transferError;
@@ -706,7 +740,7 @@ const SubmissionPortalPage = () => {
         try {
           await (supabase as any)
             .from('submission_portal')
-            .update({ status: nextStatus })
+            .update({ status: nextStatusKey })
             .eq('submission_id', droppedRow.submission_id);
         } catch {
           // submission_portal row may not exist — ignore
@@ -715,7 +749,7 @@ const SubmissionPortalPage = () => {
 
       toast({
         title: 'Status Updated',
-        description: `Lead status updated to "${nextStatus}"`,
+        description: `Lead status updated to "${nextStatusLabel}"`,
       });
     } catch (e) {
       console.error('Error updating status:', e);
@@ -967,7 +1001,7 @@ const SubmissionPortalPage = () => {
                   <SelectGroup>
                     <SelectItem value="__ALL__">All Statuses</SelectItem>
                     {dbSubmissionStages.map((s) => (
-                      <SelectItem key={s.key} value={s.label}>
+                      <SelectItem key={s.key} value={s.key}>
                         {s.label}
                       </SelectItem>
                     ))}

@@ -283,6 +283,7 @@ const OrderFulfillmentPage = () => {
             <TableBody>
               {filteredOrders.map((o) => {
                 const pct = getOrderPercent(o);
+                const pctRounded = Math.round(pct);
                 const filled = Number(o.quota_filled) || 0;
                 const total = Number(o.quota_total) || 0;
                 const lawyerLabel = attorneyLabelById.get(o.lawyer_id) || o.lawyer_id;
@@ -317,7 +318,7 @@ const OrderFulfillmentPage = () => {
                     <TableCell>
                       <div className="w-[220px] space-y-1">
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{pct}%</span>
+                          <span>{pctRounded}%</span>
                           <span>{filled}/{total}</span>
                         </div>
                         <Progress value={pct} />

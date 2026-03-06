@@ -202,31 +202,6 @@ const AppShell = ({
         icon: <CheckCircle className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
-      {
-        label: 'Retainers',
-        to: '/retainers',
-        icon: <TbUserShield className="h-4 w-4 text-current" />,
-        end: true,
-        show: canAccessAgentPages,
-      },
-      {
-        label: 'Agent Reports & Logs',
-        to: '/reports',
-        icon: <BarChart3 className="h-4 w-4 text-current" />,
-        show: canAccessAgentPages,
-      },
-      {
-        label: 'Admin Analytics',
-        to: '/admin-analytics/agents',
-        icon: <BarChart3 className="h-4 w-4 text-current" />,
-        show: canAccessAgentPages,
-      },
-      {
-        label: 'GHL Sync Portal',
-        to: '/ghl-sync',
-        icon: <Zap className="h-4 w-4 text-current" />,
-        show: canAccessAgentPages,
-      },
     ];
 
     return items.filter((i) => i.show !== false);

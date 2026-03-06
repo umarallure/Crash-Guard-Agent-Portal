@@ -30,6 +30,52 @@ function normalizeSlackChannel(value: string | null | undefined): string | null 
   return v;
 }
 
+async function slackApi(method: string, body?: Record<string, unknown>) {
+  const resp = await fetch(`https://slack.com/api/${method}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  const result = await resp.json();
+  return result as Record<string, unknown>;
+}
+
+function looksLikeChannelId(value: string) {
+  const v = value.trim();
+  return /^(C|G)[A-Z0-9]{8,}$/.test(v);
+}
+
+async function resolveSlackChannelId(input: string): Promise<{ channelId: string | null; resolvedFrom: string }>
+{
+  const raw = input.trim();
+  if (!raw) return { channelId: null, resolvedFrom: "empty" };
+
+  if (looksLikeChannelId(raw)) {
+    return { channelId: raw, resolvedFrom: "id" };
+  }
+
+  const name = raw.startsWith("#") ? raw.slice(1) : raw;
+  if (!name) return { channelId: null, resolvedFrom: "empty" };
+
+  const listRes = await slackApi("conversations.list", {
+    limit: 1000,
+    types: "public_channel,private_channel",
+    exclude_archived: true,
+  });
+
+  if (!listRes?.ok) {
+    return { channelId: null, resolvedFrom: `list_failed:${String(listRes?.error ?? "unknown_error")}` };
+  }
+
+  const channels = (listRes.channels as Array<Record<string, unknown>> | undefined) ?? [];
+  const match = channels.find((c) => String(c?.name ?? "").toLowerCase() === name.toLowerCase());
+  const channelId = match ? String(match.id ?? "") : "";
+  return { channelId: channelId || null, resolvedFrom: "name" };
+}
+
 async function postToSlack(channel: string, message: unknown) {
   const messageObj = (message ?? {}) as Record<string, unknown>;
   const resp = await fetch("https://slack.com/api/chat.postMessage", {
@@ -98,7 +144,40 @@ serve(async (req) => {
     const channel =
       normalizeSlackChannel(center?.slack_channel) ??
       "#crash-guard-submission-portal";
-    console.log("Using Slack channel:", channel);
+
+    const authTest = await slackApi("auth.test");
+    console.log("Slack auth.test:", {
+      ok: authTest?.ok,
+      team: authTest?.team,
+      team_id: authTest?.team_id,
+      bot_id: authTest?.bot_id,
+      user_id: authTest?.user_id,
+      error: authTest?.error,
+    });
+
+    const { channelId, resolvedFrom } = await resolveSlackChannelId(channel);
+    console.log("Resolved Slack channel:", { input: channel, channelId, resolvedFrom });
+
+    if (!channelId) {
+      throw new Error(
+        `Unable to resolve Slack channel. input=${channel} resolvedFrom=${resolvedFrom}`
+      );
+    }
+
+    const channelInfo = await slackApi("conversations.info", { channel: channelId });
+    console.log("Slack conversations.info:", {
+      ok: channelInfo?.ok,
+      error: channelInfo?.error,
+      channel: channelInfo?.channel,
+    });
+
+    if (!channelInfo?.ok) {
+      throw new Error(
+        `Slack conversations.info failed for channel=${channelId}: ${String(channelInfo?.error ?? "unknown_error")}`
+      );
+    }
+
+    console.log("Using Slack channel id:", channelId);
 
     const insuredName = (payload.insuredName ?? "").trim() || "N/A";
     const phone = (payload.clientPhoneNumber ?? "").trim() || "N/A";
@@ -138,7 +217,7 @@ serve(async (req) => {
       ],
     };
 
-    const postResult = await postToSlack(channel, slackMessage);
+    const postResult = await postToSlack(channelId, slackMessage);
     console.log("Slack post result:", postResult.raw);
 
     if (!postResult.ok) {
@@ -146,7 +225,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, channel, ts: postResult.raw?.ts }),
+      JSON.stringify({ success: true, channel: channelId, ts: postResult.raw?.ts }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {

@@ -369,6 +369,7 @@ const OrderFulfillmentAssignPage = () => {
   };
 
   const pct = order ? getOrderPercent(order) : 0;
+  const pctRounded = Math.round(pct);
   const lawyerLabel = lawyerId ? attorneyLabelById.get(lawyerId) : null;
   const assignedLawyerLabel = lawyerLabel || (order?.lawyer_id ? attorneyLabelById.get(order.lawyer_id) || order.lawyer_id : null);
 
@@ -403,7 +404,7 @@ const OrderFulfillmentAssignPage = () => {
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-3">
           <div className="space-y-0.5">
-            <div className="text-2xl font-semibold">{pct}%</div>
+            <div className="text-2xl font-semibold">{pctRounded}%</div>
             <div className="text-sm text-muted-foreground">
               {order ? (
                 <>

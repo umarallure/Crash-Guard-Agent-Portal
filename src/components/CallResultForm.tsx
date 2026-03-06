@@ -21,6 +21,7 @@ import { AppFixTaskTypeSelector } from "@/components/AppFixTaskTypeSelector";
 import { useCenters } from "@/hooks/useCenters";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
+import { usePipelineStages } from "@/hooks/usePipelineStages";
 import type { Database } from "@/integrations/supabase/types";
 
 interface CallResultFormProps {
@@ -440,6 +441,28 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
   const { toast } = useToast();
   const { centers, leadVendors, loading: centersLoading } = useCenters();
   const { attorneys, loading: attorneysLoading } = useAttorneys();
+  const { stages: dbSubmissionStages } = usePipelineStages("submission_portal");
+
+  const qualifiedStageToKey = useMemo(() => {
+    const map = new Map<string, string>();
+    (dbSubmissionStages ?? []).forEach((s) => {
+      const label = (s?.label ?? "").trim();
+      if (label && s?.key) {
+        map.set(label, s.key);
+      }
+    });
+    return map;
+  }, [dbSubmissionStages]);
+
+  const stageKeyToLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    (dbSubmissionStages ?? []).forEach((s) => {
+      if (s?.key && s?.label) {
+        map.set(s.key, s.label);
+      }
+    });
+    return map;
+  }, [dbSubmissionStages]);
 
   const centerDid = useMemo(() => {
     const match = centers.find((c) => c.lead_vendor === leadVendor);
@@ -699,7 +722,13 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
           
           // Restore qualified stage and reason from saved status
           if (existingResult.application_submitted) {
-            const savedStatus = existingResult.status || '';
+            let savedStatus = existingResult.status || '';
+            // Convert key back to label if it's a submission portal key
+            const statusLabel = stageKeyToLabel.get(savedStatus);
+            if (statusLabel) {
+              savedStatus = statusLabel;
+            }
+            
             if (savedStatus.startsWith('Qualified Missing Information - ')) {
               setQualifiedStage('Qualified Missing Information');
               setQualifiedStageReason(savedStatus.replace('Qualified Missing Information - ', ''));
@@ -1161,12 +1190,15 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
     let finalSubmissionId = submissionId;
 
     try {
-      // Determine status based on application submission
       let finalStatus = status;
       if (applicationSubmitted === true) {
         finalStatus = qualifiedStage || "Submitted";
         if (qualifiedStage === "Qualified Missing Information" && qualifiedStageReason) {
           finalStatus = `${qualifiedStage} - ${qualifiedStageReason}`;
+        }
+        const stageKey = qualifiedStageToKey.get(finalStatus);
+        if (stageKey) {
+          finalStatus = stageKey;
         }
       }
 
@@ -1420,10 +1452,10 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
 
           if (!leadError && leadData) {
             const qualifiedStatusMap: Record<string, string> = {
-              "Qualified Missing Information": qualifiedStageReason ? `Qualified: Missing Information - ${qualifiedStageReason}` : "Qualified: Missing Information",
-              "Qualified Awaiting to be signed": "Qualified: Awaiting to be Signed",
-              "Qualified Approved": "Qualified Approved",
-              "Qualified/Payable": "Qualified/Payable"
+              "Qualified Missing Information": qualifiedStageReason ? `Qualified: Missing Information - ${qualifiedStageReason}` : "qualified_missing_info",
+              "Qualified Awaiting to be signed": "qualified_awaiting_signature",
+              "Qualified Approved": "qualified_approved",
+              "Qualified/Payable": "qualified_payable"
             };
 
             const slackStatus = applicationSubmitted === true

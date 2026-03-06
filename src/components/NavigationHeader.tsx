@@ -224,10 +224,6 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                     */}
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>Tools</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => navigate('/ghl-sync')}>
-                      <Zap className="mr-2 h-4 w-4" />
-                      GHL Sync Portal
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => navigate('/leads')}>
                       <User className="mr-2 h-4 w-4" />
                       Leads

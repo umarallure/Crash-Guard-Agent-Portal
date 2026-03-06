@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { format } from "date-fns";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -9,6 +9,8 @@ import type { Database } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
@@ -78,6 +80,9 @@ const LeadDetailsPage = () => {
   const [notesLoading, setNotesLoading] = useState(false);
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [legacyNotes, setLegacyNotes] = useState<LegacyNote[]>([]);
+  const [newNote, setNewNote] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
 
   useEffect(() => {
     const run = async () => {
@@ -139,6 +144,98 @@ const LeadDetailsPage = () => {
 
     run();
   }, [submissionId, toast]);
+
+  const handleSaveNote = async () => {
+    const trimmedNote = newNote.trim();
+    if (!trimmedNote || !lead) {
+      toast({
+        title: "Error",
+        description: "Please enter a note",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingNote(true);
+    try {
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+
+      const user = userData?.user;
+      const createdBy = user?.id || null;
+      const emailPrefix = user?.email ? user.email.split('@')[0] : null;
+
+      let displayName: string | null = null;
+      if (user?.id) {
+        try {
+          const { data: profileData } = await (supabase as any)
+            .from('profiles')
+            .select('display_name')
+            .eq('user_id', user.id)
+            .limit(1);
+
+          const raw = Array.isArray(profileData) ? profileData?.[0]?.display_name : profileData?.display_name;
+          displayName = typeof raw === 'string' ? raw.trim() : null;
+          if (displayName && displayName.length === 0) displayName = null;
+        } catch (e) {
+          console.warn('Failed to fetch profile display_name', e);
+        }
+      }
+
+      const authorName =
+        displayName || (user?.user_metadata as any)?.full_name || emailPrefix || user?.id || null;
+
+      const { error: insertErr } = await (supabase as any).from('lead_notes').insert({
+        lead_id: lead.id,
+        submission_id: lead.submission_id ?? null,
+        note: trimmedNote,
+        source: 'Lead Details',
+        created_by: createdBy,
+        author_name: authorName,
+      });
+
+      if (insertErr) throw insertErr;
+
+      try {
+        const { error: slackError } = await supabase.functions.invoke('disposition-change-slack-alert', {
+          body: {
+            leadId: lead.id,
+            submissionId: lead.submission_id ?? null,
+            leadVendor: lead.lead_vendor ?? '',
+            insuredName: lead.customer_full_name ?? null,
+            clientPhoneNumber: lead.phone_number ?? null,
+            previousDisposition: null,
+            newDisposition: null,
+            notes: trimmedNote,
+            noteOnly: true,
+          },
+        });
+        if (slackError) {
+          console.warn('Slack alert invoke failed:', slackError);
+        }
+      } catch (e) {
+        console.warn('Slack alert invoke threw:', e);
+      }
+
+      toast({
+        title: "Success",
+        description: "Note added successfully",
+      });
+
+      setNewNote("");
+      setNoteDialogOpen(false);
+      await fetchNotes(lead.submission_id ?? null, lead.id ?? null);
+    } catch (error) {
+      console.error("Error saving note:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save note",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   const fetchNotes = async (submission_id: string | null, lead_id: string | null) => {
     setNotesLoading(true);
@@ -213,7 +310,6 @@ const LeadDetailsPage = () => {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="personal">Personal</TabsTrigger>
               <TabsTrigger value="accident">Accident</TabsTrigger>
-              <TabsTrigger value="insurance">Insurance</TabsTrigger>
               <TabsTrigger value="notes">Notes</TabsTrigger>
             </TabsList>
           </div>
@@ -288,28 +384,58 @@ const LeadDetailsPage = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="insurance">
-            <Card>
-              <CardContent className="space-y-6 pt-6">
-                <FieldGrid
-                  items={[
-                    { label: "Insured", value: displayValue(lead.insured) },
-                    { label: "Insurance Company", value: displayValue(lead.insurance_company) },
-                    { label: "Vehicle Registration", value: displayValue(lead.vehicle_registration) },
-                    {
-                      label: "Third Party Vehicle Registration",
-                      value: displayValue(lead.third_party_vehicle_registration),
-                    },
-                    { label: "Other Party Admit Fault", value: displayValue(lead.other_party_admit_fault) },
-                  ]}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           <TabsContent value="notes">
             <Card>
               <CardContent className="pt-6">
+                <div className="mb-4">
+                  <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Note
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Add Note</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <Textarea
+                          placeholder="Enter your note..."
+                          value={newNote}
+                          onChange={(e) => setNewNote(e.target.value)}
+                          rows={6}
+                          disabled={savingNote}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setNoteDialogOpen(false);
+                              setNewNote("");
+                            }}
+                            disabled={savingNote}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleSaveNote}
+                            disabled={savingNote || !newNote.trim()}
+                          >
+                            {savingNote ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              "Save Note"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
                 {notesLoading ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />

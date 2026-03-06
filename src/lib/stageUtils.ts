@@ -86,6 +86,18 @@ export function deriveParentKey(
 ): string {
   const trimmed = (status || "").trim();
 
+  // First, check if the status is directly a parent stage key
+  if (parentStages.some((s) => s.key === trimmed)) {
+    return trimmed;
+  }
+
+  // Check if status is a stage key (sub-stage)
+  const matchedByKey = dbStages.find((s) => s.key === trimmed);
+  if (matchedByKey) {
+    const { parent } = parseStageLabel(matchedByKey.label);
+    return slugifyParent(parent);
+  }
+
   // Try exact match against DB stage labels
   const matched = dbStages.find((s) => s.label === trimmed);
   if (matched) {

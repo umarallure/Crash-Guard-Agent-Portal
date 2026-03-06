@@ -27,7 +27,6 @@ import TransferPortalPage from "./pages/TransferPortalPage";
 import SubmissionPortalPage from "./pages/SubmissionPortalPage";
 import RetainersKanbanPage from "./pages/RetainersKanbanPage";
 import BulkLookupPage from "./pages/BulkLookupPage";
-import GHLSyncPage from "./pages/GHLSyncPage/GHLSyncPage";
 import SalesMapPage from "./pages/SalesMapPage";
 import OrderFulfillmentPage from "./pages/OrderFulfillmentPage";
 import OrderFulfillmentAssignPage from "./pages/OrderFulfillmentAssignPage";
@@ -286,16 +285,6 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Deal Flow Lookup">
                     <DealFlowLookup />
-                  </AppShell>
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/ghl-sync" 
-              element={
-                <ProtectedRoute>
-                  <AppShell title="GHL Sync">
-                    <GHLSyncPage />
                   </AppShell>
                 </ProtectedRoute>
               } 
