@@ -54,20 +54,10 @@ type DealRecommendation = DealRow & {
   reasons: string[];
 };
 
-const allowedDealStatusKeywords = [
-  "returned back",
-  "returned to center",
-  "dropped retainers",
-  "dropped retainer",
-  "signed retainers",
-  "signed retainer",
-  "retainer signed",
-];
-
-function matchesAllowedStatus(status: unknown) {
+function isQualifiedStage(status: unknown) {
   const normalized = String(status ?? "").trim().toLowerCase();
   if (!normalized) return false;
-  return allowedDealStatusKeywords.some((kw) => normalized.includes(kw));
+  return normalized.startsWith("qualified_");
 }
 
 function normState(v: unknown) {
@@ -229,10 +219,12 @@ serve(async (req: Request) => {
 
   for (const d of rows) {
     if (d.assigned_attorney_id) continue;
-    if (!matchesAllowedStatus(d.status)) continue;
+    if (!isQualifiedStage(d.status)) continue;
 
     const reasons: string[] = [];
     let score = 0;
+
+    reasons.push("Qualified stage");
 
     const state = normState(d.state);
     if (targetSet.size && state) {

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -18,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useAttorneys } from "@/hooks/useAttorneys";
+import { usePipelineStages } from "@/hooks/usePipelineStages";
 
 type OrderStatus = "OPEN" | "FULFILLED" | "EXPIRED";
 
@@ -139,6 +141,7 @@ const OrderFulfillmentAssignPage = () => {
   const lawyerId = searchParams.get("lawyerId") || null;
 
   const { attorneys } = useAttorneys();
+  const { stages: submissionStages } = usePipelineStages("submission_portal");
   const attorneyLabelById = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of attorneys) {
@@ -147,6 +150,14 @@ const OrderFulfillmentAssignPage = () => {
     }
     return map;
   }, [attorneys]);
+
+  const submissionStageLabelByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    (submissionStages ?? []).forEach((s) => {
+      if (s?.key && s?.label) map.set(String(s.key), String(s.label));
+    });
+    return map;
+  }, [submissionStages]);
 
   const [order, setOrder] = useState<OrderRow | null>(null);
   const [leads, setLeads] = useState<DailyDealFlowRow[]>([]);
@@ -379,8 +390,7 @@ const OrderFulfillmentAssignPage = () => {
         <div className="space-y-1">
           <h2 className="text-xl font-semibold">Fulfill Order</h2>
           <div className="text-sm text-muted-foreground">
-            Order: <span className="font-mono">{orderId}</span>
-            {lawyerLabel ? <span> · Lawyer: {lawyerLabel}</span> : null}
+            {lawyerLabel ? <span> Lawyer: {lawyerLabel}</span> : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -402,8 +412,9 @@ const OrderFulfillmentAssignPage = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-muted-foreground">Order Progress</CardTitle>
         </CardHeader>
-        <CardContent className="flex items-center justify-between gap-3">
-          <div className="space-y-0.5">
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
             <div className="text-2xl font-semibold">{pctRounded}%</div>
             <div className="text-sm text-muted-foreground">
               {order ? (
@@ -414,8 +425,26 @@ const OrderFulfillmentAssignPage = () => {
                 "—"
               )}
             </div>
+            </div>
+            {order?.status ? (
+              <Badge variant={order.status === "OPEN" ? "secondary" : order.status === "FULFILLED" ? "default" : "outline"}>
+                {order.status}
+              </Badge>
+            ) : null}
           </div>
-          {order?.status ? <Badge variant={order.status === "OPEN" ? "secondary" : order.status === "FULFILLED" ? "default" : "outline"}>{order.status}</Badge> : null}
+
+          <Progress value={pct} />
+
+          {order ? (
+            <div className="text-sm text-muted-foreground">
+              {(order.target_states ?? []).length ? <span>States: {(order.target_states ?? []).join(", ")}</span> : <span>States: —</span>}
+              <span> · </span>
+              <span>
+                Type: {order.case_type}
+                {order.case_subtype ? ` (${order.case_subtype})` : ""}
+              </span>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -459,7 +488,13 @@ const OrderFulfillmentAssignPage = () => {
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">{r.state || "—"}</TableCell>
-                    <TableCell className="text-sm">{r.status || "—"}</TableCell>
+                    <TableCell className="text-sm">
+                      {(() => {
+                        const raw = (r.status || "").toString().trim();
+                        if (!raw) return "—";
+                        return submissionStageLabelByKey.get(raw) ?? raw;
+                      })()}
+                    </TableCell>
                     <TableCell className="text-sm">{assignedLabel}</TableCell>
                     <TableCell>
                       <Button
