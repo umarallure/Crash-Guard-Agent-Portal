@@ -7,6 +7,7 @@ export type AttorneyProfile = {
   full_name: string | null;
   primary_email: string | null;
   availability_status: string | null;
+  case_rate_per_deal: number | null;
 };
 
 export const useAttorneys = () => {
@@ -21,9 +22,24 @@ export const useAttorneys = () => {
       setLoading(true);
       setError(null);
 
-      const { data, error: queryError } = await (supabase as any)
+      const supabaseUntyped = supabase as unknown as {
+        from: (
+          table: string
+        ) => {
+          select: (
+            cols: string
+          ) => {
+            order: (
+              column: string,
+              opts: { ascending: boolean; nullsFirst?: boolean }
+            ) => Promise<{ data: unknown[] | null; error: { message?: string } | null }>;
+          };
+        };
+      };
+
+      const { data, error: queryError } = await supabaseUntyped
         .from("attorney_profiles")
-        .select("user_id,full_name,primary_email,availability_status")
+        .select("user_id,full_name,primary_email,availability_status,case_rate_per_deal")
         .order("full_name", { ascending: true, nullsFirst: false });
 
       if (cancelled) return;

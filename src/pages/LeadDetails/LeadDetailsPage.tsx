@@ -76,6 +76,8 @@ const LeadDetailsPage = () => {
   const { toast } = useToast();
 
   const [lead, setLead] = useState<LeadRow | null>(null);
+  const [dailyDealFlowId, setDailyDealFlowId] = useState<string | null>(null);
+  const [dailyDealFlowStatus, setDailyDealFlowStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notesLoading, setNotesLoading] = useState(false);
   const [notes, setNotes] = useState<LeadNote[]>([]);
@@ -128,7 +130,31 @@ const LeadDetailsPage = () => {
       setLead(data);
       setLoading(false);
 
-      fetchNotes(data.submission_id ?? null, data.id ?? null);
+      // lead_notes.lead_id is FK to daily_deal_flow.id in this project
+      try {
+        const { data: ddfRow, error: ddfErr } = await supabase
+          .from("daily_deal_flow")
+          .select("id,status")
+          .eq("submission_id", submissionId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!ddfErr) {
+          const typed = ddfRow as unknown as { id?: string; status?: string | null } | null;
+          const id = typed?.id ?? null;
+          setDailyDealFlowId(id);
+          setDailyDealFlowStatus(typed?.status ?? null);
+        } else {
+          setDailyDealFlowId(null);
+          setDailyDealFlowStatus(null);
+        }
+      } catch (e) {
+        setDailyDealFlowId(null);
+        setDailyDealFlowStatus(null);
+      }
+
+      fetchNotes(data.submission_id ?? null, null);
       setLegacyNotes(
         data.additional_notes
           ? [
@@ -156,6 +182,15 @@ const LeadDetailsPage = () => {
       return;
     }
 
+    if (!dailyDealFlowId) {
+      toast({
+        title: "Error",
+        description: "Unable to resolve Daily Deal Flow record for this submission.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSavingNote(true);
     try {
       const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -165,16 +200,36 @@ const LeadDetailsPage = () => {
       const createdBy = user?.id || null;
       const emailPrefix = user?.email ? user.email.split('@')[0] : null;
 
+      const supabaseUntyped = supabase as unknown as {
+        from: (
+          table: string
+        ) => {
+          select: (
+            cols: string
+          ) => {
+            eq: (col: string, value: unknown) => {
+              limit: (n: number) => Promise<{ data: unknown; error: unknown }>;
+            };
+          };
+          insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>;
+        };
+      };
+
       let displayName: string | null = null;
       if (user?.id) {
         try {
-          const { data: profileData } = await (supabase as any)
+          const { data: profileData } = await supabaseUntyped
             .from('profiles')
             .select('display_name')
             .eq('user_id', user.id)
             .limit(1);
 
-          const raw = Array.isArray(profileData) ? profileData?.[0]?.display_name : profileData?.display_name;
+          const typedProfile = profileData as
+            | Array<{ display_name?: unknown }>
+            | { display_name?: unknown }
+            | null
+            | undefined;
+          const raw = Array.isArray(typedProfile) ? typedProfile?.[0]?.display_name : typedProfile?.display_name;
           displayName = typeof raw === 'string' ? raw.trim() : null;
           if (displayName && displayName.length === 0) displayName = null;
         } catch (e) {
@@ -182,11 +237,14 @@ const LeadDetailsPage = () => {
         }
       }
 
-      const authorName =
-        displayName || (user?.user_metadata as any)?.full_name || emailPrefix || user?.id || null;
+      const meta = user?.user_metadata as unknown as { full_name?: unknown } | null;
+      const metaFullName = typeof meta?.full_name === 'string' ? meta.full_name : null;
 
-      const { error: insertErr } = await (supabase as any).from('lead_notes').insert({
-        lead_id: lead.id,
+      const authorName =
+        displayName || metaFullName || emailPrefix || user?.id || null;
+
+      const { error: insertErr } = await supabaseUntyped.from('lead_notes').insert({
+        lead_id: dailyDealFlowId,
         submission_id: lead.submission_id ?? null,
         note: trimmedNote,
         source: 'Lead Details',
@@ -197,15 +255,39 @@ const LeadDetailsPage = () => {
       if (insertErr) throw insertErr;
 
       try {
+        let dispositionLabel: string | null = null;
+        const statusRaw = (dailyDealFlowStatus ?? "").trim();
+        if (statusRaw) {
+          try {
+            const { data: stageRow, error: stageErr } = await supabase
+              .from("portal_stages")
+              .select("label")
+              .eq("is_active", true)
+              .or(`key.eq.${statusRaw},label.eq.${statusRaw}`)
+              .limit(1)
+              .maybeSingle();
+
+            if (!stageErr) {
+              const raw = (stageRow as unknown as { label?: unknown } | null)?.label;
+              const lbl = typeof raw === "string" ? raw.trim() : "";
+              dispositionLabel = lbl || null;
+            }
+          } catch {
+            dispositionLabel = null;
+          }
+        }
+
+        const dispositionToSend = dispositionLabel || (statusRaw || null);
+
         const { error: slackError } = await supabase.functions.invoke('disposition-change-slack-alert', {
           body: {
-            leadId: lead.id,
+            leadId: dailyDealFlowId,
             submissionId: lead.submission_id ?? null,
             leadVendor: lead.lead_vendor ?? '',
             insuredName: lead.customer_full_name ?? null,
             clientPhoneNumber: lead.phone_number ?? null,
-            previousDisposition: null,
-            newDisposition: null,
+            previousDisposition: dispositionToSend,
+            newDisposition: dispositionToSend,
             notes: trimmedNote,
             noteOnly: true,
           },
@@ -224,7 +306,7 @@ const LeadDetailsPage = () => {
 
       setNewNote("");
       setNoteDialogOpen(false);
-      await fetchNotes(lead.submission_id ?? null, lead.id ?? null);
+      await fetchNotes(lead.submission_id ?? null, null);
     } catch (error) {
       console.error("Error saving note:", error);
       toast({
@@ -240,18 +322,33 @@ const LeadDetailsPage = () => {
   const fetchNotes = async (submission_id: string | null, lead_id: string | null) => {
     setNotesLoading(true);
     try {
-      const query = (supabase as any)
+      const supabaseUntyped = supabase as unknown as {
+        from: (
+          table: string
+        ) => {
+          select: (
+            cols: string
+          ) => {
+            order: (
+              column: string,
+              opts: { ascending: boolean }
+            ) => {
+              eq: (col: string, value: unknown) => Promise<{ data: unknown[] | null; error: unknown }>;
+            };
+          };
+        };
+      };
+
+      const baseQuery = supabaseUntyped
         .from("lead_notes")
         .select("id, lead_id, submission_id, note, created_at, created_by, author_name, source")
         .order("created_at", { ascending: false });
 
-      if (submission_id) {
-        query.eq("submission_id", submission_id);
-      } else if (lead_id) {
-        query.eq("lead_id", lead_id);
-      }
-
-      const { data, error } = await query;
+      const { data, error } = submission_id
+        ? await baseQuery.eq("submission_id", submission_id)
+        : lead_id
+          ? await baseQuery.eq("lead_id", lead_id)
+          : await baseQuery.eq("id", "__never__");
 
       if (error) {
         console.error("Failed to fetch lead notes", error);

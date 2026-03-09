@@ -8,6 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
   Table,
   TableBody,
   TableCell,
@@ -86,6 +97,26 @@ type SupabaseFromUntyped = {
   };
 };
 
+type SupabaseFromWithEqUntyped = {
+  from: (
+    table: string
+  ) => {
+    select: (
+      cols: string
+    ) => {
+      eq: (
+        column: string,
+        value: string
+      ) => {
+        order: (
+          column: string,
+          opts: { ascending: boolean }
+        ) => Promise<{ data: unknown[] | null; error: unknown }>;
+      };
+    };
+  };
+};
+
 type SupabaseOrdersUntyped = {
   from: (
     table: string
@@ -109,6 +140,18 @@ type RecommendedDeal = DailyDealFlowRow & {
   lead_id?: string | null;
 };
 
+type AssignedLeadRow = {
+  fulfillment_id: string;
+  lead_id: string;
+  submission_id: string | null;
+  insured_name: string | null;
+  client_phone_number: string | null;
+  state: string | null;
+  status: string | null;
+  assigned_attorney_id: string | null;
+  assigned_at: string;
+};
+
 const clampPercent = (n: number) => Math.max(0, Math.min(100, n));
 
 const getOrderPercent = (order: OrderRow) => {
@@ -116,6 +159,14 @@ const getOrderPercent = (order: OrderRow) => {
   const filled = Number(order.quota_filled) || 0;
   if (total <= 0) return 0;
   return clampPercent((filled / total) * 100);
+};
+
+const formatCurrency = (amount: number) => {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+  } catch {
+    return String(amount);
+  }
 };
 
 const formatDate = (iso: string) => {
@@ -163,57 +214,20 @@ const OrderFulfillmentAssignPage = () => {
   const [leads, setLeads] = useState<DailyDealFlowRow[]>([]);
   const [leadIdBySubmissionId, setLeadIdBySubmissionId] = useState<Record<string, string>>({});
   const [recommendedDeals, setRecommendedDeals] = useState<RecommendedDeal[]>([]);
+  const [assignedLeads, setAssignedLeads] = useState<AssignedLeadRow[]>([]);
 
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const allowedDealStatusKeywords = [
-    "returned back",
-    "returned to center",
-    "dropped retainers",
-    "dropped retainer",
-    "signed retainers",
-    "signed retainer",
-    "retainer signed",
-  ];
+  const [activeTab, setActiveTab] = useState<"suggested" | "assigned">("suggested");
 
-  const ensureDealStatusIsAllowed = (status: string | null) => {
-    const normalized = String(status ?? "").trim().toLowerCase();
-    const ok = Boolean(normalized) && allowedDealStatusKeywords.some((kw) => normalized.includes(kw));
-    if (ok) return true;
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmRow, setConfirmRow] = useState<DailyDealFlowRow | null>(null);
+  const [confirmLeadId, setConfirmLeadId] = useState<string | null>(null);
 
-    toast({
-      title: "Cannot assign deal",
-      description:
-        "This deal must be in a Returned / Dropped Retainers / Signed Retainers state before it can be assigned.",
-      variant: "destructive",
-    });
-    return false;
-  };
-
-  const ensureDealExists = async (submissionId: string) => {
-    const sid = String(submissionId || "").trim();
-    if (!sid) return false;
-
-    const { count, error: dealError } = await supabase
-      .from("daily_deal_flow")
-      .select("id", { count: "exact", head: true })
-      .eq("submission_id", sid);
-
-    if (dealError || !count) {
-      toast({
-        title: "Cannot assign yet",
-        description:
-          "This submission is not in Daily Deal Flow. Create a deal (Daily Deal Flow entry) first, then assign it to an order.",
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    return true;
-  };
+  const [confirmRate, setConfirmRate] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     if (!orderId) return;
@@ -222,6 +236,9 @@ const OrderFulfillmentAssignPage = () => {
     setError(null);
     try {
       const supabaseUntyped = supabase as unknown as SupabaseOrdersUntyped;
+
+      const supabaseFromUntyped = supabase as unknown as SupabaseFromUntyped;
+      const supabaseFromWithEqUntyped = supabase as unknown as SupabaseFromWithEqUntyped;
 
       const { data: orderData, error: orderError } = await supabaseUntyped
         .from("orders")
@@ -237,6 +254,7 @@ const OrderFulfillmentAssignPage = () => {
       setOrder(nextOrder);
 
       setRecommendedDeals([]);
+      setAssignedLeads([]);
 
       const { data: fnData, error: fnError } = await supabase.functions.invoke(
         "recommend-deals-for-order",
@@ -278,12 +296,81 @@ const OrderFulfillmentAssignPage = () => {
         if (d.lead_id) leadMap[sid] = String(d.lead_id);
       }
       setLeadIdBySubmissionId(leadMap);
+
+      const { data: assignedRowsRaw, error: assignedErr } = await supabaseFromWithEqUntyped
+        .from("order_fulfillments")
+        .select(
+          "id,lead_id,agent_id,created_at,leads(id,submission_id,customer_full_name,phone_number,state)"
+        )
+        .eq("order_id", orderId)
+        .order("created_at", { ascending: false });
+
+      if (!assignedErr && Array.isArray(assignedRowsRaw)) {
+        const assignedRows = assignedRowsRaw as Array<Record<string, unknown>>;
+
+        const submissionIdsToFetch: string[] = [];
+        const baseAssigned: Omit<AssignedLeadRow, "status" | "assigned_attorney_id">[] = [];
+
+        for (const r of assignedRows) {
+          const fulfillmentId = String(r.id ?? "");
+          const leadId = String(r.lead_id ?? "");
+          const createdAt = String(r.created_at ?? "");
+          const lead = (r.leads ?? null) as Record<string, unknown> | null;
+
+          const submissionId = lead?.submission_id ? String(lead.submission_id) : null;
+          if (submissionId) submissionIdsToFetch.push(submissionId);
+
+          baseAssigned.push({
+            fulfillment_id: fulfillmentId,
+            lead_id: leadId,
+            submission_id: submissionId,
+            insured_name: lead?.customer_full_name ? String(lead.customer_full_name) : null,
+            client_phone_number: lead?.phone_number ? String(lead.phone_number) : null,
+            state: lead?.state ? String(lead.state) : null,
+            assigned_at: createdAt,
+          });
+        }
+
+        const statusBySubmissionId = new Map<string, { status: string | null; assigned_attorney_id: string | null }>();
+
+        const uniqueSubmissionIds = Array.from(new Set(submissionIdsToFetch)).filter(Boolean);
+        if (uniqueSubmissionIds.length) {
+          const { data: dealRowsRaw, error: dealRowsErr } = await supabase
+            .from("daily_deal_flow")
+            .select("submission_id,status,assigned_attorney_id,created_at")
+            .in("submission_id", uniqueSubmissionIds)
+            .order("created_at", { ascending: false });
+
+          if (!dealRowsErr && Array.isArray(dealRowsRaw)) {
+            for (const d of dealRowsRaw as unknown as Array<Record<string, unknown>>) {
+              const sid = d.submission_id ? String(d.submission_id) : "";
+              if (!sid || statusBySubmissionId.has(sid)) continue;
+              statusBySubmissionId.set(sid, {
+                status: d.status ? String(d.status) : null,
+                assigned_attorney_id: d.assigned_attorney_id ? String(d.assigned_attorney_id) : null,
+              });
+            }
+          }
+        }
+
+        const nextAssigned: AssignedLeadRow[] = baseAssigned.map((a) => {
+          const deal = a.submission_id ? statusBySubmissionId.get(a.submission_id) : undefined;
+          return {
+            ...a,
+            status: deal?.status ?? null,
+            assigned_attorney_id: deal?.assigned_attorney_id ?? null,
+          };
+        });
+
+        setAssignedLeads(nextAssigned);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOrder(null);
       setLeads([]);
       setLeadIdBySubmissionId({});
       setRecommendedDeals([]);
+      setAssignedLeads([]);
     } finally {
       setLoading(false);
     }
@@ -312,7 +399,36 @@ const OrderFulfillmentAssignPage = () => {
     });
   }, [recommendedDeals, query]);
 
-  const assign = async (row: DailyDealFlowRow) => {
+  const filteredAssignedLeads = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return assignedLeads.filter((r) => {
+      if (!q) return true;
+      const haystack = [
+        r.submission_id ?? "",
+        r.insured_name ?? "",
+        r.client_phone_number ?? "",
+        r.state ?? "",
+        r.status ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [assignedLeads, query]);
+
+  const attorneyRateById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of attorneys) {
+      const n = a.case_rate_per_deal;
+      if (typeof n === "number" && Number.isFinite(n)) {
+        map.set(a.user_id, n);
+      }
+    }
+    return map;
+  }, [attorneys]);
+
+  const performAssign = async (row: DailyDealFlowRow, leadId: string) => {
     if (!user?.id) {
       toast({
         title: "Not signed in",
@@ -324,27 +440,24 @@ const OrderFulfillmentAssignPage = () => {
 
     if (!order) return;
 
-    const statusAllowed = ensureDealStatusIsAllowed(row.status);
-    if (!statusAllowed) return;
-
     const submissionId = row.submission_id ? String(row.submission_id) : "";
 
-    const hasDeal = await ensureDealExists(submissionId);
-    if (!hasDeal) return;
-
-    const leadId = submissionId ? leadIdBySubmissionId[submissionId] : undefined;
-
-    if (!leadId) {
-      toast({
-        title: "Lead ID not found",
-        description: "Unable to resolve lead id for this submission.",
-        variant: "destructive",
-      });
-      return;
-    }
+    const rateToPersist = confirmRate;
 
     setAssigningId(row.id);
     try {
+      if (submissionId && typeof rateToPersist === "number" && Number.isFinite(rateToPersist)) {
+        const { error: rateErr } = await supabase
+          .from("daily_deal_flow")
+          .update({ applied_case_rate_per_deal: rateToPersist } as unknown as Record<string, unknown>)
+          .eq("submission_id", submissionId);
+
+        // Best-effort: do not block assignment if column doesn't exist / RLS denies.
+        if (rateErr) {
+          console.warn("Failed to persist applied_case_rate_per_deal:", rateErr);
+        }
+      }
+
       const supabaseRpc = supabase as unknown as SupabaseRpcUntyped;
       const { error: rpcError } = await supabaseRpc.rpc("assign_lead_to_order", {
         p_order_id: order.id,
@@ -376,6 +489,45 @@ const OrderFulfillmentAssignPage = () => {
       });
     } finally {
       setAssigningId(null);
+    }
+  };
+
+  const openAssignConfirm = async (row: DailyDealFlowRow) => {
+    const submissionId = row.submission_id ? String(row.submission_id) : "";
+    const leadId = submissionId ? leadIdBySubmissionId[submissionId] : undefined;
+
+    if (!leadId) {
+      toast({
+        title: "Lead ID not found",
+        description: "Unable to resolve lead id for this submission.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setConfirmRow(row);
+    setConfirmLeadId(leadId);
+
+    // Primary: attorney profile rate. Fallback: deal-level persisted rate.
+    const primaryRate = order?.lawyer_id ? attorneyRateById.get(order.lawyer_id) ?? null : null;
+    setConfirmRate(primaryRate);
+    setConfirmOpen(true);
+
+    if (primaryRate === null && submissionId) {
+      const { data, error: e } = await supabase
+        .from("daily_deal_flow")
+        .select("applied_case_rate_per_deal")
+        .eq("submission_id", submissionId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!e) {
+        const raw = (data as unknown as { applied_case_rate_per_deal?: number | null } | null)
+          ?.applied_case_rate_per_deal;
+        const n = typeof raw === "number" ? raw : raw ? Number(raw) : NaN;
+        if (Number.isFinite(n)) setConfirmRate(n);
+      }
     }
   };
 
@@ -448,6 +600,45 @@ const OrderFulfillmentAssignPage = () => {
         </CardContent>
       </Card>
 
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm assignment</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const n = confirmRate;
+                const amountLabel = typeof n === "number" && Number.isFinite(n) ? formatCurrency(n) : "—";
+                const attorneyLabel = assignedLawyerLabel || "this attorney";
+                return (
+                  <div className="space-y-1">
+                    <div>
+                      <span className="font-medium">Amount per case:</span> {amountLabel}
+                    </div>
+                    <div>
+                      This will be the amount assigned for this case fulfillment for {attorneyLabel}.
+                    </div>
+                  </div>
+                );
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={assigningId !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={assigningId !== null || !confirmRow || !confirmLeadId}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!confirmRow || !confirmLeadId) return;
+                void performAssign(confirmRow, confirmLeadId);
+                setConfirmOpen(false);
+              }}
+            >
+              Assign
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Card>
         <CardContent className="p-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -458,68 +649,131 @@ const OrderFulfillmentAssignPage = () => {
                 placeholder="Search by submission id, name, phone, state..."
               />
             </div>
-            <Badge variant="secondary">{filteredLeads.length} leads</Badge>
+            <Badge variant="secondary">
+              {activeTab === "assigned" ? filteredAssignedLeads.length : filteredLeads.length} leads
+            </Badge>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Client</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Assigned</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredLeads.map((r) => {
-                const submissionId = r.submission_id ? String(r.submission_id) : "";
-                const leadId = submissionId ? leadIdBySubmissionId[submissionId] : undefined;
-                const assignedLabel = r.assigned_attorney_id
-                  ? attorneyLabelById.get(r.assigned_attorney_id) || r.assigned_attorney_id
-                  : "Unassigned";
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "suggested" | "assigned")}>
+            <TabsList>
+              <TabsTrigger value="suggested">Suggested ({recommendedDeals.length})</TabsTrigger>
+              <TabsTrigger value="assigned">Assigned ({assignedLeads.length})</TabsTrigger>
+            </TabsList>
 
-                return (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      <div className="space-y-0.5">
-                        <div className="font-medium">{r.insured_name || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{r.client_phone_number || "—"}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">{r.state || "—"}</TableCell>
-                    <TableCell className="text-sm">
-                      {(() => {
-                        const raw = (r.status || "").toString().trim();
-                        if (!raw) return "—";
-                        return submissionStageLabelByKey.get(raw) ?? raw;
-                      })()}
-                    </TableCell>
-                    <TableCell className="text-sm">{assignedLabel}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void assign(r)}
-                        disabled={loading || assigningId === r.id || !leadId || !order}
-                      >
-                        {assigningId === r.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Assign
-                      </Button>
-                    </TableCell>
+            <TabsContent value="suggested">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Client</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Assigned</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                );
-              })}
+                </TableHeader>
+                <TableBody>
+                  {filteredLeads.map((r) => {
+                    const submissionId = r.submission_id ? String(r.submission_id) : "";
+                    const leadId = submissionId ? leadIdBySubmissionId[submissionId] : undefined;
+                    const assignedLabel = r.assigned_attorney_id
+                      ? attorneyLabelById.get(r.assigned_attorney_id) || r.assigned_attorney_id
+                      : "Unassigned";
 
-              {!loading && filteredLeads.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                    No leads found
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <div className="font-medium">{r.insured_name || "—"}</div>
+                            <div className="text-xs text-muted-foreground">{r.client_phone_number || "—"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{r.state || "—"}</TableCell>
+                        <TableCell className="text-sm">
+                          {(() => {
+                            const raw = (r.status || "").toString().trim();
+                            if (!raw) return "—";
+                            return submissionStageLabelByKey.get(raw) ?? raw;
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-sm">{assignedLabel}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void openAssignConfirm(r)}
+                            disabled={loading || assigningId === r.id || !leadId || !order}
+                          >
+                            {assigningId === r.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Assign
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+
+                  {!loading && filteredLeads.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                        No leads found
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </TabsContent>
+
+            <TabsContent value="assigned">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Client</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Assigned</TableHead>
+                    <TableHead>Assigned At</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredAssignedLeads.map((r) => {
+                    const assignedLabel = r.assigned_attorney_id
+                      ? attorneyLabelById.get(r.assigned_attorney_id) || r.assigned_attorney_id
+                      : assignedLawyerLabel || (order?.lawyer_id ? attorneyLabelById.get(order.lawyer_id) || order.lawyer_id : "Assigned");
+
+                    return (
+                      <TableRow key={r.fulfillment_id}>
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <div className="font-medium">{r.insured_name || "—"}</div>
+                            <div className="text-xs text-muted-foreground">{r.client_phone_number || "—"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{r.state || "—"}</TableCell>
+                        <TableCell className="text-sm">
+                          {(() => {
+                            const raw = (r.status || "").toString().trim();
+                            if (!raw) return "—";
+                            return submissionStageLabelByKey.get(raw) ?? raw;
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-sm">{assignedLabel}</TableCell>
+                        <TableCell className="text-sm">
+                          {r.assigned_at ? formatDate(r.assigned_at) : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+
+                  {!loading && filteredAssignedLeads.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                        No assigned leads
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

@@ -288,6 +288,30 @@ const DailyDealFlowLeadDetailsPage = () => {
       if (insertErr) throw insertErr;
 
       try {
+        let dispositionLabel: string | null = null;
+        const statusRaw = (record.status ?? "").trim();
+        if (statusRaw) {
+          try {
+            const { data: stageRow, error: stageErr } = await supabase
+              .from("portal_stages")
+              .select("label")
+              .eq("is_active", true)
+              .or(`key.eq.${statusRaw},label.eq.${statusRaw}`)
+              .limit(1)
+              .maybeSingle();
+
+            if (!stageErr) {
+              const raw = (stageRow as unknown as { label?: unknown } | null)?.label;
+              const lbl = typeof raw === "string" ? raw.trim() : "";
+              dispositionLabel = lbl || null;
+            }
+          } catch {
+            dispositionLabel = null;
+          }
+        }
+
+        const dispositionToSend = dispositionLabel || (statusRaw || null);
+
         const { error: slackError } = await supabase.functions.invoke('disposition-change-slack-alert', {
           body: {
             leadId: record.id,
@@ -295,8 +319,8 @@ const DailyDealFlowLeadDetailsPage = () => {
             leadVendor: record.lead_vendor ?? '',
             insuredName: record.insured_name ?? null,
             clientPhoneNumber: record.client_phone_number ?? null,
-            previousDisposition: record.status ?? null,
-            newDisposition: record.status ?? null,
+            previousDisposition: dispositionToSend,
+            newDisposition: dispositionToSend,
             notes: trimmedNote,
             noteOnly: true,
           },

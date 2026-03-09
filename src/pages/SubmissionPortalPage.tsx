@@ -85,6 +85,24 @@ const SubmissionPortalPage = () => {
   const { stages: dbSubmissionStages, loading: stagesLoading } = usePipelineStages("submission_portal");
   const { stages: dbTransferStages } = usePipelineStages("transfer_portal");
 
+  const stageLabelByKey = useMemo(() => {
+    const map: Record<string, string> = {};
+    (dbSubmissionStages ?? []).forEach((s) => {
+      const k = (s?.key ?? "").trim();
+      const lbl = (s?.label ?? "").trim();
+      if (k && lbl) map[k] = lbl;
+    });
+    return map;
+  }, [dbSubmissionStages]);
+
+  const toDispositionLabel = useMemo(() => {
+    return (value: string | null | undefined) => {
+      const v = (value ?? "").trim();
+      if (!v) return null;
+      return stageLabelByKey[v] ?? v;
+    };
+  }, [stageLabelByKey]);
+
   // --- Derive parent stages (kanban columns) from flat DB stages ---
   const parentStages = useMemo(() => deriveParentStages(dbSubmissionStages), [dbSubmissionStages]);
 
@@ -922,6 +940,8 @@ const SubmissionPortalPage = () => {
       }
       if (stageChanged || trimmedNote.length > 0) {
         try {
+          const previousDispositionLabel = toDispositionLabel(editRow.status ?? null);
+          const newDispositionLabel = toDispositionLabel(nextStage);
           const { error: slackError } = await supabase.functions.invoke('disposition-change-slack-alert', {
             body: {
               leadId: editRow.id,
@@ -929,8 +949,8 @@ const SubmissionPortalPage = () => {
               leadVendor: editRow.lead_vendor ?? '',
               insuredName: editRow.insured_name ?? null,
               clientPhoneNumber: editRow.client_phone_number ?? null,
-              previousDisposition: editRow.status ?? null,
-              newDisposition: nextStage,
+              previousDisposition: previousDispositionLabel,
+              newDisposition: newDispositionLabel,
               notes: notesText,
               noteOnly: !stageChanged,
             },

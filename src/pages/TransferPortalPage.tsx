@@ -61,6 +61,29 @@ const TransferPortalPage = () => {
   const { stages: dbTransferStages, loading: transferStagesLoading } = usePipelineStages("transfer_portal");
   const { stages: dbSubmissionStages, loading: submissionStagesLoading } = usePipelineStages("submission_portal");
 
+  const stageLabelByKey = useMemo(() => {
+    const map: Record<string, string> = {};
+    (dbTransferStages ?? []).forEach((s) => {
+      const k = (s?.key ?? "").trim();
+      const lbl = (s?.label ?? "").trim();
+      if (k && lbl) map[k] = lbl;
+    });
+    (dbSubmissionStages ?? []).forEach((s) => {
+      const k = (s?.key ?? "").trim();
+      const lbl = (s?.label ?? "").trim();
+      if (k && lbl) map[k] = lbl;
+    });
+    return map;
+  }, [dbTransferStages, dbSubmissionStages]);
+
+  const toDispositionLabel = useMemo(() => {
+    return (value: string | null | undefined) => {
+      const v = (value ?? "").trim();
+      if (!v) return null;
+      return stageLabelByKey[v] ?? v;
+    };
+  }, [stageLabelByKey]);
+
   const kanbanStages = useMemo(() => {
     return dbTransferStages.map((s) => ({ key: s.key, label: s.label }));
   }, [dbTransferStages]);
@@ -421,6 +444,8 @@ const TransferPortalPage = () => {
 
       if (stageChanged || trimmedNote.length > 0) {
         try {
+          const previousDispositionLabel = toDispositionLabel(editRow.status ?? null);
+          const newDispositionLabel = toDispositionLabel(nextStage);
           const { error: slackError } = await supabase.functions.invoke('disposition-change-slack-alert', {
             body: {
               leadId: editRow.id,
@@ -428,8 +453,8 @@ const TransferPortalPage = () => {
               leadVendor: editRow.lead_vendor ?? '',
               insuredName: editRow.insured_name ?? null,
               clientPhoneNumber: editRow.client_phone_number ?? null,
-              previousDisposition: editRow.status ?? null,
-              newDisposition: nextStage,
+              previousDisposition: previousDispositionLabel,
+              newDisposition: newDispositionLabel,
               notes: notesText,
               noteOnly: !stageChanged,
             },
