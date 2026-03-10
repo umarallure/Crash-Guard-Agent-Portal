@@ -8,6 +8,9 @@ export type AttorneyProfile = {
   primary_email: string | null;
   availability_status: string | null;
   case_rate_per_deal: number | null;
+  direct_phone?: string | null;
+  licensed_states?: string[] | null;
+  criteria?: string | null;
 };
 
 export const useAttorneys = () => {
@@ -37,10 +40,30 @@ export const useAttorneys = () => {
         };
       };
 
-      const { data, error: queryError } = await supabaseUntyped
+      const extendedSelect =
+        "user_id,full_name,primary_email,availability_status,case_rate_per_deal,direct_phone,licensed_states,criteria";
+      const baseSelect = "user_id,full_name,primary_email,availability_status,case_rate_per_deal";
+
+      let data: unknown[] | null = null;
+      let queryError: { message?: string } | null = null;
+
+      const extended = await supabaseUntyped
         .from("attorney_profiles")
-        .select("user_id,full_name,primary_email,availability_status,case_rate_per_deal")
+        .select(extendedSelect)
         .order("full_name", { ascending: true, nullsFirst: false });
+
+      data = extended.data;
+      queryError = extended.error;
+
+      if (queryError) {
+        const fallback = await supabaseUntyped
+          .from("attorney_profiles")
+          .select(baseSelect)
+          .order("full_name", { ascending: true, nullsFirst: false });
+
+        data = fallback.data;
+        queryError = fallback.error;
+      }
 
       if (cancelled) return;
 

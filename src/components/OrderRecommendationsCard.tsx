@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, Info } from "lucide-react";
+import { Loader2, RefreshCw, Info, InfoIcon } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -91,6 +92,36 @@ export const OrderRecommendationsCard = (props: {
       const label = (a.full_name || "").trim() || (a.primary_email || "").trim() || a.user_id;
       map.set(a.user_id, label);
     }
+    return map;
+  }, [attorneys]);
+
+  const attorneyMetaById = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        contactNumber: string | null;
+        licensedStates: string[];
+        criteria: string | null;
+      }
+    >();
+
+    for (const a of attorneys) {
+      const rawNumber = (a as unknown as { direct_phone?: unknown })?.direct_phone;
+      const contactNumber = typeof rawNumber === "string" ? rawNumber.trim() || null : null;
+
+      const rawStates = (a as unknown as { licensed_states?: unknown })?.licensed_states;
+      const licensedStates = Array.isArray(rawStates)
+        ? rawStates
+            .map((s: unknown) => String(s ?? "").trim().toUpperCase())
+            .filter(Boolean)
+        : [];
+
+      const rawCriteria = (a as unknown as { criteria?: unknown })?.criteria;
+      const criteria = typeof rawCriteria === "string" ? rawCriteria.trim() || null : null;
+
+      map.set(a.user_id, { contactNumber, licensedStates, criteria });
+    }
+
     return map;
   }, [attorneys]);
 
@@ -359,17 +390,70 @@ export const OrderRecommendationsCard = (props: {
 
             {data.map((rec) => {
               const attorneyLabel = attorneyById.get(rec.lawyer_id) || rec.lawyer_id;
+              const attorneyMeta = attorneyMetaById.get(rec.lawyer_id);
+              const contactNumber = attorneyMeta?.contactNumber ?? null;
+              const licensedStates = attorneyMeta?.licensedStates ?? [];
+              const criteria = attorneyMeta?.criteria ?? null;
               const remaining = Number(rec.remaining) || Math.max(0, Number(rec.quota_total) - Number(rec.quota_filled));
               const isAssigned = props.currentAssignedAttorneyId && props.currentAssignedAttorneyId === rec.lawyer_id;
-              return (
-                <div key={rec.order_id} className="rounded-lg border p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="truncate font-medium">{attorneyLabel}</div>
-                        {isAssigned ? <Badge>Currently Assigned</Badge> : null}
+              const showAttorneyMeta = Boolean(contactNumber) || licensedStates.length > 0;
+            return (
+              <div key={rec.order_id} className="rounded-lg border bg-background p-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <div className="truncate text-sm font-semibold">{attorneyLabel}</div>
+                      {isAssigned ? <Badge>Currently Assigned</Badge> : null}
+                    </div>
+
+                    {showAttorneyMeta ? (
+                      <div className="rounded-md bg-muted/30 px-2 py-1 text-xs">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+                          <span className="text-[11px] font-medium uppercase tracking-wide">Attorney</span>
+                          {contactNumber ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="font-medium text-foreground">DID:</span>
+                              <span className="font-mono text-foreground">{contactNumber}</span>
+                            </span>
+                          ) : null}
+                          {licensedStates.length ? (
+                            <span className="inline-flex min-w-0 items-center gap-1">
+                              <span className="font-medium text-foreground">Licensed States:</span>
+                              <span className="truncate text-foreground">
+                                {licensedStates.slice(0, 10).join(", ")}
+                                {licensedStates.length > 10 ? "…" : ""}
+                              </span>
+                            </span>
+                          ) : null}
+                          {criteria ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="font-medium text-foreground">Criteria:</span>
+                              <span className="truncate text-foreground max-w-[200px]">
+                                {criteria.slice(0, 50)}{criteria.length > 50 ? "..." : ""}
+                              </span>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button className="inline-flex items-center justify-center rounded-sm hover:bg-muted/50 p-0.5 transition-colors">
+                                    <InfoIcon className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80 text-xs">
+                                  <div className="space-y-2">
+                                    <div className="font-semibold text-foreground">Attorney Criteria</div>
+                                    <div className="text-muted-foreground whitespace-pre-wrap">{criteria}</div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    ) : null}
+
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Recommendation
+                        </span>
                         <Badge variant="secondary">Score {Math.round(rec.score)}</Badge>
                         <Badge variant="outline">{formatExpiry(rec.expires_at)}</Badge>
                         <Badge variant="outline">
@@ -377,16 +461,24 @@ export const OrderRecommendationsCard = (props: {
                         </Badge>
                         <Badge variant="outline">{remaining} remaining</Badge>
                       </div>
+
+                      {Array.isArray(rec.reasons) && rec.reasons.length ? (
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          {rec.reasons.slice(0, 3).map((r, idx) => (
+                            <div key={`${rec.order_id}-reason-${idx}`} className="truncate">
+                              {r}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant="outline" className="font-mono">
-                        {rec.order_id.slice(0, 8)}
-                      </Badge>
+                    <div className="flex shrink-0 items-start justify-end gap-2 sm:flex-col sm:items-end">
                       <Button
                         size="sm"
                         onClick={() => void assign(rec)}
                         disabled={assigningOrderId === rec.order_id}
+                        className="w-full sm:w-auto"
                       >
                         {assigningOrderId === rec.order_id ? (
                           <>
@@ -399,16 +491,6 @@ export const OrderRecommendationsCard = (props: {
                       </Button>
                     </div>
                   </div>
-
-                  {Array.isArray(rec.reasons) && rec.reasons.length ? (
-                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                      {rec.reasons.slice(0, 6).map((r, idx) => (
-                        <div key={`${rec.order_id}-reason-${idx}`} className="truncate">
-                          {r}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
               );
             })}
