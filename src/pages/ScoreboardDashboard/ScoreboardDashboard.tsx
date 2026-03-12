@@ -17,20 +17,21 @@ interface DashboardMetrics {
   pendingApproval: number;
   approved: number;
   qualified: number;
+  missingInfo: number;
   notQualified: number;
   returnedToCenter: number;
   
   // Performance rates
   transferRate: number;
-  approvalRate: number;
+  qualifyingRate: number;
   billableRate: number;
   returnBackRate: number;
   
   // Counts for rates
   transferCount: number;
   transferTotal: number;
-  approvalCount: number;
-  approvalTotal: number;
+  qualifyingCount: number;
+  qualifyingTotal: number;
   billableCount: number;
   billableTotal: number;
   returnBackCount: number;
@@ -41,10 +42,11 @@ interface DashboardMetrics {
   pendingApprovalChange: number;
   approvedChange: number;
   qualifiedChange: number;
+  missingInfoChange: number;
   notQualifiedChange: number;
   returnedToCenterChange: number;
   transferRateChange: number;
-  approvalRateChange: number;
+  qualifyingRateChange: number;
   billableRateChange: number;
   returnBackRateChange: number;
 }
@@ -70,16 +72,17 @@ const ScoreboardDashboard = () => {
     pendingApproval: 0,
     approved: 0,
     qualified: 0,
+    missingInfo: 0,
     notQualified: 0,
     returnedToCenter: 0,
     transferRate: 0,
-    approvalRate: 0,
+    qualifyingRate: 0,
     billableRate: 0,
     returnBackRate: 0,
     transferCount: 0,
     transferTotal: 0,
-    approvalCount: 0,
-    approvalTotal: 0,
+    qualifyingCount: 0,
+    qualifyingTotal: 0,
     billableCount: 0,
     billableTotal: 0,
     returnBackCount: 0,
@@ -88,10 +91,11 @@ const ScoreboardDashboard = () => {
     pendingApprovalChange: 0,
     approvedChange: 0,
     qualifiedChange: 0,
+    missingInfoChange: 0,
     notQualifiedChange: 0,
     returnedToCenterChange: 0,
     transferRateChange: 0,
-    approvalRateChange: 0,
+    qualifyingRateChange: 0,
     billableRateChange: 0,
     returnBackRateChange: 0,
   });
@@ -284,6 +288,15 @@ const ScoreboardDashboard = () => {
         d.call_result?.toLowerCase() === 'qualified' ||
         d.status?.toLowerCase().includes('qualified')
       ).length || 0;
+
+      const missingInfo = data?.filter(d => {
+        const status = (d.status || '').toLowerCase();
+        return (
+          status === 'qualified_missing_info' ||
+          status.includes('qualified: missing information') ||
+          status.includes('missing information')
+        );
+      }).length || 0;
       
       const notQualified = data?.filter(d => 
         d.call_result?.toLowerCase() === 'not qualified' ||
@@ -304,10 +317,10 @@ const ScoreboardDashboard = () => {
       const transferTotal = totalTransfers;
       const transferRate = transferTotal > 0 ? (transferCount / transferTotal) * 100 : 0;
 
-      // Approval Rate: (Pending Approval + Approved) / Total Transfers
-      const approvalCount = pendingApproval + approved;
-      const approvalTotal = totalTransfers;
-      const approvalRate = approvalTotal > 0 ? (approvalCount / approvalTotal) * 100 : 0;
+      // Qualifying Rate: call_result is qualified / Total Transfers
+      const qualifyingCount = data?.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length || 0;
+      const qualifyingTotal = totalTransfers;
+      const qualifyingRate = qualifyingTotal > 0 ? (qualifyingCount / qualifyingTotal) * 100 : 0;
 
       // Billable Rate: Status is qualified_payable OR label is Qualified/Payable
       const billableCount = data?.filter(d => {
@@ -337,6 +350,15 @@ const ScoreboardDashboard = () => {
         d.call_result?.toLowerCase() === 'qualified' ||
         d.status?.toLowerCase().includes('qualified')
       ).length || 0;
+
+      const prevMissingInfo = prevData?.filter(d => {
+        const status = (d.status || '').toLowerCase();
+        return (
+          status === 'qualified_missing_info' ||
+          status.includes('qualified: missing information') ||
+          status.includes('missing information')
+        );
+      }).length || 0;
       
       const prevNotQualified = prevData?.filter(d => 
         d.call_result?.toLowerCase() === 'not qualified' ||
@@ -354,8 +376,8 @@ const ScoreboardDashboard = () => {
       ).length || 0;
       const prevTransferRate = prevTotalTransfers > 0 ? (prevTransferCount / prevTotalTransfers) * 100 : 0;
 
-      const prevApprovalCount = prevPendingApproval + prevApproved;
-      const prevApprovalRate = prevTotalTransfers > 0 ? (prevApprovalCount / prevTotalTransfers) * 100 : 0;
+      const prevQualifyingCount = prevData?.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length || 0;
+      const prevQualifyingRate = prevTotalTransfers > 0 ? (prevQualifyingCount / prevTotalTransfers) * 100 : 0;
 
       const prevBillableCount = prevData?.filter(d => {
         const status = (d.status || '').toLowerCase();
@@ -376,16 +398,17 @@ const ScoreboardDashboard = () => {
         pendingApproval,
         approved,
         qualified,
+        missingInfo,
         notQualified,
         returnedToCenter,
         transferRate,
-        approvalRate,
+        qualifyingRate,
         billableRate,
         returnBackRate,
         transferCount,
         transferTotal,
-        approvalCount,
-        approvalTotal,
+        qualifyingCount,
+        qualifyingTotal,
         billableCount,
         billableTotal,
         returnBackCount,
@@ -394,10 +417,11 @@ const ScoreboardDashboard = () => {
         pendingApprovalChange: calculateChange(pendingApproval, prevPendingApproval),
         approvedChange: calculateChange(approved, prevApproved),
         qualifiedChange: calculateChange(qualified, prevQualified),
+        missingInfoChange: calculateChange(missingInfo, prevMissingInfo),
         notQualifiedChange: calculateChange(notQualified, prevNotQualified),
         returnedToCenterChange: calculateChange(returnedToCenter, prevReturnedToCenter),
         transferRateChange: calculateChange(transferRate, prevTransferRate),
-        approvalRateChange: calculateChange(approvalRate, prevApprovalRate),
+        qualifyingRateChange: calculateChange(qualifyingRate, prevQualifyingRate),
         billableRateChange: calculateChange(billableRate, prevBillableRate),
         returnBackRateChange: calculateChange(returnBackRate, prevReturnBackRate),
       });
@@ -513,7 +537,7 @@ const ScoreboardDashboard = () => {
           {/* Key Metrics */}
           <div>
             <h2 className="text-xl font-semibold mb-4">Key Metrics</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {/* Total Transfers */}
               <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800 hover:shadow-lg transition-shadow">
                 <CardContent className="p-6">
@@ -531,51 +555,6 @@ const ScoreboardDashboard = () => {
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.totalTransfersChange > 0 ? '+' : ''}{metrics.totalTransfersChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Pending Approval */}
-              <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-950 dark:to-yellow-900 border-yellow-200 dark:border-yellow-800 hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-12 w-12 rounded-full bg-yellow-500 flex items-center justify-center">
-                      <AlertCircle className="h-6 w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-yellow-700 dark:text-yellow-300 uppercase tracking-wide">Pending Approval</p>
-                    <p className="text-4xl font-bold text-yellow-900 dark:text-yellow-100 mt-2">{metrics.pendingApproval}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.pendingApprovalChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.pendingApprovalChange < 0 ? 'text-red-600 dark:text-red-400' : 
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.pendingApprovalChange > 0 ? '+' : ''}{metrics.pendingApprovalChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-
-              {/* Approved */}
-              <Card className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 border-green-200 dark:border-green-800 hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-12 w-12 rounded-full bg-green-500 flex items-center justify-center">
-                      <CheckCircle className="h-6 w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">Approved</p>
-                    <p className="text-4xl font-bold text-green-900 dark:text-green-100 mt-2">{metrics.approved}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.approvedChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.approvedChange < 0 ? 'text-red-600 dark:text-red-400' : 
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.approvedChange > 0 ? '+' : ''}{metrics.approvedChange.toFixed(1)}%
                     </p>
                   </div>
                 </CardContent>
@@ -620,6 +599,28 @@ const ScoreboardDashboard = () => {
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.notQualifiedChange > 0 ? '+' : ''}{metrics.notQualifiedChange.toFixed(1)}%
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Missing Info */}
+              <Card className="bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900 border-sky-200 dark:border-sky-800 hover:shadow-lg transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-center mb-3">
+                    <div className="h-12 w-12 rounded-full bg-sky-500 flex items-center justify-center">
+                      <FileText className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-sky-700 dark:text-sky-300 uppercase tracking-wide">Missing Info</p>
+                    <p className="text-4xl font-bold text-sky-900 dark:text-sky-100 mt-2">{metrics.missingInfo}</p>
+                    <p className={`text-xs mt-1 font-medium ${
+                      metrics.missingInfoChange < 0 ? 'text-green-600 dark:text-green-400' : 
+                      metrics.missingInfoChange > 0 ? 'text-red-600 dark:text-red-400' : 
+                      'text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {metrics.missingInfoChange > 0 ? '+' : ''}{metrics.missingInfoChange.toFixed(1)}%
                     </p>
                   </div>
                 </CardContent>
@@ -682,29 +683,29 @@ const ScoreboardDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Approval Rate */}
+              {/* Qualifying Rate */}
               <Card className="border hover:shadow-lg transition-shadow">
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <div className="h-9 w-9 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center">
+                        <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                       </div>
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Approval Rate</span>
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Qualifying Rate</span>
                     </div>
-                    {getPerformanceIcon(metrics.approvalRate, 50)}
+                    {getPerformanceIcon(metrics.qualifyingRate, 40)}
                   </div>
                   <div className="space-y-2">
-                    <p className={`text-4xl font-bold ${getPerformanceColor(metrics.approvalRate, 50)}`}>
-                      {metrics.approvalRate.toFixed(1)}%
+                    <p className={`text-4xl font-bold ${getPerformanceColor(metrics.qualifyingRate, 40)}`}>
+                      {metrics.qualifyingRate.toFixed(1)}%
                     </p>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{metrics.approvalCount} of {metrics.approvalTotal}</span>
+                      <span>{metrics.qualifyingCount} of {metrics.qualifyingTotal}</span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
                       <div 
-                        className="bg-gradient-to-r from-green-500 to-green-600 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(metrics.approvalRate, 100)}%` }}
+                        className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(metrics.qualifyingRate, 100)}%` }}
                       />
                     </div>
                   </div>

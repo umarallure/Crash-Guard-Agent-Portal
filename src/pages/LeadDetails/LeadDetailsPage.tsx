@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
@@ -32,11 +33,46 @@ type LegacyNote = {
   timestamp?: string | null;
 };
 
+type CallUpdate = {
+  [key: string]: unknown;
+};
+
 const displayValue = (value: unknown) => {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string" && value.trim().length === 0) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return String(value);
+};
+
+const formatColumnLabel = (key: string) => {
+  const labels: Record<string, string> = {
+    insured_name: 'Insured Name',
+    client_phone_number: 'Phone Number',
+    lead_vendor: 'Lead Vendor',
+    state: 'State',
+    status: 'Status',
+    call_result: 'Call Result',
+    agent: 'Agent',
+    notes: 'Notes',
+    accident_date: 'Accident Date',
+  };
+
+  if (labels[key]) return labels[key];
+
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (lower === 'dob') return 'DOB';
+      if (lower === 'ssn') return 'SSN';
+      if (lower === 'zip') return 'ZIP';
+      if (lower === 'usa') return 'USA';
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
 };
 
 const formatDateIfPresent = (value: string | null | undefined) => {
@@ -85,6 +121,8 @@ const LeadDetailsPage = () => {
   const [newNote, setNewNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [callUpdatesLoading, setCallUpdatesLoading] = useState(false);
+  const [callUpdates, setCallUpdates] = useState<CallUpdate[]>([]);
 
   useEffect(() => {
     const run = async () => {
@@ -170,6 +208,34 @@ const LeadDetailsPage = () => {
 
     run();
   }, [submissionId, toast]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!submissionId) return;
+
+      setCallUpdatesLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('daily_deal_flow')
+          .select('*')
+          .eq('submission_id', submissionId)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          setCallUpdates([]);
+          return;
+        }
+
+        setCallUpdates((data as unknown as CallUpdate[]) || []);
+      } catch (e) {
+        setCallUpdates([]);
+      } finally {
+        setCallUpdatesLoading(false);
+      }
+    };
+
+    run();
+  }, [submissionId]);
 
   const handleSaveNote = async () => {
     const trimmedNote = newNote.trim();
@@ -408,6 +474,7 @@ const LeadDetailsPage = () => {
               <TabsTrigger value="personal">Personal</TabsTrigger>
               <TabsTrigger value="accident">Accident</TabsTrigger>
               <TabsTrigger value="notes">Notes</TabsTrigger>
+              <TabsTrigger value="call-updates">Call Updates</TabsTrigger>
             </TabsList>
           </div>
 
@@ -592,6 +659,92 @@ const LeadDetailsPage = () => {
                       </div>
                     )}
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="call-updates">
+            <Card>
+              <CardContent className="pt-6">
+                {callUpdatesLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading call updates...
+                  </div>
+                ) : callUpdates.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No call updates found for this lead.</div>
+                ) : (
+                  (() => {
+                    const first = (callUpdates[0] || {}) as Record<string, unknown>;
+                    const preferred = [
+                      'insured_name',
+                      'client_phone_number',
+                      'lead_vendor',
+                      'state',
+                      'status',
+                      'call_result',
+                      'agent',
+                      'notes',
+                    ];
+                    const allKeys = Array.from(new Set(Object.keys(first)));
+                    const shouldHideKey = (key: string) => {
+                      const k = key.toLowerCase();
+                      if (k === 'id') return true;
+                      if (k === 'created_at' || k === 'updated_at') return true;
+                      if (k === 'submission_id') return true;
+                      if (k === 'date') return true;
+                      if (k.endsWith('_id')) return true;
+                      if (k.includes(' id')) return true;
+                      if (k.startsWith('id_')) return true;
+                      return false;
+                    };
+
+                    const visibleKeys = allKeys.filter((k) => !shouldHideKey(k));
+                    const preferredKeys = preferred.filter((k) => visibleKeys.includes(k));
+                    const remaining = visibleKeys.filter((k) => !preferred.includes(k)).sort();
+                    const columns = [...preferredKeys, ...remaining];
+
+                    return (
+                      <div className="w-full overflow-x-auto">
+                        <div className="min-w-[1200px]">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                {columns.map((col) => (
+                                  <TableHead key={col} className="whitespace-nowrap">
+                                    {formatColumnLabel(col)}
+                                  </TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {callUpdates.map((u, idx) => {
+                                const row = (u || {}) as Record<string, unknown>;
+                                const key = typeof row.id === 'string' ? row.id : String(idx);
+                                return (
+                                  <TableRow key={key}>
+                                    {columns.map((col) => (
+                                      <TableCell
+                                        key={col}
+                                        className={
+                                          col === 'notes'
+                                            ? 'min-w-[320px] max-w-[640px] whitespace-pre-wrap break-words'
+                                            : 'whitespace-nowrap'
+                                        }
+                                      >
+                                        {displayValue(row[col])}
+                                      </TableCell>
+                                    ))}
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
               </CardContent>
             </Card>
