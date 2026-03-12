@@ -40,6 +40,7 @@ import TaskDetailView from "./pages/TaskDetailView";
 import RetentionTasksView from "./pages/RetentionTasksView";
 import AdminAnalytics from "./pages/AdminAnalytics";
 import { AgentsPage, VendorsPage, DailyPage, CarriersPage } from "./pages/AdminAnalytics/pages";
+import ScoreboardDashboard from "./pages/ScoreboardDashboard";
 import NotFound from "./pages/NotFound";
 import UserManagement from "./pages/UserManagement";
 import AppShell from "@/components/layout/AppShell";
@@ -365,6 +366,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Users">
                     <UserManagement />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/scoreboard-dashboard" 
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Score Board">
+                    <ScoreboardDashboard />
                   </AppShell>
                 </ProtectedRoute>
               } 

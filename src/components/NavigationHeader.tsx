@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { LogOut, User, Menu, ChevronDown, Grid3X3, Eye, CheckCircle, BarChart3, Search, ArrowLeft, DollarSign, ShieldCheck, Zap, Users, Calendar, Inbox } from 'lucide-react';
+import { LogOut, User, Menu, ChevronDown, Grid3X3, Eye, CheckCircle, BarChart3, Search, ArrowLeft, DollarSign, ShieldCheck, Zap, Users, Calendar, Inbox, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLicensedAgent } from '@/hooks/useLicensedAgent';
 import { useCenterUser } from '@/hooks/useCenterUser';
@@ -22,7 +22,14 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
   const { isLicensedAgent, loading: licensedLoading } = useLicensedAgent();
   const { isCenterUser, loading: centerLoading } = useCenterUser();
   const navigate = useNavigate();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => {
+    if (!user?.id) return false;
+    try {
+      return localStorage.getItem(`cg_is_admin:${user.id}`) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [isBufferAgent, setIsBufferAgent] = useState(false);
   const [bufferLoading, setBufferLoading] = useState(true);
   
@@ -39,11 +46,28 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
   useEffect(() => {
     const checkAdminStatus = async () => {
       if (!user) return;
+
+      try {
+        const cached = localStorage.getItem(`cg_is_admin:${user.id}`);
+        if (cached === '1') setIsAdmin(true);
+      } catch {
+        // ignore
+      }
       
       try {
-        const { data, error } = await supabase.rpc('is_admin');
-        if (!error && data) {
-          setIsAdmin(true);
+        // Check if user has admin role in app_users table
+        const { data, error } = await (supabase as any)
+          .from('app_users')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+
+        const nextIsAdmin = !error && data && (data.role === 'admin' || data.role === 'super_admin');
+        setIsAdmin(!!nextIsAdmin);
+        try {
+          localStorage.setItem(`cg_is_admin:${user.id}`, nextIsAdmin ? '1' : '0');
+        } catch {
+          // ignore
         }
       } catch (error) {
         console.error('Error checking admin status:', error);
@@ -145,6 +169,12 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                       <CheckCircle className="mr-2 h-4 w-4" />
                       Submission Portal
                     </DropdownMenuItem>
+                    {isAdmin && (
+                      <DropdownMenuItem onClick={() => navigate('/scoreboard-dashboard')}>
+                        <TrendingUp className="mr-2 h-4 w-4" />
+                        Score Board
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                   </>
                 )}

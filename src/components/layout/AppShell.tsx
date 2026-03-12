@@ -13,6 +13,7 @@ import {
   CheckCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  TrendingUp,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -152,6 +153,49 @@ const AppShell = ({
   const isBen = user?.id === '89da43d0-db34-4ffe-b6f1-8ca2453d2d76';
   const isAuthorizedUser = user?.id === '89da43d0-db34-4ffe-b6f1-8ca2453d2d76';
   const hasNavigationAccess = canAccessNavigation(user?.id);
+  const [isAdmin, setIsAdmin] = useState(() => {
+    if (!user?.id) return false;
+    try {
+      return localStorage.getItem(`cg_is_admin:${user.id}`) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (!user) return;
+
+      try {
+        const cached = localStorage.getItem(`cg_is_admin:${user.id}`);
+        if (cached === '1') setIsAdmin(true);
+      } catch {
+        // ignore
+      }
+      
+      try {
+        const { supabase } = await import('@/integrations/supabase/client');
+        // Check if user has admin role in app_users table
+        const { data, error } = await (supabase as any)
+          .from('app_users')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+
+        const nextIsAdmin = !error && data && (data.role === 'admin' || data.role === 'super_admin');
+        setIsAdmin(!!nextIsAdmin);
+        try {
+          localStorage.setItem(`cg_is_admin:${user.id}`, nextIsAdmin ? '1' : '0');
+        } catch {
+          // ignore
+        }
+      } catch (error) {
+        console.error('Error checking admin status:', error);
+      }
+    };
+
+    checkAdminStatus();
+  }, [user]);
 
   const navItems = useMemo<NavItem[]>(() => {
     const restricted = isRestrictedUser(user?.id);
@@ -159,6 +203,12 @@ const AppShell = ({
 
     // Keep nav aligned with existing access rules.
     const items: NavItem[] = [
+      {
+        label: 'Score Board',
+        to: '/scoreboard-dashboard',
+        icon: <TrendingUp className="h-4 w-4 text-current" />,
+        show: isAdmin && canAccessAgentPages,
+      },
       {
         label: 'Dashboard',
         to: '/manager-dashboard',
@@ -214,6 +264,7 @@ const AppShell = ({
     isBen,
     isAuthorizedUser,
     hasNavigationAccess,
+    isAdmin,
   ]);
 
   const handleSignOut = async () => {

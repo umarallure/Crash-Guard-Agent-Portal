@@ -10,6 +10,7 @@ import { CallResultForm } from "@/components/CallResultForm";
 import { StartVerificationModal } from "@/components/StartVerificationModal";
 import { VerificationPanel } from "@/components/VerificationPanel";
 import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
+import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { TopVerificationProgress } from "@/components/TopVerificationProgress";
 
@@ -423,46 +424,8 @@ const CallResultUpdate = () => {
               </div>
             </div>
             
-            <Card>
-              <CardHeader>
-                <CardTitle>Send Contract</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Recipient Email</div>
-                  <Input
-                    value={contractRecipientEmail}
-                    onChange={(e) => setContractRecipientEmail(e.target.value)}
-                    placeholder="customer@email.com"
-                  />
-                </div>
-
-                <Button onClick={handleSendContract} disabled={sendingContract}>
-                  {sendingContract ? "Sending..." : "Send Contract"}
-                </Button>
-
-                {lastEnvelopeId ? (
-                  <div className="text-xs text-muted-foreground">Envelope ID: {lastEnvelopeId}</div>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <OrderRecommendationsCard
-              submissionId={submissionId!}
-              leadId={lead.id}
-              leadOverrides={{
-                state: lead.state,
-                insured: lead.insured ?? null,
-                prior_attorney_involved: lead.prior_attorney_involved ?? null,
-              }}
-              currentAssignedAttorneyId={assignedAttorneyId || null}
-            />
-          </>
-        ) : (
-          /* Original layout when no verification panel */
-          <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
-            {/* Lead Details */}
-            <div className="space-y-6">
+            {/* Send Contract and Document Upload - Side by Side */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
                   <CardTitle>Send Contract</CardTitle>
@@ -486,6 +449,54 @@ const CallResultUpdate = () => {
                   ) : null}
                 </CardContent>
               </Card>
+
+              <DocumentUploadCard submissionId={submissionId!} />
+            </div>
+
+            <OrderRecommendationsCard
+              submissionId={submissionId!}
+              leadId={lead.id}
+              leadOverrides={{
+                state: lead.state,
+                insured: lead.insured ?? null,
+                prior_attorney_involved: lead.prior_attorney_involved ?? null,
+              }}
+              currentAssignedAttorneyId={assignedAttorneyId || null}
+            />
+          </>
+        ) : (
+          /* Original layout when no verification panel */
+          <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+            {/* Lead Details */}
+            <div className="space-y-6">
+              {/* Send Contract and Document Upload - Side by Side */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Send Contract</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground">Recipient Email</div>
+                      <Input
+                        value={contractRecipientEmail}
+                        onChange={(e) => setContractRecipientEmail(e.target.value)}
+                        placeholder="customer@email.com"
+                      />
+                    </div>
+
+                    <Button onClick={handleSendContract} disabled={sendingContract}>
+                      {sendingContract ? "Sending..." : "Send Contract"}
+                    </Button>
+
+                    {lastEnvelopeId ? (
+                      <div className="text-xs text-muted-foreground">Envelope ID: {lastEnvelopeId}</div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+
+                <DocumentUploadCard submissionId={submissionId!} />
+              </div>
 
               <OrderRecommendationsCard
                 submissionId={submissionId!}
