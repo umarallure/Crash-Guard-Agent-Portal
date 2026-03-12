@@ -13,6 +13,7 @@ import {
   CheckCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  Menu,
   TrendingUp,
 } from 'lucide-react';
 
@@ -28,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Sheet, SheetClose, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
 import { useLicensedAgent } from '@/hooks/useLicensedAgent';
 import { useCenterUser } from '@/hooks/useCenterUser';
@@ -68,6 +70,10 @@ const AppShell = ({
   const activeNavOverride = locationState?.activeNav;
 
   const isDailyDealFlowRoute = location.pathname.startsWith('/daily-deal-flow');
+  const isScoreboardRoute = location.pathname.startsWith('/scoreboard-dashboard');
+  const hideSidebarOnMobile = isScoreboardRoute;
+
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     // Outside Daily Deal Flow, keep sidebar open.
@@ -288,9 +294,11 @@ const AppShell = ({
           onFocus={handleSidebarActivity}
           onTouchStart={handleSidebarActivity}
           className={
-            isSidebarCollapsed
-              ? "w-16 shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col"
-              : "w-64 shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col"
+            `${hideSidebarOnMobile ? 'hidden md:flex' : 'flex'} ${
+              isSidebarCollapsed
+                ? 'w-16 shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col'
+                : 'w-64 shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col'
+            }`
           }
         >
           <div
@@ -335,24 +343,77 @@ const AppShell = ({
 
         <div className="flex min-w-0 flex-1 min-h-0 flex-col">
           <header className="h-14 border-b bg-card">
-            <div className="h-full px-6 flex items-center justify-between">
+            <div className="h-full px-3 sm:px-6 flex items-center justify-between">
               <div className="flex items-center gap-3 min-w-0">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  aria-label={isSidebarCollapsed ? 'Open sidebar' : 'Collapse sidebar'}
-                  onClick={() => {
-                    setSidebarCollapsed((prev) => !prev);
-                  }}
-                >
-                  {isSidebarCollapsed ? (
-                    <PanelLeftOpen className="h-4 w-4" />
-                  ) : (
-                    <PanelLeftClose className="h-4 w-4" />
-                  )}
-                </Button>
+                {hideSidebarOnMobile ? (
+                  <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                    <SheetTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 md:hidden"
+                        aria-label="Open navigation"
+                      >
+                        <Menu className="h-5 w-5" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent
+                      side="left"
+                      className="p-0 bg-sidebar text-sidebar-foreground border-sidebar-border [&>button]:top-3 [&>button]:right-3 [&>button]:bg-transparent [&>button]:hover:bg-primary/10"
+                    >
+                      <div className="h-14 px-4 flex items-center gap-3 border-b border-sidebar-border">
+                        <img src="/assets/logo.png" alt="Crash Guard" className="h-7 w-auto" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold truncate">Navigation</div>
+                          <div className="text-xs text-muted-foreground truncate">Accident Payments</div>
+                        </div>
+                      </div>
+                      <nav className="px-3 py-3 space-y-1 overflow-y-auto">
+                        {navItems.map((item) => (
+                          <SheetClose asChild key={item.to}>
+                            <NavLink
+                              to={item.to}
+                              end={item.end}
+                              className={({ isActive }) =>
+                                `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                                  (activeNavOverride ? activeNavOverride === item.to : isActive)
+                                    ? "bg-primary text-primary-foreground"
+                                    : "text-sidebar-foreground/80 hover:bg-primary/10 hover:text-sidebar-foreground"
+                                }`
+                              }
+                            >
+                              <span className="shrink-0">{item.icon}</span>
+                              <span className="truncate">{item.label}</span>
+                            </NavLink>
+                          </SheetClose>
+                        ))}
+                      </nav>
+                    </SheetContent>
+                  </Sheet>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label={isSidebarCollapsed ? 'Open sidebar' : 'Collapse sidebar'}
+                    onClick={() => {
+                      setSidebarCollapsed((prev) => !prev);
+                    }}
+                  >
+                    {isSidebarCollapsed ? (
+                      <PanelLeftOpen className="h-4 w-4" />
+                    ) : (
+                      <PanelLeftClose className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
+
+                {hideSidebarOnMobile && (
+                  <img src="/assets/logo.png" alt="Crash Guard" className="h-6 w-auto md:hidden" />
+                )}
+
                 <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
               </div>
 

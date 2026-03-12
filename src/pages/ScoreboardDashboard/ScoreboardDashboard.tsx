@@ -477,19 +477,19 @@ const ScoreboardDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
         <div className="max-w-7xl mx-auto space-y-6">
 
           {/* Date Filter - Compact */}
           <Card className="border">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4 flex-wrap">
+            <CardContent className="pt-4 sm:pt-6">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <Label htmlFor="time-range" className="text-sm font-medium">Date Filter:</Label>
                 </div>
                 <Select value={dateFilter} onValueChange={setDateFilter}>
-                  <SelectTrigger id="time-range" className="w-[180px]">
+                  <SelectTrigger id="time-range" className="w-full sm:w-[180px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -501,31 +501,31 @@ const ScoreboardDashboard = () => {
                 </Select>
 
                 {dateFilter === 'custom' && (
-                  <>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
                     <Input
                       id="start-date"
                       type="date"
                       value={customStartDate}
                       onChange={(e) => setCustomStartDate(e.target.value)}
-                      className="w-[160px]"
+                      className="w-full sm:w-[160px]"
                       placeholder="Start Date"
                     />
-                    <span className="text-muted-foreground">to</span>
+                    <span className="text-muted-foreground hidden sm:inline">to</span>
                     <Input
                       id="end-date"
                       type="date"
                       value={customEndDate}
                       onChange={(e) => setCustomEndDate(e.target.value)}
-                      className="w-[160px]"
+                      className="w-full sm:w-[160px]"
                       placeholder="End Date"
                     />
-                  </>
+                  </div>
                 )}
                 <Button
                   variant="outline"
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="flex items-center gap-2 ml-auto"
+                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:ml-auto"
                 >
                   <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                   Refresh
@@ -536,19 +536,19 @@ const ScoreboardDashboard = () => {
 
           {/* Key Metrics */}
           <div>
-            <h2 className="text-xl font-semibold mb-4">Key Metrics</h2>
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">Key Metrics</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {/* Total Transfers */}
               <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800 hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-12 w-12 rounded-full bg-blue-500 flex items-center justify-center">
-                      <Send className="h-6 w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-blue-500 flex items-center justify-center">
+                      <Send className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">Total Transfers</p>
-                    <p className="text-4xl font-bold text-blue-900 dark:text-blue-100 mt-2">{metrics.totalTransfers}</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-blue-900 dark:text-blue-100 mt-2">{metrics.totalTransfers}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.totalTransfersChange > 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.totalTransfersChange < 0 ? 'text-red-600 dark:text-red-400' : 
@@ -562,15 +562,15 @@ const ScoreboardDashboard = () => {
 
               {/* Qualified */}
               <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-emerald-200 dark:border-emerald-800 hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-12 w-12 rounded-full bg-emerald-500 flex items-center justify-center">
-                      <CheckCircle className="h-6 w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-emerald-500 flex items-center justify-center">
+                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Qualified</p>
-                    <p className="text-4xl font-bold text-emerald-900 dark:text-emerald-100 mt-2">{metrics.qualified}</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-emerald-900 dark:text-emerald-100 mt-2">{metrics.qualified}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.qualifiedChange > 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.qualifiedChange < 0 ? 'text-red-600 dark:text-red-400' : 
@@ -584,15 +584,15 @@ const ScoreboardDashboard = () => {
 
               {/* Not Qualified */}
               <Card className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 border-red-200 dark:border-red-800 hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-12 w-12 rounded-full bg-red-500 flex items-center justify-center">
-                      <XCircle className="h-6 w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-red-500 flex items-center justify-center">
+                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-red-700 dark:text-red-300 uppercase tracking-wide">Not Qualified</p>
-                    <p className="text-4xl font-bold text-red-900 dark:text-red-100 mt-2">{metrics.notQualified}</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-red-900 dark:text-red-100 mt-2">{metrics.notQualified}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.notQualifiedChange < 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.notQualifiedChange > 0 ? 'text-red-600 dark:text-red-400' : 
@@ -606,15 +606,15 @@ const ScoreboardDashboard = () => {
 
               {/* Missing Info */}
               <Card className="bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900 border-sky-200 dark:border-sky-800 hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-12 w-12 rounded-full bg-sky-500 flex items-center justify-center">
-                      <FileText className="h-6 w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-sky-500 flex items-center justify-center">
+                      <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-sky-700 dark:text-sky-300 uppercase tracking-wide">Missing Info</p>
-                    <p className="text-4xl font-bold text-sky-900 dark:text-sky-100 mt-2">{metrics.missingInfo}</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-sky-900 dark:text-sky-100 mt-2">{metrics.missingInfo}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.missingInfoChange < 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.missingInfoChange > 0 ? 'text-red-600 dark:text-red-400' : 
@@ -628,15 +628,15 @@ const ScoreboardDashboard = () => {
 
               {/* Returned to Center */}
               <Card className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900 border-orange-200 dark:border-orange-800 hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-12 w-12 rounded-full bg-orange-500 flex items-center justify-center">
-                      <AlertCircle className="h-6 w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-orange-500 flex items-center justify-center">
+                      <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-orange-700 dark:text-orange-300 uppercase tracking-wide">Returned to Center</p>
-                    <p className="text-4xl font-bold text-orange-900 dark:text-orange-100 mt-2">{metrics.returnedToCenter}</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-orange-900 dark:text-orange-100 mt-2">{metrics.returnedToCenter}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.returnedToCenterChange < 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.returnedToCenterChange > 0 ? 'text-red-600 dark:text-red-400' : 
@@ -652,11 +652,11 @@ const ScoreboardDashboard = () => {
 
           {/* Performance Rates */}
           <div>
-            <h2 className="text-xl font-semibold mb-4">Performance Rates</h2>
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">Performance Rates</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Transfer Rate */}
               <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-5">
+                <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
@@ -667,7 +667,7 @@ const ScoreboardDashboard = () => {
                     {getPerformanceIcon(metrics.transferRate, 70)}
                   </div>
                   <div className="space-y-2">
-                    <p className={`text-4xl font-bold ${getPerformanceColor(metrics.transferRate, 70)}`}>
+                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(metrics.transferRate, 70)}`}>
                       {metrics.transferRate.toFixed(1)}%
                     </p>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -685,7 +685,7 @@ const ScoreboardDashboard = () => {
 
               {/* Qualifying Rate */}
               <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-5">
+                <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center">
@@ -696,7 +696,7 @@ const ScoreboardDashboard = () => {
                     {getPerformanceIcon(metrics.qualifyingRate, 40)}
                   </div>
                   <div className="space-y-2">
-                    <p className={`text-4xl font-bold ${getPerformanceColor(metrics.qualifyingRate, 40)}`}>
+                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(metrics.qualifyingRate, 40)}`}>
                       {metrics.qualifyingRate.toFixed(1)}%
                     </p>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -714,7 +714,7 @@ const ScoreboardDashboard = () => {
 
               {/* Billable Rate */}
               <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-5">
+                <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center">
@@ -725,7 +725,7 @@ const ScoreboardDashboard = () => {
                     {getPerformanceIcon(metrics.billableRate, 60)}
                   </div>
                   <div className="space-y-2">
-                    <p className={`text-4xl font-bold ${getPerformanceColor(metrics.billableRate, 60)}`}>
+                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(metrics.billableRate, 60)}`}>
                       {metrics.billableRate.toFixed(1)}%
                     </p>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -743,7 +743,7 @@ const ScoreboardDashboard = () => {
 
               {/* Return Back Rate */}
               <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-5">
+                <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="h-9 w-9 rounded-lg bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
@@ -754,7 +754,7 @@ const ScoreboardDashboard = () => {
                     {getPerformanceIcon(20 - metrics.returnBackRate, 20)}
                   </div>
                   <div className="space-y-2">
-                    <p className={`text-4xl font-bold ${getPerformanceColor(20 - metrics.returnBackRate, 20)}`}>
+                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(20 - metrics.returnBackRate, 20)}`}>
                       {metrics.returnBackRate.toFixed(1)}%
                     </p>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
