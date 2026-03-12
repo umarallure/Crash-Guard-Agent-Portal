@@ -127,7 +127,6 @@ const ScoreboardDashboard = () => {
           return;
         }
       } catch {
-        // ignore
         console.log("User is not admin");
       }
       
@@ -143,7 +142,7 @@ const ScoreboardDashboard = () => {
         try {
           localStorage.setItem(`cg_is_admin:${user.id}`, nextIsAdmin ? '1' : '0');
         } catch {
-          // ignore
+          console.log("Failed to set admin status in localStorage");
         }
 
         if (!nextIsAdmin) {
