@@ -29,7 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetClose, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
 import { useLicensedAgent } from '@/hooks/useLicensedAgent';
 import { useCenterUser } from '@/hooks/useCenterUser';
@@ -360,33 +360,29 @@ const AppShell = ({
                     </SheetTrigger>
                     <SheetContent
                       side="left"
-                      className="p-0 bg-sidebar text-sidebar-foreground border-sidebar-border [&>button]:top-3 [&>button]:right-3 [&>button]:bg-transparent [&>button]:hover:bg-primary/10"
+                      className="p-0 w-64 bg-sidebar text-sidebar-foreground border-sidebar-border !bg-sidebar [&>button]:top-3 [&>button]:right-3 [&>button]:text-muted-foreground [&>button]:hover:text-foreground [&>button]:hover:bg-primary/10"
                     >
-                      <div className="h-14 px-4 flex items-center gap-3 border-b border-sidebar-border">
+                      <div className="h-14 px-4 flex items-center border-b border-sidebar-border">
                         <img src="/assets/logo.png" alt="Crash Guard" className="h-7 w-auto" />
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold truncate">Navigation</div>
-                          <div className="text-xs text-muted-foreground truncate">Accident Payments</div>
-                        </div>
                       </div>
-                      <nav className="px-3 py-3 space-y-1 overflow-y-auto">
+                      <nav className="px-2 py-3 space-y-1.5 overflow-y-auto">
                         {navItems.map((item) => (
-                          <SheetClose asChild key={item.to}>
-                            <NavLink
-                              to={item.to}
-                              end={item.end}
-                              className={({ isActive }) =>
-                                `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-                                  (activeNavOverride ? activeNavOverride === item.to : isActive)
-                                    ? "bg-primary text-primary-foreground"
-                                    : "text-sidebar-foreground/80 hover:bg-primary/10 hover:text-sidebar-foreground"
-                                }`
-                              }
-                            >
-                              <span className="shrink-0">{item.icon}</span>
-                              <span className="truncate">{item.label}</span>
-                            </NavLink>
-                          </SheetClose>
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.end}
+                            onClick={() => setMobileNavOpen(false)}
+                            className={({ isActive }) =>
+                              `${linkBaseClass} ${
+                                (activeNavOverride ? activeNavOverride === item.to : isActive)
+                                  ? "bg-primary/10 text-primary border-primary/20"
+                                  : "text-muted-foreground hover:bg-primary/5 hover:text-primary hover:border-primary/20"
+                              }`
+                            }
+                          >
+                            {item.icon}
+                            <span>{item.label}</span>
+                          </NavLink>
                         ))}
                       </nav>
                     </SheetContent>

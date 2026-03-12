@@ -128,6 +128,7 @@ const ScoreboardDashboard = () => {
         }
       } catch {
         // ignore
+        console.log("User is not admin");
       }
       
       try {
