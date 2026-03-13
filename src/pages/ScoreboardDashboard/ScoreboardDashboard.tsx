@@ -256,6 +256,7 @@ const ScoreboardDashboard = () => {
       const { data, error } = await supabase
         .from('daily_deal_flow')
         .select('status, call_result')
+        .not('insured_name', 'ilike', 'Test -%')
         .gte('date', startKey)
         .lte('date', endKey);
 
@@ -265,6 +266,7 @@ const ScoreboardDashboard = () => {
       const { data: prevData, error: prevError } = await supabase
         .from('daily_deal_flow')
         .select('status, call_result')
+        .not('insured_name', 'ilike', 'Test -%')
         .gte('date', prevStartKey)
         .lte('date', prevEndKey);
 

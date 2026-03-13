@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { LeadInfoCard } from "@/components/LeadInfoCard";
@@ -64,79 +62,8 @@ const CallResultUpdate = () => {
   const [verificationSessionId, setVerificationSessionId] = useState<string | null>(null);
   const [showVerificationPanel, setShowVerificationPanel] = useState(false);
   const [verifiedFieldValues, setVerifiedFieldValues] = useState<Record<string, string>>({});
-  const [contractRecipientEmail, setContractRecipientEmail] = useState("");
-  const [sendingContract, setSendingContract] = useState(false);
-  const [lastEnvelopeId, setLastEnvelopeId] = useState<string | null>(null);
 
   const { toast } = useToast();
-
-  type DocuSignSendResponse = {
-    envelopeId?: string;
-    envelope_id?: string;
-  };
-
-  const handleSendContract = async () => {
-    if (!lead) return;
-
-    const recipientEmail = (contractRecipientEmail || "").trim();
-    const templateId = import.meta.env.VITE_DOCUSIGN_TEMPLATE_ID;
-
-    if (!recipientEmail) {
-      toast({
-        title: "Missing email",
-        description: "Please enter an email address to send the contract.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!templateId) {
-      toast({
-        title: "Missing template ID",
-        description: "VITE_DOCUSIGN_TEMPLATE_ID is not set in the frontend environment.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setSendingContract(true);
-      const { data, error } = await supabase.functions.invoke("docusign-send-contract", {
-        body: {
-          recipientEmail,
-          recipientName: lead.customer_full_name || "Signer",
-          clientUserId: submissionId,
-          templateId,
-        },
-      });
-
-      if (error) {
-        toast({
-          title: "Failed to send contract",
-          description: error.message,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const parsed = (data ?? {}) as DocuSignSendResponse;
-      const envelopeId = parsed.envelopeId || parsed.envelope_id || null;
-      setLastEnvelopeId(envelopeId);
-      toast({
-        title: "Contract sent",
-        description: recipientEmail,
-      });
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Unexpected error";
-      toast({
-        title: "Failed to send contract",
-        description: message,
-        variant: "destructive",
-      });
-    } finally {
-      setSendingContract(false);
-    }
-  };
 
   useEffect(() => {
     if (!submissionId) {
@@ -424,90 +351,54 @@ const CallResultUpdate = () => {
               </div>
             </div>
             
-            {/* Send Contract and Document Upload - Side by Side */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Send Contract</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-1">
-                    <div className="text-sm text-muted-foreground">Recipient Email</div>
-                    <Input
-                      value={contractRecipientEmail}
-                      onChange={(e) => setContractRecipientEmail(e.target.value)}
-                      placeholder="customer@email.com"
-                    />
-                  </div>
+            <div className="grid grid-cols-1 items-start lg:grid-cols-2 gap-6">
+              <div className="self-start">
+                <DocumentUploadCard
+                  submissionId={submissionId!}
+                  customerPhoneNumber={lead.phone_number}
+                />
+              </div>
 
-                  <Button onClick={handleSendContract} disabled={sendingContract}>
-                    {sendingContract ? "Sending..." : "Send Contract"}
-                  </Button>
-
-                  {lastEnvelopeId ? (
-                    <div className="text-xs text-muted-foreground">Envelope ID: {lastEnvelopeId}</div>
-                  ) : null}
-                </CardContent>
-              </Card>
-
-              <DocumentUploadCard submissionId={submissionId!} />
+              <div className="self-start">
+                <OrderRecommendationsCard
+                  submissionId={submissionId!}
+                  leadId={lead.id}
+                  leadOverrides={{
+                    state: lead.state,
+                    insured: lead.insured ?? null,
+                    prior_attorney_involved: lead.prior_attorney_involved ?? null,
+                  }}
+                  currentAssignedAttorneyId={assignedAttorneyId || null}
+                />
+              </div>
             </div>
-
-            <OrderRecommendationsCard
-              submissionId={submissionId!}
-              leadId={lead.id}
-              leadOverrides={{
-                state: lead.state,
-                insured: lead.insured ?? null,
-                prior_attorney_involved: lead.prior_attorney_involved ?? null,
-              }}
-              currentAssignedAttorneyId={assignedAttorneyId || null}
-            />
           </>
         ) : (
           /* Original layout when no verification panel */
           <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
             {/* Lead Details */}
-            <div className="space-y-6">
-              {/* Send Contract and Document Upload - Side by Side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Send Contract</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="space-y-1">
-                      <div className="text-sm text-muted-foreground">Recipient Email</div>
-                      <Input
-                        value={contractRecipientEmail}
-                        onChange={(e) => setContractRecipientEmail(e.target.value)}
-                        placeholder="customer@email.com"
-                      />
-                    </div>
+            <div className="grid grid-cols-1 gap-6">
+              <div className="grid grid-cols-1 items-start xl:grid-cols-2 gap-6">
+                <div className="self-start">
+                  <DocumentUploadCard
+                    submissionId={submissionId!}
+                    customerPhoneNumber={lead.phone_number}
+                  />
+                </div>
 
-                    <Button onClick={handleSendContract} disabled={sendingContract}>
-                      {sendingContract ? "Sending..." : "Send Contract"}
-                    </Button>
-
-                    {lastEnvelopeId ? (
-                      <div className="text-xs text-muted-foreground">Envelope ID: {lastEnvelopeId}</div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-
-                <DocumentUploadCard submissionId={submissionId!} />
+                <div className="self-start">
+                  <OrderRecommendationsCard
+                    submissionId={submissionId!}
+                    leadId={lead.id}
+                    leadOverrides={{
+                      state: lead.state,
+                      insured: lead.insured ?? null,
+                      prior_attorney_involved: lead.prior_attorney_involved ?? null,
+                    }}
+                    currentAssignedAttorneyId={assignedAttorneyId || null}
+                  />
+                </div>
               </div>
-
-              <OrderRecommendationsCard
-                submissionId={submissionId!}
-                leadId={lead.id}
-                leadOverrides={{
-                  state: lead.state,
-                  insured: lead.insured ?? null,
-                  prior_attorney_involved: lead.prior_attorney_involved ?? null,
-                }}
-                currentAssignedAttorneyId={assignedAttorneyId || null}
-              />
             </div>
             
             {/* Call Result Form */}

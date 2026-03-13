@@ -67,7 +67,8 @@ export const DailyPage = () => {
 
       const { data, error } = await supabase
         .from('daily_deal_flow')
-        .select('date, lead_vendor, licensed_agent, monthly_premium')
+        .select('date, lead_vendor, licensed_agent_account, monthly_premium')
+        .not('insured_name', 'ilike', 'Test -%')
         .gte('date', format(start, 'yyyy-MM-dd'))
         .lte('date', format(end, 'yyyy-MM-dd'));
 
@@ -117,8 +118,8 @@ export const DailyPage = () => {
           existing.vendors.add(item.lead_vendor);
         }
         
-        if (item.licensed_agent) {
-          existing.agents.add(item.licensed_agent);
+        if (item.licensed_agent_account) {
+          existing.agents.add(item.licensed_agent_account);
         }
         
         dateMap.set(item.date, existing);

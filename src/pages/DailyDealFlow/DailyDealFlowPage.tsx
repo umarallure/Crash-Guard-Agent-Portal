@@ -48,6 +48,27 @@ export interface DailyDealFlowRow {
   updated_at?: string;
 }
 
+const isTestLeadRow = (row: Partial<DailyDealFlowRow>) => {
+  const valuesToInspect = [
+    row.submission_id,
+    row.insured_name,
+    row.client_phone_number,
+    row.lead_vendor,
+    row.agent,
+    row.licensed_agent_account,
+    row.notes,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.toLowerCase());
+
+  return valuesToInspect.some((value) =>
+    value.includes("test") ||
+    value.includes("dummy") ||
+    value.includes("qa") ||
+    value.includes("sample")
+  );
+};
+
 const DailyDealFlowPage = () => {
   // Special constant to match GridToolbar (cannot use empty string with Radix UI)
   const ALL_OPTION = "__ALL__";
@@ -326,6 +347,17 @@ const DailyDealFlowPage = () => {
         return;
       }
 
+      const nonTestExportData = exportData.filter((row) => !isTestLeadRow(row));
+
+      if (nonTestExportData.length === 0) {
+        toast({
+          title: "No Data",
+          description: "No non-test leads available to export",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Define CSV headers
       const headers = [
         'Submission ID',
@@ -356,7 +388,7 @@ const DailyDealFlowPage = () => {
       // Generate CSV content
       const csvContent = [
         headers.join(','),
-        ...exportData.map(row => [
+        ...nonTestExportData.map(row => [
           row.submission_id || '',
           row.date || '',
           row.insured_name || '',
@@ -404,7 +436,7 @@ const DailyDealFlowPage = () => {
 
       toast({
         title: "Export Complete",
-        description: `Successfully exported ${exportData.length} records to CSV`,
+        description: `Successfully exported ${nonTestExportData.length} non-test records to CSV`,
       });
     } catch (error) {
       console.error("Error exporting data:", error);
@@ -444,6 +476,11 @@ const DailyDealFlowPage = () => {
                 <>
                   {/* Create Entry Button */}
                   <CreateEntryForm onSuccess={fetchData} />
+
+                  <Button variant="outline" onClick={handleExport} className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Export CSV
+                  </Button>
                   
                   {/* Reports Menu */}
                   <DropdownMenu>
