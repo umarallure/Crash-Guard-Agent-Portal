@@ -1073,6 +1073,44 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
             </Select>
           </td>
 
+          {/* Submitted Attorney */}
+          <td className="border border-border px-3 py-2">
+            <Select
+              value={editData.submitted_attorney || 'none'}
+              onValueChange={(value) => updateField('submitted_attorney', value === 'none' ? '' : value)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Attorney" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {attorneys.filter(a => a.full_name || a.primary_email).map(attorney => (
+                  <SelectItem key={attorney.user_id} value={attorney.full_name || attorney.primary_email || ''}>
+                    {attorney.full_name || attorney.primary_email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </td>
+
+          {/* Submitted Attorney Status */}
+          <td className="border border-border px-3 py-2">
+            <Select
+              value={editData.submitted_attorney_status || 'none'}
+              onValueChange={(value) => updateField('submitted_attorney_status', value === 'none' ? '' : value)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="submitted">Submitted</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="nocoverage">No Coverage</SelectItem>
+              </SelectContent>
+            </Select>
+          </td>
+
           {/* Notes */}
           <td className="border border-border px-3 py-2 w-32 align-top">
             <Textarea
@@ -1193,6 +1231,27 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
               {row.call_result.length > 12 ? row.call_result.substring(0, 12) + '...' : row.call_result}
             </span>
           ) : ''}
+        </td>
+
+        {/* Submitted Attorney */}
+        <td className="border border-border px-3 py-2 text-sm w-32">
+          <div className="whitespace-normal break-words">
+            {row.submitted_attorney || '-'}
+          </div>
+        </td>
+
+        {/* Submitted Attorney Status */}
+        <td className="border border-border px-3 py-2 text-sm w-24">
+          {row.submitted_attorney_status ? (
+            <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap inline-block ${
+              row.submitted_attorney_status === 'submitted' ? 'bg-green-100 text-green-800' :
+              row.submitted_attorney_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+              row.submitted_attorney_status === 'nocoverage' ? 'bg-red-100 text-red-800' :
+              'bg-gray-100 text-gray-800'
+            }`}>
+              {row.submitted_attorney_status}
+            </span>
+          ) : '-'}
         </td>
 
         {/* Notes */}

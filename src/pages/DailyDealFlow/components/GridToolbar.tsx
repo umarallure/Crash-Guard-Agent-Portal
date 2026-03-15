@@ -34,6 +34,10 @@ interface GridToolbarProps {
   onRetentionFilterChange: (value: string) => void;
   incompleteUpdatesFilter: string;
   onIncompleteUpdatesFilterChange: (value: string) => void;
+  submittedAttorneyFilter?: string;
+  onSubmittedAttorneyFilterChange?: (value: string) => void;
+  submittedAttorneyStatusFilter?: string;
+  onSubmittedAttorneyStatusFilterChange?: (value: string) => void;
   totalRows: number;
 }
 
@@ -59,6 +63,10 @@ export const GridToolbar = ({
   onRetentionFilterChange,
   incompleteUpdatesFilter,
   onIncompleteUpdatesFilterChange,
+  submittedAttorneyFilter,
+  onSubmittedAttorneyFilterChange,
+  submittedAttorneyStatusFilter,
+  onSubmittedAttorneyStatusFilterChange,
   totalRows
 }: GridToolbarProps) => {
   // Special constant to represent "All" selections (cannot use empty string with Radix UI)
@@ -482,6 +490,53 @@ export const GridToolbar = ({
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      {/* Second Row - Additional Filters */}
+      <div className="flex flex-wrap gap-4 items-end">
+        {/* Submitted Attorney Filter */}
+        {onSubmittedAttorneyFilterChange && (
+          <div>
+            <Label className="text-sm font-medium">
+              Submitted Attorney
+              {submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION && <span className="text-blue-600 ml-1">●</span>}
+            </Label>
+            <Select value={submittedAttorneyFilter || ALL_OPTION} onValueChange={onSubmittedAttorneyFilterChange}>
+              <SelectTrigger className={cn("mt-1", submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION && "ring-2 ring-blue-200")}>
+                <SelectValue placeholder="All Attorneys" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_OPTION}>All Attorneys</SelectItem>
+                {attorneys.map((attorney) => (
+                  <SelectItem key={attorney.user_id} value={attorney.full_name || attorney.user_id}>
+                    {attorney.full_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Submitted Attorney Status Filter */}
+        {onSubmittedAttorneyStatusFilterChange && (
+          <div>
+            <Label className="text-sm font-medium">
+              Attorney Status
+              {submittedAttorneyStatusFilter && submittedAttorneyStatusFilter !== ALL_OPTION && <span className="text-blue-600 ml-1">●</span>}
+            </Label>
+            <Select value={submittedAttorneyStatusFilter || ALL_OPTION} onValueChange={onSubmittedAttorneyStatusFilterChange}>
+              <SelectTrigger className={cn("mt-1", submittedAttorneyStatusFilter && submittedAttorneyStatusFilter !== ALL_OPTION && "ring-2 ring-blue-200")}>
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_OPTION}>All Statuses</SelectItem>
+                <SelectItem value="submitted">Submitted</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="nocoverage">No Coverage</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
     </div>
   );

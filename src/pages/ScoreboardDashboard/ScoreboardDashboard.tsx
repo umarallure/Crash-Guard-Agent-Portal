@@ -8,9 +8,25 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, RefreshCw, Send, FileText, CheckCircle, XCircle, AlertCircle, TrendingUp, TrendingDown, Minus, DollarSign } from 'lucide-react';
-import { subDays } from 'date-fns';
+import { Calendar, RefreshCw, Send, FileText, CheckCircle, XCircle, AlertCircle, TrendingUp, TrendingDown, Minus, DollarSign, Eye } from 'lucide-react';
+import { subDays, format, parseISO } from 'date-fns';
 import { Loader2 } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+interface FilteredRow {
+  id: string;
+  date: string | null;
+  insured_name: string | null;
+  client_phone_number: string | null;
+  lead_vendor: string | null;
+  agent: string | null;
+  status: string | null;
+  call_result: string | null;
+  submitted_attorney: string | null;
+  submitted_attorney_status: string | null;
+  notes: string | null;
+}
 
 interface DashboardMetrics {
   totalTransfers: number;
@@ -20,6 +36,8 @@ interface DashboardMetrics {
   missingInfo: number;
   notQualified: number;
   returnedToCenter: number;
+  submittedToAttorney: number;
+  qualifiedPayable: number;
   
   // Performance rates
   transferRate: number;
@@ -45,6 +63,8 @@ interface DashboardMetrics {
   missingInfoChange: number;
   notQualifiedChange: number;
   returnedToCenterChange: number;
+  submittedToAttorneyChange: number;
+  qualifiedPayableChange: number;
   transferRateChange: number;
   qualifyingRateChange: number;
   billableRateChange: number;
@@ -75,6 +95,8 @@ const ScoreboardDashboard = () => {
     missingInfo: 0,
     notQualified: 0,
     returnedToCenter: 0,
+    submittedToAttorney: 0,
+    qualifiedPayable: 0,
     transferRate: 0,
     qualifyingRate: 0,
     billableRate: 0,
@@ -94,6 +116,8 @@ const ScoreboardDashboard = () => {
     missingInfoChange: 0,
     notQualifiedChange: 0,
     returnedToCenterChange: 0,
+    submittedToAttorneyChange: 0,
+    qualifiedPayableChange: 0,
     transferRateChange: 0,
     qualifyingRateChange: 0,
     billableRateChange: 0,
@@ -103,6 +127,11 @@ const ScoreboardDashboard = () => {
   const [dateFilter, setDateFilter] = useState<string>('today');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
+  const [filteredData, setFilteredData] = useState<FilteredRow[]>([]);
+  const [filteredLoading, setFilteredLoading] = useState(false);
+  const [showNotesDialog, setShowNotesDialog] = useState(false);
+  const [selectedNotes, setSelectedNotes] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(() => {
     if (!user?.id) return false;
     try {
@@ -253,18 +282,18 @@ const ScoreboardDashboard = () => {
       const { startKey: prevStartKey, endKey: prevEndKey } = getPreviousDateRange();
 
       // Fetch current period data
-      const { data, error } = await supabase
+      const { data, error } = await (supabase
         .from('daily_deal_flow')
-        .select('status, call_result')
+        .select('status, call_result, submitted_attorney, submitted_attorney_status') as any)
         .gte('date', startKey)
         .lte('date', endKey);
 
       if (error) throw error;
 
       // Fetch previous period data for comparison
-      const { data: prevData, error: prevError } = await supabase
+      const { data: prevData, error: prevError } = await (supabase
         .from('daily_deal_flow')
-        .select('status, call_result')
+        .select('status, call_result, submitted_attorney, submitted_attorney_status') as any)
         .gte('date', prevStartKey)
         .lte('date', prevEndKey);
 
@@ -306,6 +335,17 @@ const ScoreboardDashboard = () => {
       const returnedToCenter = data?.filter(d => 
         d.status?.toLowerCase().includes('returned to center') ||
         d.status?.toLowerCase().includes('returned_to_center')
+      ).length || 0;
+
+      // Submitted to Attorney: submitted_attorney is not null AND not "No Coverage"
+      const submittedToAttorney = data?.filter(d => 
+        d.submitted_attorney && 
+        d.submitted_attorney_status !== 'nocoverage'
+      ).length || 0;
+
+      // Qualified Payable: status is "qualified_payable"
+      const qualifiedPayable = data?.filter(d => 
+        d.status?.toLowerCase() === 'qualified_payable'
       ).length || 0;
 
       // Calculate performance rates based on status field
@@ -370,6 +410,16 @@ const ScoreboardDashboard = () => {
         d.status?.toLowerCase().includes('returned_to_center')
       ).length || 0;
 
+      // Previous period calculations for new metrics
+      const prevSubmittedToAttorney = prevData?.filter(d => 
+        d.submitted_attorney && 
+        d.submitted_attorney_status !== 'nocoverage'
+      ).length || 0;
+
+      const prevQualifiedPayable = prevData?.filter(d => 
+        d.status?.toLowerCase() === 'qualified_payable'
+      ).length || 0;
+
       const prevTransferCount = prevData?.filter(d => 
         d.status && !d.status.toLowerCase().includes('incomplete') && 
         !d.status.toLowerCase().includes('not_qualified')
@@ -401,6 +451,8 @@ const ScoreboardDashboard = () => {
         missingInfo,
         notQualified,
         returnedToCenter,
+        submittedToAttorney,
+        qualifiedPayable,
         transferRate,
         qualifyingRate,
         billableRate,
@@ -420,6 +472,8 @@ const ScoreboardDashboard = () => {
         missingInfoChange: calculateChange(missingInfo, prevMissingInfo),
         notQualifiedChange: calculateChange(notQualified, prevNotQualified),
         returnedToCenterChange: calculateChange(returnedToCenter, prevReturnedToCenter),
+        submittedToAttorneyChange: calculateChange(submittedToAttorney, prevSubmittedToAttorney),
+        qualifiedPayableChange: calculateChange(qualifiedPayable, prevQualifiedPayable),
         transferRateChange: calculateChange(transferRate, prevTransferRate),
         qualifyingRateChange: calculateChange(qualifyingRate, prevQualifyingRate),
         billableRateChange: calculateChange(billableRate, prevBillableRate),
@@ -443,6 +497,132 @@ const ScoreboardDashboard = () => {
       fetchMetrics();
     }
   }, [fetchMetrics, isAdmin]);
+
+  // Fetch filtered data when selectedFilter or date filter changes
+  useEffect(() => {
+    const fetchFilteredData = async () => {
+      if (!selectedFilter || !isAdmin) {
+        setFilteredData([]);
+        return;
+      }
+
+      setFilteredLoading(true);
+      try {
+        // Calculate date range directly in the effect
+        const now = new Date();
+        const anchorNow = new Date(now);
+        anchorNow.setUTCHours(12, 0, 0, 0);
+        
+        let startKey: string;
+        let endKey: string;
+        
+        switch (dateFilter) {
+          case 'today': {
+            startKey = formatNYDateKey(anchorNow);
+            endKey = startKey;
+            break;
+          }
+          case '7days': {
+            startKey = formatNYDateKey(subDays(anchorNow, 6));
+            endKey = formatNYDateKey(anchorNow);
+            break;
+          }
+          case '30days': {
+            startKey = formatNYDateKey(subDays(anchorNow, 29));
+            endKey = formatNYDateKey(anchorNow);
+            break;
+          }
+          case 'custom': {
+            if (customStartDate && customEndDate) {
+              startKey = customStartDate;
+              endKey = customEndDate;
+            } else {
+              startKey = formatNYDateKey(anchorNow);
+              endKey = startKey;
+            }
+            break;
+          }
+          default: {
+            startKey = formatNYDateKey(anchorNow);
+            endKey = startKey;
+          }
+        }
+        
+        const { data, error } = await (supabase
+          .from('daily_deal_flow')
+          .select('id, date, insured_name, client_phone_number, lead_vendor, agent, status, call_result, submitted_attorney, submitted_attorney_status, notes')
+          .gte('date', startKey)
+          .lte('date', endKey) as any);
+
+        if (error) {
+          console.error('Query error:', error);
+          throw error;
+        }
+
+        let filtered: FilteredRow[] = [];
+        
+        switch (selectedFilter) {
+          case 'total_transfers':
+            filtered = (data || []);
+            break;
+          case 'qualified':
+            filtered = (data || []).filter((d: any) => 
+              d.call_result?.toLowerCase() === 'qualified' ||
+              d.status?.toLowerCase().includes('qualified')
+            );
+            break;
+          case 'not_qualified':
+            filtered = (data || []).filter((d: any) => 
+              d.call_result?.toLowerCase() === 'not qualified' ||
+              d.status?.toLowerCase().includes('not_qualified')
+            );
+            break;
+          case 'missing_info':
+            filtered = (data || []).filter((d: any) => {
+              const status = (d.status || '').toLowerCase();
+              return (
+                status === 'qualified_missing_info' ||
+                status.includes('qualified: missing information') ||
+                status.includes('missing information')
+              );
+            });
+            break;
+          case 'returned_to_center':
+            filtered = (data || []).filter((d: any) => 
+              d.status?.toLowerCase().includes('returned to center') ||
+              d.status?.toLowerCase().includes('returned_to_center')
+            );
+            break;
+          case 'submitted_to_attorney':
+            filtered = (data || []).filter((d: any) => 
+              d.submitted_attorney && 
+              d.submitted_attorney_status !== 'nocoverage'
+            );
+            break;
+          case 'qualified_payable':
+            filtered = (data || []).filter((d: any) => 
+              d.status?.toLowerCase() === 'qualified_payable'
+            );
+            break;
+          default:
+            filtered = [];
+        }
+
+        setFilteredData(filtered);
+      } catch (error) {
+        console.error('Error fetching filtered data:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load filtered data.",
+          variant: "destructive",
+        });
+      } finally {
+        setFilteredLoading(false);
+      }
+    };
+
+    fetchFilteredData();
+  }, [selectedFilter, dateFilter, customStartDate, customEndDate, isAdmin, toast, formatNYDateKey]);
 
   const handleRefresh = () => {
     fetchMetrics();
@@ -537,9 +717,9 @@ const ScoreboardDashboard = () => {
           {/* Key Metrics */}
           <div>
             <h2 className="text-lg sm:text-xl font-semibold mb-4">Key Metrics</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
               {/* Total Transfers */}
-              <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800 hover:shadow-lg transition-shadow">
+              <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('total_transfers')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-blue-500 flex items-center justify-center">
@@ -561,7 +741,7 @@ const ScoreboardDashboard = () => {
               </Card>
 
               {/* Qualified */}
-              <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-emerald-200 dark:border-emerald-800 hover:shadow-lg transition-shadow">
+              <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-emerald-200 dark:border-emerald-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('qualified')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-emerald-500 flex items-center justify-center">
@@ -583,7 +763,7 @@ const ScoreboardDashboard = () => {
               </Card>
 
               {/* Not Qualified */}
-              <Card className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 border-red-200 dark:border-red-800 hover:shadow-lg transition-shadow">
+              <Card className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 border-red-200 dark:border-red-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('not_qualified')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-red-500 flex items-center justify-center">
@@ -604,8 +784,52 @@ const ScoreboardDashboard = () => {
                 </CardContent>
               </Card>
 
+              {/* Submitted to Attorney */}
+              <Card className="bg-gradient-to-br from-violet-50 to-violet-100 dark:from-violet-950 dark:to-violet-900 border-violet-200 dark:border-violet-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('submitted_to_attorney')}>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-center mb-3">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-violet-500 flex items-center justify-center">
+                      <Send className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-violet-700 dark:text-violet-300 uppercase tracking-wide">Submitted to Attorney</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-violet-900 dark:text-violet-100 mt-2">{metrics.submittedToAttorney}</p>
+                    <p className={`text-xs mt-1 font-medium ${
+                      metrics.submittedToAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
+                      metrics.submittedToAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      'text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {metrics.submittedToAttorneyChange > 0 ? '+' : ''}{metrics.submittedToAttorneyChange.toFixed(1)}%
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Qualified Payable */}
+              <Card className="bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-950 dark:to-teal-900 border-teal-200 dark:border-teal-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('qualified_payable')}>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-center mb-3">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-teal-500 flex items-center justify-center">
+                      <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-teal-700 dark:text-teal-300 uppercase tracking-wide">Qualified Payable</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-teal-900 dark:text-teal-100 mt-2">{metrics.qualifiedPayable}</p>
+                    <p className={`text-xs mt-1 font-medium ${
+                      metrics.qualifiedPayableChange > 0 ? 'text-green-600 dark:text-green-400' : 
+                      metrics.qualifiedPayableChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      'text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {metrics.qualifiedPayableChange > 0 ? '+' : ''}{metrics.qualifiedPayableChange.toFixed(1)}%
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Missing Info */}
-              <Card className="bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900 border-sky-200 dark:border-sky-800 hover:shadow-lg transition-shadow">
+              <Card className="bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900 border-sky-200 dark:border-sky-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('missing_info')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-sky-500 flex items-center justify-center">
@@ -627,7 +851,7 @@ const ScoreboardDashboard = () => {
               </Card>
 
               {/* Returned to Center */}
-              <Card className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900 border-orange-200 dark:border-orange-800 hover:shadow-lg transition-shadow">
+              <Card className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900 border-orange-200 dark:border-orange-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('returned_to_center')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-orange-500 flex items-center justify-center">
@@ -771,6 +995,97 @@ const ScoreboardDashboard = () => {
               </Card>
             </div>
           </div>
+
+          {/* Filtered Data Grid */}
+          {selectedFilter && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg sm:text-xl font-semibold">
+                  {selectedFilter === 'total_transfers' && 'All Transfers'}
+                  {selectedFilter === 'qualified' && 'Qualified Records'}
+                  {selectedFilter === 'not_qualified' && 'Not Qualified Records'}
+                  {selectedFilter === 'missing_info' && 'Missing Info Records'}
+                  {selectedFilter === 'returned_to_center' && 'Returned to Center Records'}
+                  {selectedFilter === 'submitted_to_attorney' && 'Submitted to Attorney Records'}
+                  {selectedFilter === 'qualified_payable' && 'Qualified Payable Records'}
+                </h2>
+                <Button variant="outline" size="sm" onClick={() => setSelectedFilter(null)}>
+                  Close
+                </Button>
+              </div>
+              
+              <Card>
+                <CardContent className="p-0">
+                  {filteredLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                  ) : filteredData.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      No records found for the selected filter.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Customer Name</TableHead>
+                            <TableHead>Agent</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Call Result</TableHead>
+                            <TableHead>Submitted Attorney</TableHead>
+                            <TableHead>Attorney Status</TableHead>
+                            <TableHead className="w-16">Notes</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredData.map((row) => (
+                            <TableRow key={row.id}>
+                              <TableCell>{row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}</TableCell>
+                              <TableCell>{row.insured_name || '-'}</TableCell>
+                              <TableCell>{row.agent || '-'}</TableCell>
+                              <TableCell>{row.status || '-'}</TableCell>
+                              <TableCell>{row.call_result || '-'}</TableCell>
+                              <TableCell>{row.submitted_attorney || '-'}</TableCell>
+                              <TableCell>{row.submitted_attorney_status || '-'}</TableCell>
+                              <TableCell>{row.notes ? (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => {
+                                    setSelectedNotes(row.notes);
+                                    setShowNotesDialog(true);
+                                  }}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              ) : '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Notes Dialog */}
+          <Dialog open={showNotesDialog} onOpenChange={setShowNotesDialog}>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Notes</DialogTitle>
+              </DialogHeader>
+              <div className="mt-4">
+                <div className="whitespace-pre-wrap text-sm">
+                  {selectedNotes || 'No notes available'}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>

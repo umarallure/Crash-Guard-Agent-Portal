@@ -15,6 +15,7 @@ import {
   PanelLeftOpen,
   Menu,
   TrendingUp,
+  Scale,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -257,6 +258,12 @@ const AppShell = ({
         to: '/submission-portal',
         icon: <CheckCircle className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
+      },
+      {
+        label: 'Lawyer Requirements',
+        to: '/lawyer-requirements',
+        icon: <Scale className="h-4 w-4 text-current" />,
+        show: isAdmin && canAccessAgentPages,
       },
     ];
 

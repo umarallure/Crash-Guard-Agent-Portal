@@ -48,6 +48,8 @@ type RequestBody = {
   medical_treatment_proof?: string | null;
   insurance_documents?: string | null;
   police_report?: string | null;
+  submitted_attorney?: string | null;
+  submitted_attorney_status?: string | null;
 };
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -199,7 +201,9 @@ serve(async (req)=>{
       medical_treatment_proof = null,
       insurance_documents = null,
       police_report = null,
-      assigned_attorney_id = null
+      assigned_attorney_id = null,
+      submitted_attorney = null,
+      submitted_attorney_status = null
     } = body;
     // Validate required fields
     if (!submission_id) {
@@ -334,6 +338,8 @@ serve(async (req)=>{
             medical_treatment_proof,
             insurance_documents,
             police_report,
+            submitted_attorney,
+            submitted_attorney_status,
             updated_at: getCurrentTimestampEST()
           }).eq('id', mostRecentEntry.id).select().single();
           if (error) {
@@ -388,7 +394,9 @@ serve(async (req)=>{
             assigned_attorney_id,
             medical_treatment_proof,
             insurance_documents,
-            police_report
+            police_report,
+            submitted_attorney,
+            submitted_attorney_status
           }).select().single();
           if (error) {
             console.error('Error inserting new daily deal flow entry:', error);
@@ -449,6 +457,8 @@ serve(async (req)=>{
           medical_treatment_proof,
           insurance_documents,
           police_report,
+          submitted_attorney,
+          submitted_attorney_status,
           updated_at: getCurrentTimestampEST()
         }).eq('id', existingEntry.id).select().single();
         if (error) {
@@ -503,7 +513,9 @@ serve(async (req)=>{
           assigned_attorney_id,
           medical_treatment_proof,
           insurance_documents,
-          police_report
+          police_report,
+          submitted_attorney,
+          submitted_attorney_status
         }).select().single();
         if (error) {
           console.error('Error inserting new daily deal flow entry:', error);

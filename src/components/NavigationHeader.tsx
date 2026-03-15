@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { LogOut, User, Menu, ChevronDown, Grid3X3, Eye, CheckCircle, BarChart3, Search, ArrowLeft, DollarSign, ShieldCheck, Zap, Users, Calendar, Inbox, TrendingUp } from 'lucide-react';
+import { LogOut, User, Menu, ChevronDown, Grid3X3, Eye, CheckCircle, BarChart3, Search, ArrowLeft, DollarSign, ShieldCheck, Zap, Users, Calendar, Inbox, TrendingUp, Scale } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLicensedAgent } from '@/hooks/useLicensedAgent';
 import { useCenterUser } from '@/hooks/useCenterUser';
@@ -170,10 +170,16 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                       Submission Portal
                     </DropdownMenuItem>
                     {isAdmin && (
-                      <DropdownMenuItem onClick={() => navigate('/scoreboard-dashboard')}>
-                        <TrendingUp className="mr-2 h-4 w-4" />
-                        Score Board
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem onClick={() => navigate('/scoreboard-dashboard')}>
+                          <TrendingUp className="mr-2 h-4 w-4" />
+                          Score Board
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate('/lawyer-requirements')}>
+                          <Scale className="mr-2 h-4 w-4" />
+                          Lawyer Requirements
+                        </DropdownMenuItem>
+                      </>
                     )}
                     <DropdownMenuSeparator />
                   </>

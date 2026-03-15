@@ -22,6 +22,7 @@ import { useCenters } from "@/hooks/useCenters";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
+import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
 import type { Database } from "@/integrations/supabase/types";
 
 interface CallResultFormProps {
@@ -31,6 +32,7 @@ interface CallResultFormProps {
   initialAssignedAttorneyId?: string;
   verificationSessionId?: string;
   verifiedFieldValues?: Record<string, string>;
+  verificationProgress?: number;
 }
 
 type LeadsUpdate = Database["public"]["Tables"]["leads"]["Update"];
@@ -396,11 +398,14 @@ const combineNotes = (structuredNotes: string, additionalNotes: string) => {
   return structuredNotes + '\n\n' + additionalNotes;
 };
 
-export const CallResultForm = ({ submissionId, customerName, onSuccess, initialAssignedAttorneyId, verificationSessionId, verifiedFieldValues }: CallResultFormProps) => {
+export const CallResultForm = ({ submissionId, customerName, onSuccess, initialAssignedAttorneyId, verificationSessionId, verifiedFieldValues, verificationProgress = 0 }: CallResultFormProps) => {
   const [applicationSubmitted, setApplicationSubmitted] = useState<boolean | null>(true);
   const [status, setStatus] = useState("");
   const [statusReason, setStatusReason] = useState("");
   const [notes, setNotes] = useState("");
+  const [selectedLawyerId, setSelectedLawyerId] = useState<string>("");
+  const [selectedLawyerName, setSelectedLawyerName] = useState<string>("");
+  const [submissionStatus, setSubmissionStatus] = useState<string>("");
   const [bufferAgent, setBufferAgent] = useState("");
   const [agentWhoTookCall, setAgentWhoTookCall] = useState("");
   const [leadVendor, setLeadVendor] = useState("");
@@ -1260,7 +1265,9 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
         third_party_vehicle_registration: thirdPartyVehicleRegistration || null,
         other_party_admit_fault: otherPartyAdmitFault,
         passengers_count: passengersCount ? parseInt(passengersCount) : null,
-        call_source: callSource
+        call_source: callSource,
+        submitted_attorney: selectedLawyerName || null,
+        submitted_attorney_status: selectedLawyerId ? submissionStatus : null
       };
 
       const { data: { user } } = await supabase.auth.getUser();
@@ -1413,6 +1420,8 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                 medical_treatment_proof: medicalTreatmentProof ? medicalTreatmentProof : null,
                 insurance_documents: insuranceDocuments ? insuranceDocuments : null,
                 police_report: policeReport ? policeReport : null,
+                submitted_attorney: selectedLawyerName || null,
+                submitted_attorney_status: selectedLawyerId ? submissionStatus : null,
               }
             });
 
@@ -1725,10 +1734,10 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                       Return this lead to the center
                     </DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-3 text-sm">
+                  <div className="space-y-3 text-lg">
                     <p>Share the DID below to return this call to the originating center.</p>
                     <div className="flex items-center gap-2">
-                      <div className="rounded-md bg-muted px-3 py-2 font-mono text-sm">
+                      <div className="rounded-md bg-muted px-6 py-4 font-mono text-2xl font-bold">
                         {centerDid || "No DID configured"}
                       </div>
                       {centerDid && (
@@ -1873,289 +1882,39 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                 </div>
               </div>
 
-              {/* Accident/Incident Information Section */}
-              <div className="border-t pt-4 mt-4">
-                <h4 className="font-semibold text-green-800 mb-3">Accident/Incident Information (Optional)</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Accident Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !accidentDate && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {accidentDate ? format(accidentDate, "PPP") : "Pick a date"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={accidentDate}
-                          onSelect={setAccidentDate}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+              <QualifiedLawyersCard
+                leadState={verifiedFieldValues?.state}
+                accidentDate={verifiedFieldValues?.accident_date ? new Date(verifiedFieldValues.accident_date) : undefined}
+                policeReport={verifiedFieldValues?.police_report}
+                insuranceDocuments={verifiedFieldValues?.insurance_documents}
+                medicalTreatmentProof={verifiedFieldValues?.medical_treatment_proof}
+                driverLicense={verifiedFieldValues?.driver_license}
+                selectedLawyerId={selectedLawyerId}
+                onLawyerSelect={(lawyer: SelectedLawyer | null) => {
+                  setSelectedLawyerId(lawyer?.id || "");
+                  setSelectedLawyerName(lawyer?.attorney_name || "");
+                }}
+                submissionStatus="submitted"
+              />
 
-                  <div>
-                    <Label htmlFor="accidentLocation">Accident Location</Label>
-                    <Input
-                      id="accidentLocation"
-                      value={accidentLocation}
-                      onChange={(e) => setAccidentLocation(e.target.value)}
-                      placeholder="City, State or Address"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <Label htmlFor="accidentScenario">Accident Scenario</Label>
-                    <Textarea
-                      id="accidentScenario"
-                      value={accidentScenario}
-                      onChange={(e) => setAccidentScenario(e.target.value)}
-                      placeholder="Describe what happened..."
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <Label htmlFor="injuries">Injuries</Label>
-                    <Textarea
-                      id="injuries"
-                      value={injuries}
-                      onChange={(e) => setInjuries(e.target.value)}
-                      placeholder="Describe any injuries sustained..."
-                      rows={2}
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <Label htmlFor="medicalAttention">Medical Attention</Label>
-                    <Textarea
-                      id="medicalAttention"
-                      value={medicalAttention}
-                      onChange={(e) => setMedicalAttention(e.target.value)}
-                      placeholder="Details about medical treatment received..."
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Police Attended</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={policeAttended === true ? "default" : "outline"}
-                        onClick={() => setPoliceAttended(true)}
-                        className="flex-1"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={policeAttended === false ? "default" : "outline"}
-                        onClick={() => setPoliceAttended(false)}
-                        className="flex-1"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Medical Treatment Proof</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={medicalTreatmentProof === 'true' ? "default" : "outline"}
-                        onClick={() => setMedicalTreatmentProof('true')}
-                        className="flex-1"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={medicalTreatmentProof === 'false' ? "default" : "outline"}
-                        onClick={() => setMedicalTreatmentProof('false')}
-                        className="flex-1"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Insurance Documents</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={insuranceDocuments === 'true' ? "default" : "outline"}
-                        onClick={() => setInsuranceDocuments('true')}
-                        className="flex-1"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={insuranceDocuments === 'false' ? "default" : "outline"}
-                        onClick={() => setInsuranceDocuments('false')}
-                        className="flex-1"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Police Report</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={policeReport === 'true' ? "default" : "outline"}
-                        onClick={() => setPoliceReport('true')}
-                        className="flex-1"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={policeReport === 'false' ? "default" : "outline"}
-                        onClick={() => setPoliceReport('false')}
-                        className="flex-1"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Was Insured</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={insured === true ? "default" : "outline"}
-                        onClick={() => setInsured(true)}
-                        className="flex-1"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={insured === false ? "default" : "outline"}
-                        onClick={() => setInsured(false)}
-                        className="flex-1"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="vehicleRegistration">Vehicle Registration</Label>
-                    <Input
-                      id="vehicleRegistration"
-                      value={vehicleRegistration}
-                      onChange={(e) => setVehicleRegistration(e.target.value)}
-                      placeholder="License plate number"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="insuranceCompany">Insurance Company</Label>
-                    <Input
-                      id="insuranceCompany"
-                      value={insuranceCompany}
-                      onChange={(e) => setInsuranceCompany(e.target.value)}
-                      placeholder="Name of insurance company"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="thirdPartyVehicleRegistration">Third Party Vehicle Registration</Label>
-                    <Input
-                      id="thirdPartyVehicleRegistration"
-                      value={thirdPartyVehicleRegistration}
-                      onChange={(e) => setThirdPartyVehicleRegistration(e.target.value)}
-                      placeholder="Other vehicle's license plate"
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Other Party Admitted Fault</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={otherPartyAdmitFault === true ? "default" : "outline"}
-                        onClick={() => setOtherPartyAdmitFault(true)}
-                        className="flex-1"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={otherPartyAdmitFault === false ? "default" : "outline"}
-                        onClick={() => setOtherPartyAdmitFault(false)}
-                        className="flex-1"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="passengersCount">Number of Passengers</Label>
-                    <Input
-                      id="passengersCount"
-                      type="number"
-                      min="0"
-                      value={passengersCount}
-                      onChange={(e) => setPassengersCount(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Prior Attorney Involved</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={priorAttorneyInvolved === true ? "default" : "outline"}
-                        onClick={() => setPriorAttorneyInvolved(true)}
-                        className="flex-1"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={priorAttorneyInvolved === false ? "default" : "outline"}
-                        onClick={() => setPriorAttorneyInvolved(false)}
-                        className="flex-1"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  </div>
-
-                  {priorAttorneyInvolved === true && (
-                    <div className="md:col-span-2">
-                      <Label htmlFor="priorAttorneyDetails">Attorney Details</Label>
-                      <Textarea
-                        id="priorAttorneyDetails"
-                        value={priorAttorneyDetails}
-                        onChange={(e) => setPriorAttorneyDetails(e.target.value)}
-                        placeholder="Name, firm, contact information..."
-                        rows={2}
-                      />
-                    </div>
-                  )}
+              {/* Submission Status */}
+              {selectedLawyerId && (
+                <div className="mt-4">
+                  <Label htmlFor="submissionStatus" className="text-base font-semibold">
+                    Submission Status <span className="text-red-500">*</span>
+                  </Label>
+                  <Select value={submissionStatus} onValueChange={setSubmissionStatus} required>
+                    <SelectTrigger className={`mt-1 ${!submissionStatus ? 'border-red-300 focus:border-red-500' : ''}`}>
+                      <SelectValue placeholder="Select submission status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="submitted">Submitted</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="nocoverage">No Coverage</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
+              )}
 
               {/* Notes for Submitted Applications */}
               <div>
@@ -2393,6 +2152,23 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
             </div>
           )}
 
+          {/* Validation Messages */}
+          {applicationSubmitted === true && verificationProgress < 80 && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+              Verification must be at least 80% complete to save the call result. Current: {verificationProgress}%
+            </div>
+          )}
+          {applicationSubmitted === true && verificationProgress >= 80 && !selectedLawyerId && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+              Please select a lawyer before saving the call result.
+            </div>
+          )}
+          {applicationSubmitted === true && selectedLawyerId && !submissionStatus && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+              Please select a submission status before saving the call result.
+            </div>
+          )}
+
           {/* Save Button */}
           <div className="flex justify-end">
               <Button 
@@ -2401,6 +2177,9 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                   applicationSubmitted === null || 
                   !callSource || 
                   isSubmitting || 
+                  (applicationSubmitted === true && verificationProgress < 80) ||
+                  (applicationSubmitted === true && !selectedLawyerId) ||
+                  (applicationSubmitted === true && selectedLawyerId && !submissionStatus) ||
                   (applicationSubmitted === false && (
                     !agentWhoTookCall || 
                     !status || 
