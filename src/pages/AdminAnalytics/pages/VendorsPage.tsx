@@ -77,6 +77,7 @@ export const VendorsPage = () => {
       const { data, error } = await supabase
         .from('daily_deal_flow')
         .select('lead_vendor')
+        .not('insured_name', 'ilike', 'Test -%')
         .not('lead_vendor', 'is', null);
 
       if (error) throw error;
@@ -141,6 +142,7 @@ export const VendorsPage = () => {
       const { data, error } = await supabase
         .from('daily_deal_flow')
         .select('lead_vendor, date')
+        .not('insured_name', 'ilike', 'Test -%')
         .in('lead_vendor', vendorsToQuery)
         .gte('date', format(start, 'yyyy-MM-dd'))
         .lte('date', format(end, 'yyyy-MM-dd'));
@@ -151,6 +153,7 @@ export const VendorsPage = () => {
       const { data: convertedData, error: convertedError } = await supabase
         .from('daily_deal_flow')
         .select('lead_vendor, date')
+        .not('insured_name', 'ilike', 'Test -%')
         .in('lead_vendor', vendorsToQuery)
         .eq('status', 'Pending Approval')
         .gte('date', format(start, 'yyyy-MM-dd'))

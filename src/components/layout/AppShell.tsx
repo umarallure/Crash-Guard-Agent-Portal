@@ -16,6 +16,7 @@ import {
   Menu,
   TrendingUp,
   Scale,
+  Phone,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -257,6 +258,12 @@ const AppShell = ({
         label: 'Submission Portal',
         to: '/submission-portal',
         icon: <CheckCircle className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
+        label: 'Dialer',
+        to: '/aloware-dialer',
+        icon: <Phone className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {

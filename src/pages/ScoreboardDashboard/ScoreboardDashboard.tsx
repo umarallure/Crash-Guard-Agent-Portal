@@ -284,7 +284,8 @@ const ScoreboardDashboard = () => {
       // Fetch current period data
       const { data, error } = await (supabase
         .from('daily_deal_flow')
-        .select('status, call_result, submitted_attorney, submitted_attorney_status') as any)
+        .select('status, call_result')
+        .not('insured_name', 'ilike', 'Test -%')
         .gte('date', startKey)
         .lte('date', endKey);
 
@@ -293,7 +294,8 @@ const ScoreboardDashboard = () => {
       // Fetch previous period data for comparison
       const { data: prevData, error: prevError } = await (supabase
         .from('daily_deal_flow')
-        .select('status, call_result, submitted_attorney, submitted_attorney_status') as any)
+        .select('status, call_result')
+        .not('insured_name', 'ilike', 'Test -%')
         .gte('date', prevStartKey)
         .lte('date', prevEndKey);
 

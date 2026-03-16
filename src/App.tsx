@@ -44,6 +44,7 @@ import ScoreboardDashboard from "./pages/ScoreboardDashboard";
 import NotFound from "./pages/NotFound";
 import UserManagement from "./pages/UserManagement";
 import LawyerRequirements from "./pages/LawyerRequirements";
+import AlowareDialer from "./pages/AlowareDialer";
 import AppShell from "@/components/layout/AppShell";
 import { Navigate } from "react-router-dom";
 
@@ -387,6 +388,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Score Board">
                     <ScoreboardDashboard />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/aloware-dialer" 
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Dialer">
+                    <AlowareDialer />
                   </AppShell>
                 </ProtectedRoute>
               } 
