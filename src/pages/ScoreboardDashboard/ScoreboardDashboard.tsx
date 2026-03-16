@@ -287,7 +287,7 @@ const ScoreboardDashboard = () => {
         .select('status, call_result')
         .not('insured_name', 'ilike', 'Test -%')
         .gte('date', startKey)
-        .lte('date', endKey);
+        .lte('date', endKey))
 
       if (error) throw error;
 
@@ -297,7 +297,7 @@ const ScoreboardDashboard = () => {
         .select('status, call_result')
         .not('insured_name', 'ilike', 'Test -%')
         .gte('date', prevStartKey)
-        .lte('date', prevEndKey);
+        .lte('date', prevEndKey));
 
       if (prevError) throw prevError;
 
