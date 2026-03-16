@@ -225,6 +225,11 @@ const ScoreboardDashboard = () => {
         const key = formatNYDateKey(anchorNow);
         return { startKey: key, endKey: key };
       }
+      case 'yesterday': {
+        const yesterday = subDays(anchorNow, 1);
+        const key = formatNYDateKey(yesterday);
+        return { startKey: key, endKey: key };
+      }
       case '7days': {
         return {
           startKey: formatNYDateKey(subDays(anchorNow, 6)),
@@ -236,6 +241,9 @@ const ScoreboardDashboard = () => {
           startKey: formatNYDateKey(subDays(anchorNow, 29)),
           endKey: formatNYDateKey(anchorNow),
         };
+      }
+      case 'alltime': {
+        return { startKey: '2020-01-01', endKey: formatNYDateKey(anchorNow) };
       }
       case 'custom': {
         if (customStartDate && customEndDate) {
@@ -262,6 +270,11 @@ const ScoreboardDashboard = () => {
         const key = formatNYDateKey(subDays(anchorNow, 1));
         return { startKey: key, endKey: key };
       }
+      case 'yesterday': {
+        const twoDaysAgo = subDays(anchorNow, 2);
+        const key = formatNYDateKey(twoDaysAgo);
+        return { startKey: key, endKey: key };
+      }
       case '7days': {
         return {
           startKey: formatNYDateKey(subDays(anchorNow, 13)),
@@ -273,6 +286,9 @@ const ScoreboardDashboard = () => {
           startKey: formatNYDateKey(subDays(anchorNow, 59)),
           endKey: formatNYDateKey(subDays(anchorNow, 30)),
         };
+      }
+      case 'alltime': {
+        return { startKey: '2019-01-01', endKey: '2019-12-31' };
       }
       case 'custom': {
         if (customStartDate && customEndDate) {
@@ -577,6 +593,12 @@ const ScoreboardDashboard = () => {
             endKey = startKey;
             break;
           }
+          case 'yesterday': {
+            const yesterday = subDays(anchorNow, 1);
+            startKey = formatNYDateKey(yesterday);
+            endKey = startKey;
+            break;
+          }
           case '7days': {
             startKey = formatNYDateKey(subDays(anchorNow, 6));
             endKey = formatNYDateKey(anchorNow);
@@ -584,6 +606,11 @@ const ScoreboardDashboard = () => {
           }
           case '30days': {
             startKey = formatNYDateKey(subDays(anchorNow, 29));
+            endKey = formatNYDateKey(anchorNow);
+            break;
+          }
+          case 'alltime': {
+            startKey = '2020-01-01';
             endKey = formatNYDateKey(anchorNow);
             break;
           }
@@ -767,8 +794,10 @@ const ScoreboardDashboard = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="yesterday">Yesterday</SelectItem>
                     <SelectItem value="7days">Last 7 Days</SelectItem>
                     <SelectItem value="30days">Last 30 Days</SelectItem>
+                    <SelectItem value="alltime">All Time</SelectItem>
                     <SelectItem value="custom">Custom Range</SelectItem>
                   </SelectContent>
                 </Select>
