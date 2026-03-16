@@ -8,11 +8,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, RefreshCw, Send, FileText, CheckCircle, XCircle, AlertCircle, TrendingUp, TrendingDown, Minus, DollarSign, Eye } from 'lucide-react';
+import { Calendar, RefreshCw, Send, FileText, CheckCircle, XCircle, AlertCircle, TrendingUp, TrendingDown, Minus, DollarSign, Eye, Phone, Play, Pause, Clock } from 'lucide-react';
 import { subDays, format, parseISO } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { searchAircallCalls, formatDuration, formatTimestamp } from '@/lib/aircall';
 
 interface FilteredRow {
   id: string;
@@ -33,11 +35,12 @@ interface DashboardMetrics {
   pendingApproval: number;
   approved: number;
   qualified: number;
-  missingInfo: number;
   notQualified: number;
-  returnedToCenter: number;
   submittedToAttorney: number;
   qualifiedPayable: number;
+  noCoverage: number;
+  approvedAttorney: number;
+  deniedAttorney: number;
   
   // Performance rates
   transferRate: number;
@@ -60,11 +63,12 @@ interface DashboardMetrics {
   pendingApprovalChange: number;
   approvedChange: number;
   qualifiedChange: number;
-  missingInfoChange: number;
   notQualifiedChange: number;
-  returnedToCenterChange: number;
   submittedToAttorneyChange: number;
   qualifiedPayableChange: number;
+  noCoverageChange: number;
+  approvedAttorneyChange: number;
+  deniedAttorneyChange: number;
   transferRateChange: number;
   qualifyingRateChange: number;
   billableRateChange: number;
@@ -92,11 +96,12 @@ const ScoreboardDashboard = () => {
     pendingApproval: 0,
     approved: 0,
     qualified: 0,
-    missingInfo: 0,
     notQualified: 0,
-    returnedToCenter: 0,
     submittedToAttorney: 0,
     qualifiedPayable: 0,
+    noCoverage: 0,
+    approvedAttorney: 0,
+    deniedAttorney: 0,
     transferRate: 0,
     qualifyingRate: 0,
     billableRate: 0,
@@ -113,11 +118,12 @@ const ScoreboardDashboard = () => {
     pendingApprovalChange: 0,
     approvedChange: 0,
     qualifiedChange: 0,
-    missingInfoChange: 0,
     notQualifiedChange: 0,
-    returnedToCenterChange: 0,
     submittedToAttorneyChange: 0,
     qualifiedPayableChange: 0,
+    noCoverageChange: 0,
+    approvedAttorneyChange: 0,
+    deniedAttorneyChange: 0,
     transferRateChange: 0,
     qualifyingRateChange: 0,
     billableRateChange: 0,
@@ -127,11 +133,26 @@ const ScoreboardDashboard = () => {
   const [dateFilter, setDateFilter] = useState<string>('today');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<string>('total_transfers');
   const [filteredData, setFilteredData] = useState<FilteredRow[]>([]);
   const [filteredLoading, setFilteredLoading] = useState(false);
   const [showNotesDialog, setShowNotesDialog] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const recordsPerPage = 20;
+  const [showCallDialog, setShowCallDialog] = useState(false);
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [callRecordings, setCallRecordings] = useState<Array<{
+    id: number;
+    direction: string;
+    status: string;
+    duration: number;
+    started_at: number;
+    recording: string | null;
+    user: { name: string } | null;
+  }>>([]);
+  const [callsLoading, setCallsLoading] = useState(false);
+  const [playingRecording, setPlayingRecording] = useState<number | null>(null);
   const [isAdmin, setIsAdmin] = useState(() => {
     if (!user?.id) return false;
     try {
@@ -350,6 +371,21 @@ const ScoreboardDashboard = () => {
         d.status?.toLowerCase() === 'qualified_payable'
       ).length || 0;
 
+      // No Coverage: submitted_attorney_status is "nocoverage"
+      const noCoverage = data?.filter(d => 
+        d.submitted_attorney_status === 'nocoverage'
+      ).length || 0;
+
+      // Approved Attorney: submitted_attorney_status is "approved"
+      const approvedAttorney = data?.filter(d => 
+        d.submitted_attorney_status === 'approved'
+      ).length || 0;
+
+      // Denied Attorney: submitted_attorney_status is "denied"
+      const deniedAttorney = data?.filter(d => 
+        d.submitted_attorney_status === 'denied'
+      ).length || 0;
+
       // Calculate performance rates based on status field
       // Transfer Rate: Total transfers that moved forward / Total Transfers
       const transferCount = data?.filter(d => 
@@ -422,6 +458,19 @@ const ScoreboardDashboard = () => {
         d.status?.toLowerCase() === 'qualified_payable'
       ).length || 0;
 
+      // Previous period calculations for new metrics
+      const prevNoCoverage = prevData?.filter(d => 
+        d.submitted_attorney_status === 'nocoverage'
+      ).length || 0;
+
+      const prevApprovedAttorney = prevData?.filter(d => 
+        d.submitted_attorney_status === 'approved'
+      ).length || 0;
+
+      const prevDeniedAttorney = prevData?.filter(d => 
+        d.submitted_attorney_status === 'denied'
+      ).length || 0;
+
       const prevTransferCount = prevData?.filter(d => 
         d.status && !d.status.toLowerCase().includes('incomplete') && 
         !d.status.toLowerCase().includes('not_qualified')
@@ -450,11 +499,12 @@ const ScoreboardDashboard = () => {
         pendingApproval,
         approved,
         qualified,
-        missingInfo,
         notQualified,
-        returnedToCenter,
         submittedToAttorney,
         qualifiedPayable,
+        noCoverage,
+        approvedAttorney,
+        deniedAttorney,
         transferRate,
         qualifyingRate,
         billableRate,
@@ -471,11 +521,12 @@ const ScoreboardDashboard = () => {
         pendingApprovalChange: calculateChange(pendingApproval, prevPendingApproval),
         approvedChange: calculateChange(approved, prevApproved),
         qualifiedChange: calculateChange(qualified, prevQualified),
-        missingInfoChange: calculateChange(missingInfo, prevMissingInfo),
         notQualifiedChange: calculateChange(notQualified, prevNotQualified),
-        returnedToCenterChange: calculateChange(returnedToCenter, prevReturnedToCenter),
         submittedToAttorneyChange: calculateChange(submittedToAttorney, prevSubmittedToAttorney),
         qualifiedPayableChange: calculateChange(qualifiedPayable, prevQualifiedPayable),
+        noCoverageChange: calculateChange(noCoverage, prevNoCoverage),
+        approvedAttorneyChange: calculateChange(approvedAttorney, prevApprovedAttorney),
+        deniedAttorneyChange: calculateChange(deniedAttorney, prevDeniedAttorney),
         transferRateChange: calculateChange(transferRate, prevTransferRate),
         qualifyingRateChange: calculateChange(qualifyingRate, prevQualifyingRate),
         billableRateChange: calculateChange(billableRate, prevBillableRate),
@@ -503,12 +554,14 @@ const ScoreboardDashboard = () => {
   // Fetch filtered data when selectedFilter or date filter changes
   useEffect(() => {
     const fetchFilteredData = async () => {
-      if (!selectedFilter || !isAdmin) {
+      if (!isAdmin) {
         setFilteredData([]);
+        setCurrentPage(1);
         return;
       }
 
       setFilteredLoading(true);
+      setCurrentPage(1);
       try {
         // Calculate date range directly in the effect
         const now = new Date();
@@ -579,22 +632,6 @@ const ScoreboardDashboard = () => {
               d.status?.toLowerCase().includes('not_qualified')
             );
             break;
-          case 'missing_info':
-            filtered = (data || []).filter((d: any) => {
-              const status = (d.status || '').toLowerCase();
-              return (
-                status === 'qualified_missing_info' ||
-                status.includes('qualified: missing information') ||
-                status.includes('missing information')
-              );
-            });
-            break;
-          case 'returned_to_center':
-            filtered = (data || []).filter((d: any) => 
-              d.status?.toLowerCase().includes('returned to center') ||
-              d.status?.toLowerCase().includes('returned_to_center')
-            );
-            break;
           case 'submitted_to_attorney':
             filtered = (data || []).filter((d: any) => 
               d.submitted_attorney && 
@@ -604,6 +641,21 @@ const ScoreboardDashboard = () => {
           case 'qualified_payable':
             filtered = (data || []).filter((d: any) => 
               d.status?.toLowerCase() === 'qualified_payable'
+            );
+            break;
+          case 'no_coverage':
+            filtered = (data || []).filter((d: any) => 
+              d.submitted_attorney_status === 'nocoverage'
+            );
+            break;
+          case 'approved_attorney':
+            filtered = (data || []).filter((d: any) => 
+              d.submitted_attorney_status === 'approved'
+            );
+            break;
+          case 'denied_attorney':
+            filtered = (data || []).filter((d: any) => 
+              d.submitted_attorney_status === 'denied'
             );
             break;
           default:
@@ -644,6 +696,45 @@ const ScoreboardDashboard = () => {
     if (rate > target) return 'text-green-600';
     if (rate < target) return 'text-red-600';
     return 'text-gray-600';
+  };
+
+  const handleDetailsClick = async (phoneNumber: string | null, notes: string | null = null) => {
+    if (!phoneNumber) return;
+    
+    setSelectedNotes(notes);
+    setShowCallDialog(true);
+    setCallsLoading(true);
+    setCallRecordings([]);
+
+    try {
+      // Get date range from current filter and convert to timestamps
+      const { startKey, endKey } = getDateRange();
+      
+      // Parse the date keys (yyyy-MM-dd format) to timestamps
+      // Start of day for startKey, end of day for endKey
+      const fromTimestamp = Math.floor(new Date(`${startKey}T00:00:00Z`).getTime() / 1000);
+      const toTimestamp = Math.floor(new Date(`${endKey}T23:59:59Z`).getTime() / 1000);
+
+      const calls = await searchAircallCalls(phoneNumber, fromTimestamp, toTimestamp);
+      setCallRecordings(calls.map(call => ({
+        id: call.id,
+        direction: call.direction,
+        status: call.status,
+        duration: call.duration,
+        started_at: call.started_at,
+        recording: call.recording,
+        user: call.user,
+      })));
+    } catch (error) {
+      console.error('Error fetching calls:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load call recordings.",
+        variant: "destructive",
+      });
+    } finally {
+      setCallsLoading(false);
+    }
   };
 
   if (loading || !isAdmin) {
@@ -719,9 +810,9 @@ const ScoreboardDashboard = () => {
           {/* Key Metrics */}
           <div>
             <h2 className="text-lg sm:text-xl font-semibold mb-4">Key Metrics</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Total Transfers */}
-              <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('total_transfers')}>
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'total_transfers' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900'} border-2 ${selectedFilter === 'total_transfers' ? 'border-gray-400 dark:border-gray-500' : 'border-blue-200 dark:border-blue-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('total_transfers')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-blue-500 flex items-center justify-center">
@@ -743,7 +834,7 @@ const ScoreboardDashboard = () => {
               </Card>
 
               {/* Qualified */}
-              <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900 border-emerald-200 dark:border-emerald-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('qualified')}>
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900'} border-2 ${selectedFilter === 'qualified' ? 'border-gray-400 dark:border-gray-500' : 'border-emerald-200 dark:border-emerald-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-emerald-500 flex items-center justify-center">
@@ -765,7 +856,7 @@ const ScoreboardDashboard = () => {
               </Card>
 
               {/* Not Qualified */}
-              <Card className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 border-red-200 dark:border-red-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('not_qualified')}>
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'not_qualified' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-red-50 to-red-100 dark:from-red-950 dark:to-red-900'} border-2 ${selectedFilter === 'not_qualified' ? 'border-gray-400 dark:border-gray-500' : 'border-red-200 dark:border-red-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('not_qualified')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-red-500 flex items-center justify-center">
@@ -786,30 +877,8 @@ const ScoreboardDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Submitted to Attorney */}
-              <Card className="bg-gradient-to-br from-violet-50 to-violet-100 dark:from-violet-950 dark:to-violet-900 border-violet-200 dark:border-violet-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('submitted_to_attorney')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-violet-500 flex items-center justify-center">
-                      <Send className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-violet-700 dark:text-violet-300 uppercase tracking-wide">Submitted to Attorney</p>
-                    <p className="text-3xl sm:text-4xl font-bold text-violet-900 dark:text-violet-100 mt-2">{metrics.submittedToAttorney}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.submittedToAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.submittedToAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' : 
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.submittedToAttorneyChange > 0 ? '+' : ''}{metrics.submittedToAttorneyChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Qualified Payable */}
-              <Card className="bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-950 dark:to-teal-900 border-teal-200 dark:border-teal-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('qualified_payable')}>
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified_payable' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-teal-50 to-teal-100 dark:from-teal-950 dark:to-teal-900'} border-2 ${selectedFilter === 'qualified_payable' ? 'border-gray-400 dark:border-gray-500' : 'border-teal-200 dark:border-teal-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified_payable')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
                     <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-teal-500 flex items-center justify-center">
@@ -830,168 +899,90 @@ const ScoreboardDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Missing Info */}
-              <Card className="bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900 border-sky-200 dark:border-sky-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('missing_info')}>
+              {/* Submitted to Attorney */}
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'submitted_to_attorney' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-violet-50 to-violet-100 dark:from-violet-950 dark:to-violet-900'} border-2 ${selectedFilter === 'submitted_to_attorney' ? 'border-gray-400 dark:border-gray-500' : 'border-violet-200 dark:border-violet-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('submitted_to_attorney')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-sky-500 flex items-center justify-center">
-                      <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-violet-500 flex items-center justify-center">
+                      <Send className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-sky-700 dark:text-sky-300 uppercase tracking-wide">Missing Info</p>
-                    <p className="text-3xl sm:text-4xl font-bold text-sky-900 dark:text-sky-100 mt-2">{metrics.missingInfo}</p>
+                    <p className="text-sm font-medium text-violet-700 dark:text-violet-300 uppercase tracking-wide">Submitted to Attorney</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-violet-900 dark:text-violet-100 mt-2">{metrics.submittedToAttorney}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.missingInfoChange < 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.missingInfoChange > 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.submittedToAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
+                      metrics.submittedToAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' : 
                       'text-gray-600 dark:text-gray-400'
                     }`}>
-                      {metrics.missingInfoChange > 0 ? '+' : ''}{metrics.missingInfoChange.toFixed(1)}%
+                      {metrics.submittedToAttorneyChange > 0 ? '+' : ''}{metrics.submittedToAttorneyChange.toFixed(1)}%
                     </p>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Returned to Center */}
-              <Card className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900 border-orange-200 dark:border-orange-800 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedFilter('returned_to_center')}>
+              {/* No Coverage */}
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'no_coverage' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900'} border-2 ${selectedFilter === 'no_coverage' ? 'border-gray-400 dark:border-gray-500' : 'border-gray-200 dark:border-gray-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('no_coverage')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-orange-500 flex items-center justify-center">
-                      <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-gray-500 flex items-center justify-center">
+                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-orange-700 dark:text-orange-300 uppercase tracking-wide">Returned to Center</p>
-                    <p className="text-3xl sm:text-4xl font-bold text-orange-900 dark:text-orange-100 mt-2">{metrics.returnedToCenter}</p>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">No Coverage</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mt-2">{metrics.noCoverage}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.returnedToCenterChange < 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.returnedToCenterChange > 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.noCoverageChange < 0 ? 'text-green-600 dark:text-green-400' : 
+                      metrics.noCoverageChange > 0 ? 'text-red-600 dark:text-red-400' : 
                       'text-gray-600 dark:text-gray-400'
                     }`}>
-                      {metrics.returnedToCenterChange > 0 ? '+' : ''}{metrics.returnedToCenterChange.toFixed(1)}%
+                      {metrics.noCoverageChange > 0 ? '+' : ''}{metrics.noCoverageChange.toFixed(1)}%
                     </p>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          </div>
 
-          {/* Performance Rates */}
-          <div>
-            <h2 className="text-lg sm:text-xl font-semibold mb-4">Performance Rates</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Transfer Rate */}
-              <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                        <Send className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      </div>
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Transfer Rate</span>
+              {/* Approved Attorney */}
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'approved_attorney' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-green-50 to-green-100 dark:from-green-950 dark:to-green-900'} border-2 ${selectedFilter === 'approved_attorney' ? 'border-gray-400 dark:border-gray-500' : 'border-green-200 dark:border-green-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('approved_attorney')}>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-center mb-3">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-green-500 flex items-center justify-center">
+                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
-                    {getPerformanceIcon(metrics.transferRate, 70)}
                   </div>
-                  <div className="space-y-2">
-                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(metrics.transferRate, 70)}`}>
-                      {metrics.transferRate.toFixed(1)}%
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">Approved Attorney</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-green-900 dark:text-green-100 mt-2">{metrics.approvedAttorney}</p>
+                    <p className={`text-xs mt-1 font-medium ${
+                      metrics.approvedAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
+                      metrics.approvedAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      'text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {metrics.approvedAttorneyChange > 0 ? '+' : ''}{metrics.approvedAttorneyChange.toFixed(1)}%
                     </p>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{metrics.transferCount} of {metrics.transferTotal}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
-                      <div 
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(metrics.transferRate, 100)}%` }}
-                      />
-                    </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Qualifying Rate */}
-              <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center">
-                        <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Qualifying Rate</span>
+              {/* Denied Attorney */}
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'denied_attorney' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-pink-50 to-pink-100 dark:from-pink-950 dark:to-pink-900'} border-2 ${selectedFilter === 'denied_attorney' ? 'border-gray-400 dark:border-gray-500' : 'border-pink-200 dark:border-pink-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('denied_attorney')}>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-center mb-3">
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-pink-500 flex items-center justify-center">
+                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
-                    {getPerformanceIcon(metrics.qualifyingRate, 40)}
                   </div>
-                  <div className="space-y-2">
-                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(metrics.qualifyingRate, 40)}`}>
-                      {metrics.qualifyingRate.toFixed(1)}%
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-pink-700 dark:text-pink-300 uppercase tracking-wide">Denied Attorney</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-pink-900 dark:text-pink-100 mt-2">{metrics.deniedAttorney}</p>
+                    <p className={`text-xs mt-1 font-medium ${
+                      metrics.deniedAttorneyChange < 0 ? 'text-green-600 dark:text-green-400' : 
+                      metrics.deniedAttorneyChange > 0 ? 'text-red-600 dark:text-red-400' : 
+                      'text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {metrics.deniedAttorneyChange > 0 ? '+' : ''}{metrics.deniedAttorneyChange.toFixed(1)}%
                     </p>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{metrics.qualifyingCount} of {metrics.qualifyingTotal}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
-                      <div 
-                        className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(metrics.qualifyingRate, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Billable Rate */}
-              <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center">
-                        <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Billable Rate</span>
-                    </div>
-                    {getPerformanceIcon(metrics.billableRate, 60)}
-                  </div>
-                  <div className="space-y-2">
-                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(metrics.billableRate, 60)}`}>
-                      {metrics.billableRate.toFixed(1)}%
-                    </p>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{metrics.billableCount} of {metrics.billableTotal}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
-                      <div 
-                        className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(metrics.billableRate, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Return Back Rate */}
-              <Card className="border hover:shadow-lg transition-shadow">
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-9 w-9 rounded-lg bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-                        <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                      </div>
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Return Back Rate</span>
-                    </div>
-                    {getPerformanceIcon(20 - metrics.returnBackRate, 20)}
-                  </div>
-                  <div className="space-y-2">
-                    <p className={`text-3xl sm:text-4xl font-bold ${getPerformanceColor(20 - metrics.returnBackRate, 20)}`}>
-                      {metrics.returnBackRate.toFixed(1)}%
-                    </p>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{metrics.returnBackCount} of {metrics.returnBackTotal}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
-                      <div 
-                        className="bg-gradient-to-r from-orange-500 to-orange-600 h-1.5 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(metrics.returnBackRate, 100)}%` }}
-                      />
-                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -999,24 +990,28 @@ const ScoreboardDashboard = () => {
           </div>
 
           {/* Filtered Data Grid */}
-          {selectedFilter && (
+          {selectedFilter && selectedFilter !== '' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg sm:text-xl font-semibold">
                   {selectedFilter === 'total_transfers' && 'All Transfers'}
                   {selectedFilter === 'qualified' && 'Qualified Records'}
                   {selectedFilter === 'not_qualified' && 'Not Qualified Records'}
-                  {selectedFilter === 'missing_info' && 'Missing Info Records'}
-                  {selectedFilter === 'returned_to_center' && 'Returned to Center Records'}
-                  {selectedFilter === 'submitted_to_attorney' && 'Submitted to Attorney Records'}
                   {selectedFilter === 'qualified_payable' && 'Qualified Payable Records'}
+                  {selectedFilter === 'submitted_to_attorney' && 'Submitted to Attorney Records'}
+                  {selectedFilter === 'no_coverage' && 'No Coverage Records'}
+                  {selectedFilter === 'approved_attorney' && 'Approved Attorney Records'}
+                  {selectedFilter === 'denied_attorney' && 'Denied Attorney Records'}
                 </h2>
-                <Button variant="outline" size="sm" onClick={() => setSelectedFilter(null)}>
-                  Close
+                <Button variant="outline" size="sm" onClick={() => {
+                  setSelectedFilter('');
+                  setCurrentPage(1);
+                }}>
+                  Clear
                 </Button>
               </div>
               
-              <Card>
+              <Card className="border-2 border-gray-200 dark:border-gray-700">
                 <CardContent className="p-0">
                   {filteredLoading ? (
                     <div className="flex items-center justify-center py-12">
@@ -1027,65 +1022,218 @@ const ScoreboardDashboard = () => {
                       No records found for the selected filter.
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Customer Name</TableHead>
-                            <TableHead>Agent</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Call Result</TableHead>
-                            <TableHead>Submitted Attorney</TableHead>
-                            <TableHead>Attorney Status</TableHead>
-                            <TableHead className="w-16">Notes</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredData.map((row) => (
-                            <TableRow key={row.id}>
-                              <TableCell>{row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}</TableCell>
-                              <TableCell>{row.insured_name || '-'}</TableCell>
-                              <TableCell>{row.agent || '-'}</TableCell>
-                              <TableCell>{row.status || '-'}</TableCell>
-                              <TableCell>{row.call_result || '-'}</TableCell>
-                              <TableCell>{row.submitted_attorney || '-'}</TableCell>
-                              <TableCell>{row.submitted_attorney_status || '-'}</TableCell>
-                              <TableCell>{row.notes ? (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="h-8 w-8 p-0"
-                                  onClick={() => {
-                                    setSelectedNotes(row.notes);
-                                    setShowNotesDialog(true);
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              ) : '-'}</TableCell>
+                    <>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader className="bg-gray-50 dark:bg-gray-800">
+                            <TableRow>
+                              <TableHead className="font-semibold">Date</TableHead>
+                              <TableHead className="font-semibold">Customer Name</TableHead>
+                              <TableHead className="font-semibold">Phone</TableHead>
+                              <TableHead className="font-semibold">Agent</TableHead>
+                              <TableHead className="font-semibold">Status</TableHead>
+                              <TableHead className="font-semibold">Call Result</TableHead>
+                              <TableHead className="font-semibold">Submitted Attorney</TableHead>
+                              <TableHead className="font-semibold">Attorney Status</TableHead>
+                              <TableHead className="w-16 text-center">Details</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredData
+                              .slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage)
+                              .map((row) => (
+                                <TableRow key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                  <TableCell className="font-medium">{row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}</TableCell>
+                                  <TableCell>{row.insured_name || '-'}</TableCell>
+                                  <TableCell>{row.client_phone_number || '-'}</TableCell>
+                                  <TableCell>{row.agent || '-'}</TableCell>
+                                  <TableCell>{row.status || '-'}</TableCell>
+                                  <TableCell>{row.call_result || '-'}</TableCell>
+                                  <TableCell>{row.submitted_attorney || '-'}</TableCell>
+                                  <TableCell>
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      row.submitted_attorney_status === 'submitted' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                                      row.submitted_attorney_status === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                                      row.submitted_attorney_status === 'denied' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                                      row.submitted_attorney_status === 'nocoverage' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {row.submitted_attorney_status || '-'}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="h-8 w-8 p-0"
+                                      onClick={() => {
+                                        setSelectedNotes(row.notes);
+                                        setSelectedPhone(row.client_phone_number);
+                                        setShowCallDialog(true);
+                                        if (row.client_phone_number) {
+                                          handleDetailsClick(row.client_phone_number, row.notes);
+                                        }
+                                      }}
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      
+                      {/* Pagination */}
+                      {filteredData.length > recordsPerPage && (
+                        <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50 dark:bg-gray-800/50">
+                          <div className="text-sm text-muted-foreground">
+                            Showing {((currentPage - 1) * recordsPerPage) + 1} to {Math.min(currentPage * recordsPerPage, filteredData.length)} of {filteredData.length} entries
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                              disabled={currentPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: Math.ceil(filteredData.length / recordsPerPage) }, (_, i) => i + 1).slice(
+                                Math.max(0, currentPage - 3),
+                                Math.min(Math.ceil(filteredData.length / recordsPerPage), currentPage + 2)
+                              ).map((page) => (
+                                <Button
+                                  key={page}
+                                  variant={currentPage === page ? "default" : "outline"}
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => setCurrentPage(page)}
+                                >
+                                  {page}
+                                </Button>
+                              ))}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredData.length / recordsPerPage), p + 1))}
+                              disabled={currentPage >= Math.ceil(filteredData.length / recordsPerPage)}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
             </div>
           )}
 
-          {/* Notes Dialog */}
-          <Dialog open={showNotesDialog} onOpenChange={setShowNotesDialog}>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          {/* Call Recordings Dialog */}
+          <Dialog open={showCallDialog} onOpenChange={setShowCallDialog}>
+            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Notes</DialogTitle>
+                <DialogTitle>Details - {selectedPhone}</DialogTitle>
               </DialogHeader>
-              <div className="mt-4">
-                <div className="whitespace-pre-wrap text-sm">
-                  {selectedNotes || 'No notes available'}
-                </div>
-              </div>
+              <Tabs defaultValue="notes" className="w-full">
+                <TabsList className="w-full">
+                  <TabsTrigger 
+                    value="notes" 
+                    className="flex-1 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 dark:data-[state=active]:bg-blue-900 dark:data-[state=active]:text-blue-300"
+                  >
+                    Notes
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="recordings" 
+                    className="flex-1 data-[state=active]:bg-green-100 data-[state=active]:text-green-700 dark:data-[state=active]:bg-green-900 dark:data-[state=active]:text-green-300"
+                  >
+                    Call Recordings
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="notes" className="mt-4">
+                  <div className="whitespace-pre-wrap text-sm">
+                    {selectedNotes || 'No notes available for this record.'}
+                  </div>
+                </TabsContent>
+                <TabsContent value="recordings" className="mt-4">
+                  {callsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                  ) : callRecordings.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No call recordings found for this phone number.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {callRecordings.map((call) => (
+                        <div key={call.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-full ${
+                              call.direction === 'inbound' ? 'bg-blue-100 dark:bg-blue-900' : 'bg-green-100 dark:bg-green-900'
+                            }`}>
+                              <Phone className={`h-4 w-4 ${
+                                call.direction === 'inbound' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'
+                              }`} />
+                            </div>
+                            <div>
+                              <div className="font-medium text-sm">
+                                {call.direction === 'inbound' ? 'Incoming' : 'Outgoing'} Call
+                              </div>
+                              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                <Clock className="h-3 w-3" />
+                                {formatTimestamp(call.started_at)}
+                                <span className="text-gray-400">•</span>
+                                {formatDuration(call.duration)}
+                                <span className="text-gray-400">•</span>
+                                {call.user?.name || 'Unknown'}
+                              </div>
+                            </div>
+                          </div>
+                          {call.recording ? (
+                            playingRecording === call.id ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPlayingRecording(null)}
+                              >
+                                <Pause className="h-4 w-4 mr-1" />
+                                Stop
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => setPlayingRecording(call.id)}
+                              >
+                                <Play className="h-4 w-4 mr-1" />
+                                Play
+                              </Button>
+                            )
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No recording</span>
+                          )}
+                        </div>
+                      ))}
+                      {playingRecording && callRecordings.find(c => c.id === playingRecording)?.recording && (
+                        <div className="mt-4 p-4 border rounded-lg bg-white dark:bg-gray-900">
+                          <audio
+                            controls
+                            autoPlay
+                            className="w-full"
+                            src={callRecordings.find(c => c.id === playingRecording)?.recording || ''}
+                            onEnded={() => setPlayingRecording(null)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </DialogContent>
           </Dialog>
         </div>
