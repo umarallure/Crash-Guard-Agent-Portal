@@ -44,6 +44,8 @@ export interface DailyDealFlowRow {
   carrier_audit?: string;
   product_type_carrier?: string;
   level_or_gi?: string;
+  submitted_attorney?: string;
+  submitted_attorney_status?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -88,6 +90,8 @@ const DailyDealFlowPage = () => {
   const [callResultFilter, setCallResultFilter] = useState(ALL_OPTION);
   const [retentionFilter, setRetentionFilter] = useState(ALL_OPTION);
   const [incompleteUpdatesFilter, setIncompleteUpdatesFilter] = useState(ALL_OPTION);
+  const [submittedAttorneyFilter, setSubmittedAttorneyFilter] = useState(ALL_OPTION);
+  const [submittedAttorneyStatusFilter, setSubmittedAttorneyStatusFilter] = useState(ALL_OPTION);
   
   const recordsPerPage = 100;
   
@@ -200,6 +204,16 @@ const DailyDealFlowPage = () => {
         }
       }
 
+      // Apply submitted attorney filter
+      if (submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION) {
+        query = query.eq('submitted_attorney', submittedAttorneyFilter);
+      }
+
+      // Apply submitted attorney status filter
+      if (submittedAttorneyStatusFilter && submittedAttorneyStatusFilter !== ALL_OPTION) {
+        query = query.eq('submitted_attorney_status', submittedAttorneyStatusFilter);
+      }
+
       // Apply search filter if set
       if (searchTerm) {
         query = query.or(`insured_name.ilike.%${searchTerm}%,client_phone_number.ilike.%${searchTerm}%,submission_id.ilike.%${searchTerm}%,lead_vendor.ilike.%${searchTerm}%,agent.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%,carrier.ilike.%${searchTerm}%,licensed_agent_account.ilike.%${searchTerm}%`);
@@ -244,7 +258,7 @@ const DailyDealFlowPage = () => {
   useEffect(() => {
     setCurrentPage(1); // Reset to first page when filters change
     fetchData(1);
-  }, [dateFilter, dateFromFilter, dateToFilter, licensedAgentFilter, leadVendorFilter, statusFilter, callResultFilter, retentionFilter, incompleteUpdatesFilter]);
+  }, [dateFilter, dateFromFilter, dateToFilter, licensedAgentFilter, leadVendorFilter, statusFilter, callResultFilter, retentionFilter, incompleteUpdatesFilter, submittedAttorneyFilter, submittedAttorneyStatusFilter]);
 
   // Refetch when search term changes (debounced)
   useEffect(() => {
@@ -322,11 +336,24 @@ const DailyDealFlowPage = () => {
         }
       }
 
+      // Apply submitted attorney filter for export
+      if (submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION) {
+        query = query.eq('submitted_attorney', submittedAttorneyFilter);
+      }
+
+      // Apply submitted attorney status filter for export
+      if (submittedAttorneyStatusFilter && submittedAttorneyStatusFilter !== ALL_OPTION) {
+        query = query.eq('submitted_attorney_status', submittedAttorneyStatusFilter);
+      }
+
       if (searchTerm) {
         query = query.or(`insured_name.ilike.%${searchTerm}%,client_phone_number.ilike.%${searchTerm}%,submission_id.ilike.%${searchTerm}%,lead_vendor.ilike.%${searchTerm}%,agent.ilike.%${searchTerm}%,status.ilike.%${searchTerm}%,carrier.ilike.%${searchTerm}%,licensed_agent_account.ilike.%${searchTerm}%`);
       }
 
       const { data: exportData, error } = await query;
+
+      // Cast to any to handle new columns that may not be in generated types
+      const typedData = exportData as unknown as Array<Record<string, unknown>>;
 
       if (error) {
         console.error("Error fetching data for export:", error);
@@ -381,6 +408,8 @@ const DailyDealFlowPage = () => {
         'Carrier Audit',
         'Product Type Carrier',
         'Level or GI',
+        'Submitted Attorney',
+        'Submitted Attorney Status',
         'Created At',
         'Updated At'
       ];
@@ -405,13 +434,15 @@ const DailyDealFlowPage = () => {
           row.face_amount || '',
           row.from_callback ? 'Yes' : 'No',
           row.is_callback ? 'Yes' : 'No',
-          (row.notes || '').replace(/"/g, '""'), // Escape quotes in notes
-          row.policy_number || '',
-          row.carrier_audit || '',
-          row.product_type_carrier || '',
-          row.level_or_gi || '',
-          row.created_at || '',
-          row.updated_at || ''
+          ((row.notes as string) || '').replace(/"/g, '""'), // Escape quotes in notes
+          (row.policy_number as string) || '',
+          (row.carrier_audit as string) || '',
+          (row.product_type_carrier as string) || '',
+          (row.level_or_gi as string) || '',
+          (row.submitted_attorney as string) || '',
+          (row.submitted_attorney_status as string) || '',
+          (row.created_at as string) || '',
+          (row.updated_at as string) || ''
         ].map(field => `"${field}"`).join(','))
       ].join('\n');
 
@@ -546,6 +577,7 @@ const DailyDealFlowPage = () => {
           onDateToFilterChange={handleDateToFilterChange}
           licensedAgentFilter={licensedAgentFilter}
           onLicensedAgentFilterChange={setLicensedAgentFilter}
+          attorneys={attorneys}
           leadVendorFilter={leadVendorFilter}
           onLeadVendorFilterChange={setLeadVendorFilter}
           statusFilter={statusFilter}
@@ -556,6 +588,10 @@ const DailyDealFlowPage = () => {
           onRetentionFilterChange={setRetentionFilter}
           incompleteUpdatesFilter={incompleteUpdatesFilter}
           onIncompleteUpdatesFilterChange={setIncompleteUpdatesFilter}
+          submittedAttorneyFilter={submittedAttorneyFilter}
+          onSubmittedAttorneyFilterChange={setSubmittedAttorneyFilter}
+          submittedAttorneyStatusFilter={submittedAttorneyStatusFilter}
+          onSubmittedAttorneyStatusFilterChange={setSubmittedAttorneyStatusFilter}
           totalRows={totalRecords}
         />
 

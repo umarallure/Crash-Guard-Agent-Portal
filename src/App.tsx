@@ -43,6 +43,7 @@ import { AgentsPage, VendorsPage, DailyPage, CarriersPage } from "./pages/AdminA
 import ScoreboardDashboard from "./pages/ScoreboardDashboard";
 import NotFound from "./pages/NotFound";
 import UserManagement from "./pages/UserManagement";
+import LawyerRequirements from "./pages/LawyerRequirements";
 import AlowareDialer from "./pages/AlowareDialer";
 import AppShell from "@/components/layout/AppShell";
 import { Navigate } from "react-router-dom";
@@ -367,6 +368,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Users">
                     <UserManagement />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/lawyer-requirements" 
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Lawyer Requirements">
+                    <LawyerRequirements />
                   </AppShell>
                 </ProtectedRoute>
               } 

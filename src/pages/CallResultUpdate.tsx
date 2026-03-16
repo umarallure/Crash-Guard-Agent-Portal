@@ -62,6 +62,10 @@ const CallResultUpdate = () => {
   const [verificationSessionId, setVerificationSessionId] = useState<string | null>(null);
   const [showVerificationPanel, setShowVerificationPanel] = useState(false);
   const [verifiedFieldValues, setVerifiedFieldValues] = useState<Record<string, string>>({});
+  const [verificationProgress, setVerificationProgress] = useState(0);
+  const [contractRecipientEmail, setContractRecipientEmail] = useState("");
+  const [sendingContract, setSendingContract] = useState(false);
+  const [lastEnvelopeId, setLastEnvelopeId] = useState<string | null>(null);
 
   const { toast } = useToast();
 
@@ -139,6 +143,30 @@ const CallResultUpdate = () => {
       console.error('Error in checkExistingVerificationSession:', error);
     }
   };
+
+  useEffect(() => {
+    if (!verificationSessionId) return;
+
+    let intervalId: NodeJS.Timeout | null = null;
+    const fetchProgress = async () => {
+      const { data: items } = await supabase
+        .from("verification_items")
+        .select("is_verified")
+        .eq("session_id", verificationSessionId);
+      if (items && Array.isArray(items)) {
+        const total = items.length;
+        const verified = items.filter((item: any) => item.is_verified).length;
+        setVerificationProgress(total > 0 ? Math.round((verified / total) * 100) : 0);
+      }
+    };
+
+    fetchProgress();
+    intervalId = setInterval(fetchProgress, 2000);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [verificationSessionId]);
 
   const handleVerificationStarted = (sessionId: string) => {
     setVerificationSessionId(sessionId);
@@ -300,10 +328,10 @@ const CallResultUpdate = () => {
             Back to Dashboard
           </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-3xl font-bold whitespace-nowrap">
+            <h1 className="text-4xl font-extrabold tracking-tight whitespace-nowrap">
               {fromCallback ? "Update Callback Result" : "Update Call Result"}
             </h1>
-            <p className="text-muted-foreground mt-1 truncate">
+            <p className="text-lg text-muted-foreground mt-1 truncate">
               {fromCallback 
                 ? "Update the status and details for this callback" 
                 : "Update the status and details for this lead"
@@ -346,6 +374,7 @@ const CallResultUpdate = () => {
                   initialAssignedAttorneyId={assignedAttorneyId || undefined}
                   verificationSessionId={verificationSessionId || undefined}
                   verifiedFieldValues={verifiedFieldValues}
+                  verificationProgress={verificationProgress}
                   onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
                 />
               </div>
@@ -399,6 +428,16 @@ const CallResultUpdate = () => {
                   />
                 </div>
               </div>
+              <OrderRecommendationsCard
+                submissionId={submissionId!}
+                leadId={lead.id}
+                leadOverrides={{
+                  state: lead.state,
+                  insured: lead.insured ?? null,
+                  prior_attorney_involved: lead.prior_attorney_involved ?? null,
+                }}
+              currentAssignedAttorneyId={assignedAttorneyId || null}
+            />
             </div>
             
             {/* Call Result Form */}
@@ -408,6 +447,7 @@ const CallResultUpdate = () => {
                 customerName={lead.customer_full_name}
                 initialAssignedAttorneyId={assignedAttorneyId || undefined}
                 verificationSessionId={verificationSessionId || undefined}
+                verificationProgress={verificationProgress}
                 onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
               />
             </div>
