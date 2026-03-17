@@ -2153,11 +2153,6 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
           )}
 
           {/* Validation Messages */}
-          {applicationSubmitted === true && verificationProgress < 80 && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
-              Verification must be at least 80% complete to save the call result. Current: {verificationProgress}%
-            </div>
-          )}
           {applicationSubmitted === true && verificationProgress >= 80 && !selectedLawyerId && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
               Please select a lawyer before saving the call result.
@@ -2177,7 +2172,6 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                   applicationSubmitted === null || 
                   !callSource || 
                   isSubmitting || 
-                  (applicationSubmitted === true && verificationProgress < 80) ||
                   (applicationSubmitted === true && !selectedLawyerId) ||
                   (applicationSubmitted === true && selectedLawyerId && !submissionStatus) ||
                   (applicationSubmitted === false && (
