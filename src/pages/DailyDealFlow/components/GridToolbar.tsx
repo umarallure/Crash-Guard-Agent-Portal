@@ -9,7 +9,6 @@ import { Search, X, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCenters } from "@/hooks/useCenters";
 import { supabase } from "@/integrations/supabase/client";
-import type { AttorneyProfile } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
 
 interface GridToolbarProps {
@@ -23,7 +22,6 @@ interface GridToolbarProps {
   onDateToFilterChange: (date: Date | undefined) => void;
   licensedAgentFilter: string;
   onLicensedAgentFilterChange: (value: string) => void;
-  attorneys: AttorneyProfile[];
   leadVendorFilter: string;
   onLeadVendorFilterChange: (value: string) => void;
   statusFilter: string;
@@ -34,8 +32,6 @@ interface GridToolbarProps {
   onRetentionFilterChange: (value: string) => void;
   incompleteUpdatesFilter: string;
   onIncompleteUpdatesFilterChange: (value: string) => void;
-  submittedAttorneyFilter?: string;
-  onSubmittedAttorneyFilterChange?: (value: string) => void;
   submittedAttorneyStatusFilter?: string;
   onSubmittedAttorneyStatusFilterChange?: (value: string) => void;
   totalRows: number;
@@ -52,7 +48,6 @@ export const GridToolbar = ({
   onDateToFilterChange,
   licensedAgentFilter,
   onLicensedAgentFilterChange,
-  attorneys,
   leadVendorFilter,
   onLeadVendorFilterChange,
   statusFilter,
@@ -63,8 +58,6 @@ export const GridToolbar = ({
   onRetentionFilterChange,
   incompleteUpdatesFilter,
   onIncompleteUpdatesFilterChange,
-  submittedAttorneyFilter,
-  onSubmittedAttorneyFilterChange,
   submittedAttorneyStatusFilter,
   onSubmittedAttorneyStatusFilterChange,
   totalRows
@@ -99,23 +92,26 @@ export const GridToolbar = ({
   }, [statusFilter]);
 
 
-  const statusOptions = [
-    "All Statuses",
-    "Pending Approval",
-    "Previously Sold BPO",
-    "Needs BPO Callback",
-    "Incomplete Transfer",
-    "DQ'd Can't be sold",
-    "Returned To Center - DQ",
-    "Return DID Successfully",
-    "Future Submission Date",
-    "Application Withdrawn",
-    "Updated Banking/draft date",
-    "Fulfilled carrier requirements",
-    "Call Back Fix",
-    "Call Never Sent",
-    "Disconnected"
-  ];
+  const statusOptions = useMemo(
+    () => [
+      "All Statuses",
+      "Pending Approval",
+      "Previously Sold BPO",
+      "Needs BPO Callback",
+      "Incomplete Transfer",
+      "DQ'd Can't be sold",
+      "Returned To Center - DQ",
+      "Return DID Successfully",
+      "Future Submission Date",
+      "Application Withdrawn",
+      "Updated Banking/draft date",
+      "Fulfilled carrier requirements",
+      "Call Back Fix",
+      "Call Never Sent",
+      "Disconnected",
+    ],
+    []
+  );
 
   const statusFilterMatches = useMemo(() => {
     const normalized = statusOptions.map((s) => (s === "All Statuses" ? ALL_OPTION : s));
@@ -494,29 +490,6 @@ export const GridToolbar = ({
 
       {/* Second Row - Additional Filters */}
       <div className="flex flex-wrap gap-4 items-end">
-        {/* Submitted Attorney Filter */}
-        {onSubmittedAttorneyFilterChange && (
-          <div>
-            <Label className="text-sm font-medium">
-              Submitted Attorney
-              {submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION && <span className="text-blue-600 ml-1">●</span>}
-            </Label>
-            <Select value={submittedAttorneyFilter || ALL_OPTION} onValueChange={onSubmittedAttorneyFilterChange}>
-              <SelectTrigger className={cn("mt-1", submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION && "ring-2 ring-blue-200")}>
-                <SelectValue placeholder="All Attorneys" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_OPTION}>All Attorneys</SelectItem>
-                {attorneys.map((attorney) => (
-                  <SelectItem key={attorney.user_id} value={attorney.full_name || attorney.user_id}>
-                    {attorney.full_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
         {/* Submitted Attorney Status Filter */}
         {onSubmittedAttorneyStatusFilterChange && (
           <div>

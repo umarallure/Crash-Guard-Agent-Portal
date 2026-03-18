@@ -18,7 +18,6 @@ import { useToast } from "@/hooks/use-toast";
 import { getCurrentTimestampEST } from "@/lib/dateUtils";
 import { useCenters } from "@/hooks/useCenters";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
-import type { AttorneyProfile } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
 
 const createDateFromString = (dateString: string): Date => {
@@ -44,7 +43,6 @@ interface EditableRowProps {
   hasWritePermissions?: boolean;
   isDuplicate?: boolean;
   attorneyById?: Record<string, { full_name: string | null; primary_email: string | null }>;
-  attorneys?: AttorneyProfile[];
 }
 
 const licensedAccountOptions = [
@@ -87,7 +85,7 @@ const callResultOptions = [
   "Qualified", "Underwriting", "Not Qualified"
 ];
 
-export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePermissions = true, isDuplicate = false, attorneyById, attorneys = [] }: EditableRowProps) => {
+export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePermissions = true, isDuplicate = false, attorneyById }: EditableRowProps) => {
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<DailyDealFlowRow>(row);
@@ -1073,26 +1071,6 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
             </Select>
           </td>
 
-          {/* Submitted Attorney */}
-          <td className="border border-border px-3 py-2">
-            <Select
-              value={editData.submitted_attorney || 'none'}
-              onValueChange={(value) => updateField('submitted_attorney', value === 'none' ? '' : value)}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Attorney" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {attorneys.filter(a => a.full_name || a.primary_email).map(attorney => (
-                  <SelectItem key={attorney.user_id} value={attorney.full_name || attorney.primary_email || ''}>
-                    {attorney.full_name || attorney.primary_email}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </td>
-
           {/* Submitted Attorney Status */}
           <td className="border border-border px-3 py-2">
             <Select
@@ -1231,13 +1209,6 @@ export const EditableRow = ({ row, rowIndex, serialNumber, onUpdate, hasWritePer
               {row.call_result.length > 12 ? row.call_result.substring(0, 12) + '...' : row.call_result}
             </span>
           ) : ''}
-        </td>
-
-        {/* Submitted Attorney */}
-        <td className="border border-border px-3 py-2 text-sm w-32">
-          <div className="whitespace-normal break-words">
-            {row.submitted_attorney || '-'}
-          </div>
         </td>
 
         {/* Submitted Attorney Status */}

@@ -90,7 +90,6 @@ const DailyDealFlowPage = () => {
   const [callResultFilter, setCallResultFilter] = useState(ALL_OPTION);
   const [retentionFilter, setRetentionFilter] = useState(ALL_OPTION);
   const [incompleteUpdatesFilter, setIncompleteUpdatesFilter] = useState(ALL_OPTION);
-  const [submittedAttorneyFilter, setSubmittedAttorneyFilter] = useState(ALL_OPTION);
   const [submittedAttorneyStatusFilter, setSubmittedAttorneyStatusFilter] = useState(ALL_OPTION);
   
   const recordsPerPage = 100;
@@ -204,14 +203,12 @@ const DailyDealFlowPage = () => {
         }
       }
 
-      // Apply submitted attorney filter
-      if (submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION) {
-        query = query.eq('submitted_attorney', submittedAttorneyFilter);
-      }
-
       // Apply submitted attorney status filter
       if (submittedAttorneyStatusFilter && submittedAttorneyStatusFilter !== ALL_OPTION) {
-        query = query.eq('submitted_attorney_status', submittedAttorneyStatusFilter);
+        query = (query as unknown as { eq: (c: string, v: unknown) => typeof query }).eq(
+          'submitted_attorney_status',
+          submittedAttorneyStatusFilter
+        );
       }
 
       // Apply search filter if set
@@ -258,7 +255,7 @@ const DailyDealFlowPage = () => {
   useEffect(() => {
     setCurrentPage(1); // Reset to first page when filters change
     fetchData(1);
-  }, [dateFilter, dateFromFilter, dateToFilter, licensedAgentFilter, leadVendorFilter, statusFilter, callResultFilter, retentionFilter, incompleteUpdatesFilter, submittedAttorneyFilter, submittedAttorneyStatusFilter]);
+  }, [dateFilter, dateFromFilter, dateToFilter, licensedAgentFilter, leadVendorFilter, statusFilter, callResultFilter, retentionFilter, incompleteUpdatesFilter, submittedAttorneyStatusFilter]);
 
   // Refetch when search term changes (debounced)
   useEffect(() => {
@@ -336,14 +333,12 @@ const DailyDealFlowPage = () => {
         }
       }
 
-      // Apply submitted attorney filter for export
-      if (submittedAttorneyFilter && submittedAttorneyFilter !== ALL_OPTION) {
-        query = query.eq('submitted_attorney', submittedAttorneyFilter);
-      }
-
       // Apply submitted attorney status filter for export
       if (submittedAttorneyStatusFilter && submittedAttorneyStatusFilter !== ALL_OPTION) {
-        query = query.eq('submitted_attorney_status', submittedAttorneyStatusFilter);
+        query = (query as unknown as { eq: (c: string, v: unknown) => typeof query }).eq(
+          'submitted_attorney_status',
+          submittedAttorneyStatusFilter
+        );
       }
 
       if (searchTerm) {
@@ -374,7 +369,7 @@ const DailyDealFlowPage = () => {
         return;
       }
 
-      const nonTestExportData = exportData.filter((row) => !isTestLeadRow(row));
+      const nonTestExportData = typedData.filter((row) => !isTestLeadRow(row));
 
       if (nonTestExportData.length === 0) {
         toast({
@@ -418,29 +413,29 @@ const DailyDealFlowPage = () => {
       const csvContent = [
         headers.join(','),
         ...nonTestExportData.map(row => [
-          row.submission_id || '',
-          row.date || '',
-          row.insured_name || '',
-          row.lead_vendor || '',
-          row.client_phone_number || '',
-          row.agent || '',
-          row.licensed_agent_account || '',
-          row.status || '',
-          row.call_result || '',
-          row.carrier || '',
-          row.product_type || '',
-          row.draft_date || '',
-          row.monthly_premium || '',
-          row.face_amount || '',
-          row.from_callback ? 'Yes' : 'No',
-          row.is_callback ? 'Yes' : 'No',
-          ((row.notes as string) || '').replace(/"/g, '""'), // Escape quotes in notes
+          (row.submission_id as string) || '',
+          (row.date as string) || '',
+          (row.insured_name as string) || '',
+          (row.lead_vendor as string) || '',
+          (row.client_phone_number as string) || '',
+          (row.agent as string) || '',
+          (row.licensed_agent_account as string) || '',
+          (row.status as string) || '',
+          (row.call_result as string) || '',
+          (row.carrier as string) || '',
+          (row.product_type as string) || '',
+          (row.draft_date as string) || '',
+          (row.monthly_premium as string) || '',
+          (row.face_amount as string) || '',
+          (row.from_callback as boolean) ? 'Yes' : 'No',
+          (row.is_callback as boolean) ? 'Yes' : 'No',
+          (String((row.notes as string) || '')).replace(/"/g, '""'), // Escape quotes in notes
           (row.policy_number as string) || '',
           (row.carrier_audit as string) || '',
           (row.product_type_carrier as string) || '',
           (row.level_or_gi as string) || '',
-          (row.submitted_attorney as string) || '',
-          (row.submitted_attorney_status as string) || '',
+          (row["submitted_attorney"] as string) || '',
+          (row["submitted_attorney_status"] as string) || '',
           (row.created_at as string) || '',
           (row.updated_at as string) || ''
         ].map(field => `"${field}"`).join(','))
@@ -577,7 +572,6 @@ const DailyDealFlowPage = () => {
           onDateToFilterChange={handleDateToFilterChange}
           licensedAgentFilter={licensedAgentFilter}
           onLicensedAgentFilterChange={setLicensedAgentFilter}
-          attorneys={attorneys}
           leadVendorFilter={leadVendorFilter}
           onLeadVendorFilterChange={setLeadVendorFilter}
           statusFilter={statusFilter}
@@ -588,8 +582,6 @@ const DailyDealFlowPage = () => {
           onRetentionFilterChange={setRetentionFilter}
           incompleteUpdatesFilter={incompleteUpdatesFilter}
           onIncompleteUpdatesFilterChange={setIncompleteUpdatesFilter}
-          submittedAttorneyFilter={submittedAttorneyFilter}
-          onSubmittedAttorneyFilterChange={setSubmittedAttorneyFilter}
           submittedAttorneyStatusFilter={submittedAttorneyStatusFilter}
           onSubmittedAttorneyStatusFilterChange={setSubmittedAttorneyStatusFilter}
           totalRows={totalRecords}
@@ -610,7 +602,6 @@ const DailyDealFlowPage = () => {
               data={filteredData}
               onDataUpdate={fetchData}
               hasWritePermissions={hasWritePermissions}
-              attorneys={attorneys}
               attorneyById={attorneyById}
               currentPage={currentPage}
               totalRecords={totalRecords}

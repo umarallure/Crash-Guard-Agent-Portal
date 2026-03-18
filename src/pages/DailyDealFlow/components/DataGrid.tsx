@@ -7,13 +7,11 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, Ch
 import { DailyDealFlowRow } from "../DailyDealFlowPage";
 import { EditableRow } from "./EditableRow";
 import { supabase } from "@/integrations/supabase/client";
-import type { AttorneyProfile } from "@/hooks/useAttorneys";
 
 interface DataGridProps {
   data: DailyDealFlowRow[];
   onDataUpdate: () => void;
   hasWritePermissions?: boolean;
-  attorneys: AttorneyProfile[];
   attorneyById: Record<string, { full_name: string | null; primary_email: string | null }>;
   currentPage?: number;
   totalRecords?: number;
@@ -25,7 +23,6 @@ export const DataGrid = ({
   data, 
   onDataUpdate, 
   hasWritePermissions = true,
-  attorneys,
   attorneyById,
   currentPage = 1,
   totalRecords = 0,
@@ -91,7 +88,7 @@ export const DataGrid = ({
 
   const columns = [
     "S.No", "Date", "Lead Vendor", "Customer Name", "Phone Number", "Closer", "Status",
-    "Call Result", "Submitted Attorney", "Attorney Status", "Notes"
+    "Call Result", "Attorney Status", "Notes"
   ];
   
   // Add Actions column only for users with write permissions
@@ -368,6 +365,7 @@ export const DataGrid = ({
             {columns.map((column) => {
               const getSortKey = (col: string) => {
                 switch (col) {
+                  case 'S.No': return null;
                   case 'Date': return 'date';
                   case 'Lead Vendor': return 'lead_vendor';
                   case 'Customer Name': return 'insured_name';
@@ -381,7 +379,6 @@ export const DataGrid = ({
                   case 'MP': return 'monthly_premium';
                   case 'Face Amount': return 'face_amount';
                   case 'Notes': return 'notes';
-                  case 'Submitted Attorney': return 'submitted_attorney';
                   case 'Attorney Status': return 'submitted_attorney_status';
                   default: return null;
                 }
@@ -406,7 +403,6 @@ export const DataGrid = ({
                   column === 'MP' ? 'w-16' :
                   column === 'Face Amount' ? 'w-20' :
                   column === 'Notes' ? 'w-32' :
-                  column === 'Submitted Attorney' ? 'w-32' :
                   column === 'Attorney Status' ? 'w-24' :
                   column === 'Actions' ? 'w-20' : ''
                 }>
@@ -454,7 +450,6 @@ export const DataGrid = ({
                 hasWritePermissions={hasWritePermissions}
                 isDuplicate={isRowDuplicate(row)}
                 attorneyById={attorneyById}
-                attorneys={attorneys}
               />
             ))
           ) : (
@@ -503,7 +498,6 @@ export const DataGrid = ({
                           hasWritePermissions={hasWritePermissions}
                           isDuplicate={isRowDuplicate(row)}
                           attorneyById={attorneyById}
-                          attorneys={attorneys}
                         />
                       );
                     })
@@ -556,7 +550,6 @@ export const DataGrid = ({
                               hasWritePermissions={hasWritePermissions}
                               isDuplicate={isRowDuplicate(row)}
                               attorneyById={attorneyById}
-                              attorneys={attorneys}
                             />
                           );
                         })}

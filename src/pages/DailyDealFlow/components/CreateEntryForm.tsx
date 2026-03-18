@@ -13,7 +13,6 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getTodayDateEST, getCurrentDateEST } from "@/lib/dateUtils";
 import { useCenters } from "@/hooks/useCenters";
-import { useAttorneys } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
 
 interface CreateEntryFormProps {
@@ -55,7 +54,6 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { leadVendors } = useCenters();
-  const { attorneys, loading: attorneysLoading } = useAttorneys();
   const [closers, setClosers] = useState<Array<{ key: string; label: string }>>([]);
   const [closersLoading, setClosersLoading] = useState(false);
 
@@ -83,7 +81,6 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
       submission_id: generateCBSubmissionId(),
       date: todayDate,
       lead_vendor: '',
-      assigned_attorney_id: '',
       insured_name: '',
       client_phone_number: '',
       buffer_agent: 'N/A',
@@ -134,7 +131,6 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
       submission_id: generateCBSubmissionId(),
       date: todayDate,
       lead_vendor: '',
-      assigned_attorney_id: '',
       insured_name: '',
       client_phone_number: '',
       buffer_agent: 'N/A',
@@ -200,7 +196,6 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
         carrier_audit: formData.carrier_audit || null,
         product_type_carrier: formData.product_type_carrier || null,
         level_or_gi: formData.level_or_gi || null,
-        assigned_attorney_id: formData.assigned_attorney_id || null,
       };
 
       const { error } = await supabase
@@ -314,30 +309,6 @@ export const CreateEntryForm = ({ onSuccess }: CreateEntryFormProps) => {
                     {leadVendors.map((vendor) => (
                       <SelectItem key={vendor} value={vendor}>
                         {vendor}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Assign Attorney */}
-              <div>
-                <label className="text-sm font-medium">Assign Attorney</label>
-                <Select
-                  value={formData.assigned_attorney_id}
-                  onValueChange={(value) => updateField('assigned_attorney_id', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={attorneysLoading ? "Loading attorneys..." : "Select attorney"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {attorneys.map((a) => (
-                      <SelectItem
-                        key={a.user_id}
-                        value={a.user_id}
-                        className="data-[state=checked]:bg-transparent data-[state=checked]:text-foreground data-[state=checked]:ring-1 data-[state=checked]:ring-primary/30 data-[state=checked]:ring-inset data-[highlighted]:bg-muted data-[highlighted]:text-foreground"
-                      >
-                        {a.full_name || a.primary_email || a.user_id}
                       </SelectItem>
                     ))}
                   </SelectContent>
