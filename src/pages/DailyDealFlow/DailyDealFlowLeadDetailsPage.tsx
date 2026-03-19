@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
 import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
+import { LeadDocumentsTab } from "@/components/LeadDocumentsTab";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -326,16 +327,36 @@ const DailyDealFlowLeadDetailsPage = () => {
       const createdBy = user?.id || null;
       const emailPrefix = user?.email ? user.email.split('@')[0] : null;
 
+      const supabaseUntyped = supabase as unknown as {
+        from: (
+          table: string
+        ) => {
+          select: (
+            cols: string
+          ) => {
+            eq: (col: string, value: unknown) => {
+              limit: (n: number) => Promise<{ data: unknown; error: unknown }>;
+            };
+          };
+          insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>;
+        };
+      };
+
       let displayName: string | null = null;
       if (user?.id) {
         try {
-          const { data: profileData } = await (supabase as any)
+          const { data: profileData } = await supabaseUntyped
             .from('profiles')
             .select('display_name')
             .eq('user_id', user.id)
             .limit(1);
 
-          const raw = Array.isArray(profileData) ? profileData?.[0]?.display_name : profileData?.display_name;
+          const typedProfile = profileData as
+            | Array<{ display_name?: unknown }>
+            | { display_name?: unknown }
+            | null
+            | undefined;
+          const raw = Array.isArray(typedProfile) ? typedProfile?.[0]?.display_name : typedProfile?.display_name;
           displayName = typeof raw === 'string' ? raw.trim() : null;
           if (displayName && displayName.length === 0) displayName = null;
         } catch (e) {
@@ -343,10 +364,13 @@ const DailyDealFlowLeadDetailsPage = () => {
         }
       }
 
-      const authorName =
-        displayName || (user?.user_metadata as any)?.full_name || emailPrefix || user?.id || null;
+      const meta = user?.user_metadata as unknown as { full_name?: unknown } | null;
+      const metaFullName = typeof meta?.full_name === 'string' ? meta.full_name : null;
 
-      const { error: insertErr } = await (supabase as any).from('lead_notes').insert({
+      const authorName =
+        displayName || metaFullName || emailPrefix || user?.id || null;
+
+      const { error: insertErr } = await supabaseUntyped.from('lead_notes').insert({
         lead_id: record.id,
         submission_id: record.submission_id ?? null,
         note: trimmedNote,
@@ -425,7 +449,21 @@ const DailyDealFlowLeadDetailsPage = () => {
   const fetchNotes = async (leadId: string) => {
     setNotesLoading(true);
     try {
-      const { data, error } = await supabase
+      const supabaseUntyped = supabase as unknown as {
+        from: (
+          table: string
+        ) => {
+          select: (
+            cols: string
+          ) => {
+            eq: (col: string, value: unknown) => {
+              order: (col: string, options: { ascending: boolean }) => Promise<{ data: unknown; error: unknown }>;
+            };
+          };
+        };
+      };
+
+      const { data, error } = await supabaseUntyped
         .from('lead_notes')
         .select('id, lead_id, submission_id, note, created_at, created_by, author_name, source')
         .eq('lead_id', leadId)
@@ -437,7 +475,7 @@ const DailyDealFlowLeadDetailsPage = () => {
         return;
       }
 
-      setNotes((data as LeadNote[]) || []);
+      setNotes((data as unknown as LeadNote[]) || []);
     } catch (e) {
       console.error('Unexpected error fetching lead notes', e);
       setNotes([]);
@@ -638,6 +676,7 @@ const DailyDealFlowLeadDetailsPage = () => {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="agents">Closers</TabsTrigger>
               <TabsTrigger value="accident">Accident</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
             </TabsList>
           </div>
 
@@ -1087,6 +1126,18 @@ const DailyDealFlowLeadDetailsPage = () => {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="documents">
+            {record.submission_id ? (
+              <LeadDocumentsTab submissionId={record.submission_id} />
+            ) : (
+              <Card>
+                <CardContent className="p-6 text-sm text-muted-foreground">
+                  No submission ID available to load documents.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="notes">

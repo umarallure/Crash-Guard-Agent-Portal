@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { LeadDocumentsTab } from "@/components/LeadDocumentsTab";
 import { useToast } from "@/hooks/use-toast";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
@@ -473,6 +474,7 @@ const LeadDetailsPage = () => {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="personal">Personal</TabsTrigger>
               <TabsTrigger value="accident">Accident</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
               <TabsTrigger value="notes">Notes</TabsTrigger>
               <TabsTrigger value="call-updates">Call Updates</TabsTrigger>
             </TabsList>
@@ -546,6 +548,18 @@ const LeadDetailsPage = () => {
                 />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="documents">
+            {lead.submission_id ? (
+              <LeadDocumentsTab submissionId={lead.submission_id} />
+            ) : (
+              <Card>
+                <CardContent className="pt-6 text-sm text-muted-foreground">
+                  No submission ID available to load documents.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="notes">
