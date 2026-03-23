@@ -119,10 +119,12 @@ const Retainers = () => {
       const supabaseCenters = supabase as unknown as {
         from: (table: string) => {
           select: (cols: string) => {
-            not: (col: string, op: string, val: unknown) => Promise<{
-              data: { lead_vendor: string | null }[] | null;
-              error: unknown;
-            }>;
+            eq: (col: string, val: unknown) => {
+              not: (col: string, op: string, val: unknown) => Promise<{
+                data: { lead_vendor: string | null }[] | null;
+                error: unknown;
+              }>;
+            };
           };
         };
       };
@@ -130,6 +132,7 @@ const Retainers = () => {
       const { data, error } = await supabaseCenters
         .from('centers')
         .select('lead_vendor')
+        .eq('is_active', true)
         .not('lead_vendor', 'is', null);
 
       if (error) throw error;
