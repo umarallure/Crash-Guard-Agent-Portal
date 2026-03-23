@@ -41,14 +41,10 @@ interface DashboardMetrics {
   noCoverage: number;
   approvedAttorney: number;
   deniedAttorney: number;
-  
-  // Performance rates
   transferRate: number;
   qualifyingRate: number;
   billableRate: number;
   returnBackRate: number;
-  
-  // Counts for rates
   transferCount: number;
   transferTotal: number;
   qualifyingCount: number;
@@ -57,8 +53,6 @@ interface DashboardMetrics {
   billableTotal: number;
   returnBackCount: number;
   returnBackTotal: number;
-  
-  // Percentage changes
   totalTransfersChange: number;
   pendingApprovalChange: number;
   approvedChange: number;

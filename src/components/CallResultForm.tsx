@@ -1057,19 +1057,15 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
   const handleStatusReasonChange = (reason: string) => {
     setStatusReason(reason);
     if (reason && reason !== "Other") {
-      // Auto-populate notes with the mapped text using actual customer name
       const clientName = customerName || "[Client Name]";
       if (status === "Updated Banking/draft date") {
-        // For this status, we need the draft date to generate the note
         setNotes(getNoteText(status, reason, clientName, newDraftDate));
       } else if (status === "Fulfilled carrier requirements") {
-        // Don't auto-populate notes for this status
         setNotes("");
       } else {
         setNotes(getNoteText(status, reason, clientName));
       }
     } else if (reason === "Other") {
-      // Clear notes for custom message
       setNotes("");
     }
   };
