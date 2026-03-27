@@ -45,6 +45,7 @@ import NotFound from "./pages/NotFound";
 import UserManagement from "./pages/UserManagement";
 import LawyerRequirements from "./pages/LawyerRequirements";
 import AlowareDialer from "./pages/AlowareDialer";
+import SlackWorkspace from "./pages/SlackWorkspace";
 import AppShell from "@/components/layout/AppShell";
 import { Navigate } from "react-router-dom";
 
@@ -401,6 +402,16 @@ const App = () => (
                   </AppShell>
                 </ProtectedRoute>
               } 
+            />
+            <Route
+              path="/slack"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Slack">
+                    <SlackWorkspace />
+                  </AppShell>
+                </ProtectedRoute>
+              }
             />
             <Route path="/admin-analytics/*" element={<NotFound />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

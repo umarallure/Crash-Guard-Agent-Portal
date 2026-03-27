@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Scale,
   Phone,
+  MessageSquare,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -264,6 +265,12 @@ const AppShell = ({
         label: 'Dialer',
         to: '/aloware-dialer',
         icon: <Phone className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
+        label: 'Slack',
+        to: '/slack',
+        icon: <MessageSquare className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {
