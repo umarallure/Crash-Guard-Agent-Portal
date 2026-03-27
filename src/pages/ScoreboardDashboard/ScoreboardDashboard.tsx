@@ -124,6 +124,7 @@ const ScoreboardDashboard = () => {
     returnBackRateChange: 0,
   });
   
+  const [activityType, setActivityType] = useState<'inbound' | 'followup'>('inbound');
   const [dateFilter, setDateFilter] = useState<string>('today');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -318,7 +319,8 @@ const ScoreboardDashboard = () => {
         .select('status, call_result')
         .not('insured_name', 'ilike', 'Test -%')
         .gte('date', startKey)
-        .lte('date', endKey))
+        .lte('date', endKey)
+        .eq('is_callback', activityType === 'followup'))
 
       if (error) throw error;
 
@@ -328,7 +330,8 @@ const ScoreboardDashboard = () => {
         .select('status, call_result')
         .not('insured_name', 'ilike', 'Test -%')
         .gte('date', prevStartKey)
-        .lte('date', prevEndKey));
+        .lte('date', prevEndKey)
+        .eq('is_callback', activityType === 'followup'));
 
       if (prevError) throw prevError;
 
@@ -553,7 +556,7 @@ const ScoreboardDashboard = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [getDateRange, getPreviousDateRange, isAdmin, toast]);
+  }, [activityType, getDateRange, getPreviousDateRange, isAdmin, toast]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -628,7 +631,8 @@ const ScoreboardDashboard = () => {
           .from('daily_deal_flow')
           .select('id, date, insured_name, client_phone_number, lead_vendor, agent, status, call_result, submitted_attorney, submitted_attorney_status, notes')
           .gte('date', startKey)
-          .lte('date', endKey) as any);
+          .lte('date', endKey)
+          .eq('is_callback', activityType === 'followup') as any);
 
         if (error) {
           console.error('Query error:', error);
@@ -697,7 +701,7 @@ const ScoreboardDashboard = () => {
     };
 
     fetchFilteredData();
-  }, [selectedFilter, dateFilter, customStartDate, customEndDate, isAdmin, toast, formatNYDateKey]);
+  }, [selectedFilter, dateFilter, customStartDate, customEndDate, activityType, isAdmin, toast, formatNYDateKey]);
 
   const handleRefresh = () => {
     fetchMetrics();
@@ -830,21 +834,49 @@ const ScoreboardDashboard = () => {
             </CardContent>
           </Card>
 
+          {/* Activity Type Tabs */}
+          <Card className="border">
+            <CardContent className="pt-4 sm:pt-6">
+              <Tabs value={activityType} onValueChange={(value) => setActivityType(value as 'inbound' | 'followup')} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger 
+                    value="inbound" 
+                    className={`flex items-center gap-2 transition-all ${activityType === 'inbound' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-blue-900' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900'}`}
+                  >
+                    <Phone className="h-4 w-4" />
+                    Inbound Transfer Activity
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="followup" 
+                    className={`flex items-center gap-2 transition-all ${activityType === 'followup' ? 'bg-orange-500 text-white shadow-lg shadow-orange-200 dark:shadow-orange-900' : 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:hover:bg-orange-900'}`}
+                  >
+                    <Clock className="h-4 w-4" />
+                    Followup Activity
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </CardContent>
+          </Card>
+
           {/* Key Metrics */}
           <div>
-            <h2 className="text-lg sm:text-xl font-semibold mb-4">Key Metrics</h2>
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">
+              {activityType === 'inbound' ? 'Inbound Transfer Activity Metrics' : 'FollowUp Activity Metrics'}
+            </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Total Transfers */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'total_transfers' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900'} border-2 ${selectedFilter === 'total_transfers' ? 'border-gray-400 dark:border-gray-500' : 'border-blue-200 dark:border-blue-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('total_transfers')}>
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'total_transfers' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900' : 'from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900'} border-2 ${selectedFilter === 'total_transfers' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-blue-200 dark:border-blue-800' : 'border-orange-200 dark:border-orange-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('total_transfers')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-blue-500 flex items-center justify-center">
+                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-blue-500' : 'bg-orange-500'}`}>
                       <Send className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">Total Transfers</p>
-                    <p className="text-3xl sm:text-4xl font-bold text-blue-900 dark:text-blue-100 mt-2">{metrics.totalTransfers}</p>
+                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>
+                      {activityType === 'inbound' ? 'Total Inbound BPO Transfers' : 'Total FollowUp Calls'}
+                    </p>
+                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-blue-900 dark:text-blue-100' : 'text-orange-900 dark:text-orange-100'}`}>{metrics.totalTransfers}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.totalTransfersChange > 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.totalTransfersChange < 0 ? 'text-red-600 dark:text-red-400' : 
@@ -857,16 +889,18 @@ const ScoreboardDashboard = () => {
               </Card>
 
               {/* Qualified */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900'} border-2 ${selectedFilter === 'qualified' ? 'border-gray-400 dark:border-gray-500' : 'border-emerald-200 dark:border-emerald-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified')}>
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900' : 'from-teal-50 to-teal-100 dark:from-teal-950 dark:to-teal-900'} border-2 ${selectedFilter === 'qualified' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-emerald-200 dark:border-emerald-800' : 'border-teal-200 dark:border-teal-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-emerald-500 flex items-center justify-center">
+                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-emerald-500' : 'bg-teal-500'}`}>
                       <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Qualified</p>
-                    <p className="text-3xl sm:text-4xl font-bold text-emerald-900 dark:text-emerald-100 mt-2">{metrics.qualified}</p>
+                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-emerald-700 dark:text-emerald-300' : 'text-teal-700 dark:text-teal-300'}`}>
+                      {activityType === 'inbound' ? 'Qualified Inbound' : 'Qualified Followup'}
+                    </p>
+                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-emerald-900 dark:text-emerald-100' : 'text-teal-900 dark:text-teal-100'}`}>{metrics.qualified}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.qualifiedChange > 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.qualifiedChange < 0 ? 'text-red-600 dark:text-red-400' : 
@@ -887,7 +921,9 @@ const ScoreboardDashboard = () => {
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-red-700 dark:text-red-300 uppercase tracking-wide">Not Qualified</p>
+                    <p className="text-sm font-medium text-red-700 dark:text-red-300 uppercase tracking-wide">
+                      {activityType === 'inbound' ? 'Not Qualified Inbound' : 'Not Qualified Followup'}
+                    </p>
                     <p className="text-3xl sm:text-4xl font-bold text-red-900 dark:text-red-100 mt-2">{metrics.notQualified}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.notQualifiedChange < 0 ? 'text-green-600 dark:text-green-400' : 
@@ -901,16 +937,18 @@ const ScoreboardDashboard = () => {
               </Card>
 
               {/* Qualified Payable */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified_payable' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-teal-50 to-teal-100 dark:from-teal-950 dark:to-teal-900'} border-2 ${selectedFilter === 'qualified_payable' ? 'border-gray-400 dark:border-gray-500' : 'border-teal-200 dark:border-teal-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified_payable')}>
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified_payable' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-indigo-50 to-indigo-100 dark:from-indigo-950 dark:to-indigo-900' : 'from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900'} border-2 ${selectedFilter === 'qualified_payable' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-indigo-200 dark:border-indigo-800' : 'border-purple-200 dark:border-purple-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified_payable')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-teal-500 flex items-center justify-center">
+                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-indigo-500' : 'bg-purple-500'}`}>
                       <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-teal-700 dark:text-teal-300 uppercase tracking-wide">Qualified Payable</p>
-                    <p className="text-3xl sm:text-4xl font-bold text-teal-900 dark:text-teal-100 mt-2">{metrics.qualifiedPayable}</p>
+                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-indigo-700 dark:text-indigo-300' : 'text-purple-700 dark:text-purple-300'}`}>
+                      {activityType === 'inbound' ? 'Qualified Payable Inbound' : 'Qualified Payable Followup'}
+                    </p>
+                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-indigo-900 dark:text-indigo-100' : 'text-purple-900 dark:text-purple-100'}`}>{metrics.qualifiedPayable}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.qualifiedPayableChange > 0 ? 'text-green-600 dark:text-green-400' : 
                       metrics.qualifiedPayableChange < 0 ? 'text-red-600 dark:text-red-400' : 
@@ -931,7 +969,9 @@ const ScoreboardDashboard = () => {
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-violet-700 dark:text-violet-300 uppercase tracking-wide">Submitted to Attorney</p>
+                    <p className="text-sm font-medium text-violet-700 dark:text-violet-300 uppercase tracking-wide">
+                      {activityType === 'inbound' ? 'Submitted to Attorney (Inbound)' : 'Submitted to Attorney (Followup)'}
+                    </p>
                     <p className="text-3xl sm:text-4xl font-bold text-violet-900 dark:text-violet-100 mt-2">{metrics.submittedToAttorney}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.submittedToAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
@@ -953,7 +993,9 @@ const ScoreboardDashboard = () => {
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">No Coverage</p>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      {activityType === 'inbound' ? 'No Coverage (Inbound)' : 'No Coverage (Followup)'}
+                    </p>
                     <p className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mt-2">{metrics.noCoverage}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.noCoverageChange < 0 ? 'text-green-600 dark:text-green-400' : 
@@ -975,7 +1017,9 @@ const ScoreboardDashboard = () => {
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">Approved Attorney</p>
+                    <p className="text-sm font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">
+                      {activityType === 'inbound' ? 'Approved Attorney (Inbound)' : 'Approved Attorney (Followup)'}
+                    </p>
                     <p className="text-3xl sm:text-4xl font-bold text-green-900 dark:text-green-100 mt-2">{metrics.approvedAttorney}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.approvedAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
@@ -997,7 +1041,9 @@ const ScoreboardDashboard = () => {
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-medium text-pink-700 dark:text-pink-300 uppercase tracking-wide">Denied Attorney</p>
+                    <p className="text-sm font-medium text-pink-700 dark:text-pink-300 uppercase tracking-wide">
+                      {activityType === 'inbound' ? 'Denied Attorney (Inbound)' : 'Denied Attorney (Followup)'}
+                    </p>
                     <p className="text-3xl sm:text-4xl font-bold text-pink-900 dark:text-pink-100 mt-2">{metrics.deniedAttorney}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.deniedAttorneyChange < 0 ? 'text-green-600 dark:text-green-400' : 
@@ -1017,7 +1063,7 @@ const ScoreboardDashboard = () => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg sm:text-xl font-semibold">
-                  {selectedFilter === 'total_transfers' && 'All Transfers'}
+                  {selectedFilter === 'total_transfers' && (activityType === 'inbound' ? 'All Inbound BPO Transfers' : 'All FollowUp Calls')}
                   {selectedFilter === 'qualified' && 'Qualified Records'}
                   {selectedFilter === 'not_qualified' && 'Not Qualified Records'}
                   {selectedFilter === 'qualified_payable' && 'Qualified Payable Records'}
