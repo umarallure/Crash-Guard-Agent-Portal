@@ -936,25 +936,25 @@ const ScoreboardDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Qualified Payable */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified_payable' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-indigo-50 to-indigo-100 dark:from-indigo-950 dark:to-indigo-900' : 'from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900'} border-2 ${selectedFilter === 'qualified_payable' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-indigo-200 dark:border-indigo-800' : 'border-purple-200 dark:border-purple-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified_payable')}>
+              {/* No Coverage */}
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'no_coverage' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900'} border-2 ${selectedFilter === 'no_coverage' ? 'border-gray-400 dark:border-gray-500' : 'border-gray-200 dark:border-gray-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('no_coverage')}>
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-center mb-3">
-                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-indigo-500' : 'bg-purple-500'}`}>
-                      <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-gray-500 flex items-center justify-center">
+                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-indigo-700 dark:text-indigo-300' : 'text-purple-700 dark:text-purple-300'}`}>
-                      {activityType === 'inbound' ? 'Qualified Payable Inbound' : 'Qualified Payable Followup'}
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      {activityType === 'inbound' ? 'No Coverage (Inbound)' : 'No Coverage (Followup)'}
                     </p>
-                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-indigo-900 dark:text-indigo-100' : 'text-purple-900 dark:text-purple-100'}`}>{metrics.qualifiedPayable}</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mt-2">{metrics.noCoverage}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.qualifiedPayableChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.qualifiedPayableChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.noCoverageChange < 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.noCoverageChange > 0 ? 'text-red-600 dark:text-red-400' :
                       'text-gray-600 dark:text-gray-400'
                     }`}>
-                      {metrics.qualifiedPayableChange > 0 ? '+' : ''}{metrics.qualifiedPayableChange.toFixed(1)}%
+                      {metrics.noCoverageChange > 0 ? '+' : ''}{metrics.noCoverageChange.toFixed(1)}%
                     </p>
                   </div>
                 </CardContent>
@@ -974,35 +974,11 @@ const ScoreboardDashboard = () => {
                     </p>
                     <p className="text-3xl sm:text-4xl font-bold text-violet-900 dark:text-violet-100 mt-2">{metrics.submittedToAttorney}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.submittedToAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.submittedToAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.submittedToAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.submittedToAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' :
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.submittedToAttorneyChange > 0 ? '+' : ''}{metrics.submittedToAttorneyChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* No Coverage */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'no_coverage' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900'} border-2 ${selectedFilter === 'no_coverage' ? 'border-gray-400 dark:border-gray-500' : 'border-gray-200 dark:border-gray-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('no_coverage')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-gray-500 flex items-center justify-center">
-                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                      {activityType === 'inbound' ? 'No Coverage (Inbound)' : 'No Coverage (Followup)'}
-                    </p>
-                    <p className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mt-2">{metrics.noCoverage}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.noCoverageChange < 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.noCoverageChange > 0 ? 'text-red-600 dark:text-red-400' : 
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.noCoverageChange > 0 ? '+' : ''}{metrics.noCoverageChange.toFixed(1)}%
                     </p>
                   </div>
                 </CardContent>
@@ -1022,8 +998,8 @@ const ScoreboardDashboard = () => {
                     </p>
                     <p className="text-3xl sm:text-4xl font-bold text-green-900 dark:text-green-100 mt-2">{metrics.approvedAttorney}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.approvedAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.approvedAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.approvedAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.approvedAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' :
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.approvedAttorneyChange > 0 ? '+' : ''}{metrics.approvedAttorneyChange.toFixed(1)}%
@@ -1046,11 +1022,35 @@ const ScoreboardDashboard = () => {
                     </p>
                     <p className="text-3xl sm:text-4xl font-bold text-pink-900 dark:text-pink-100 mt-2">{metrics.deniedAttorney}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.deniedAttorneyChange < 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.deniedAttorneyChange > 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.deniedAttorneyChange < 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.deniedAttorneyChange > 0 ? 'text-red-600 dark:text-red-400' :
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.deniedAttorneyChange > 0 ? '+' : ''}{metrics.deniedAttorneyChange.toFixed(1)}%
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Qualified Payable */}
+              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified_payable' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-indigo-50 to-indigo-100 dark:from-indigo-950 dark:to-indigo-900' : 'from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900'} border-2 ${selectedFilter === 'qualified_payable' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-indigo-200 dark:border-indigo-800' : 'border-purple-200 dark:border-purple-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified_payable')}>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-center mb-3">
+                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-indigo-500' : 'bg-purple-500'}`}>
+                      <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-indigo-700 dark:text-indigo-300' : 'text-purple-700 dark:text-purple-300'}`}>
+                      {activityType === 'inbound' ? 'Qualified Payable Inbound' : 'Qualified Payable Followup'}
+                    </p>
+                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-indigo-900 dark:text-indigo-100' : 'text-purple-900 dark:text-purple-100'}`}>{metrics.qualifiedPayable}</p>
+                    <p className={`text-xs mt-1 font-medium ${
+                      metrics.qualifiedPayableChange > 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.qualifiedPayableChange < 0 ? 'text-red-600 dark:text-red-400' :
+                      'text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {metrics.qualifiedPayableChange > 0 ? '+' : ''}{metrics.qualifiedPayableChange.toFixed(1)}%
                     </p>
                   </div>
                 </CardContent>
