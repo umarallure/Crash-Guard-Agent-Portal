@@ -1,198 +1,183 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { Loader2, MessageSquare, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { MessageSquare, ExternalLink, X, Loader2, ChevronRight } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 
 const SLACK_URL = import.meta.env.VITE_SLACK_WORKSPACE_URL || 'https://app.slack.com';
 
-const SetupGuide = () => (
-  <div className="flex items-start justify-center min-h-[calc(100vh-3.5rem)] p-6 bg-background overflow-y-auto">
-    <div className="w-full max-w-2xl space-y-4">
-
-      <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-600" />
-            <CardTitle className="text-amber-800 dark:text-amber-400 text-base">One-time browser setup required</CardTitle>
-          </div>
-          <CardDescription className="text-amber-700 dark:text-amber-500">
-            Slack blocks embedding in other apps by default. Follow the steps below to enable it — only needs to be done once per machine.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="w-6 h-6 flex items-center justify-center p-0 text-xs font-bold">1</Badge>
-            <CardTitle className="text-base">Install the Requestly extension</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Requestly modifies browser response headers in real-time, allowing Slack to load inside this page.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm" variant="outline">
-              <a href="https://chromewebstore.google.com/detail/requestly/mdnleldcmiljblolnjhpnblkcekpdkpa" target="_blank" rel="noreferrer">
-                <ExternalLink className="mr-2 h-3 w-3" />
-                Chrome / Edge
-              </a>
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <a href="https://addons.mozilla.org/en-US/firefox/addon/requestly/" target="_blank" rel="noreferrer">
-                <ExternalLink className="mr-2 h-3 w-3" />
-                Firefox
-              </a>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="w-6 h-6 flex items-center justify-center p-0 text-xs font-bold">2</Badge>
-            <CardTitle className="text-base">Create a "Modify Headers" rule</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Open the Requestly dashboard and create a new rule with these exact settings:</p>
-          <div className="rounded-md bg-muted p-4 space-y-2 text-sm font-mono">
-            <div><span className="text-muted-foreground">Rule Type:</span> <span className="font-semibold">Modify Headers</span></div>
-            <div><span className="text-muted-foreground">URL condition:</span> <span className="font-semibold">Contains → app.slack.com</span></div>
-            <div className="pt-1 border-t">
-              <div className="text-muted-foreground mb-1">Response Headers:</div>
-              <div className="pl-2">Remove → <span className="font-semibold text-destructive">X-Frame-Options</span></div>
-              <div className="pl-2">Remove → <span className="font-semibold text-destructive">Content-Security-Policy</span></div>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">Save the rule and make sure it is enabled (green toggle).</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="w-6 h-6 flex items-center justify-center p-0 text-xs font-bold">3</Badge>
-            <CardTitle className="text-base">Log into Slack in a separate tab first</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Browsers block third-party cookies inside iframes. To avoid a login loop, open Slack in a normal tab and sign in first.
-            Once you're logged in there, come back here and refresh — the iframe will pick up your session automatically.
-          </p>
-          <Button asChild size="sm" variant="outline">
-            <a href={SLACK_URL} target="_blank" rel="noreferrer">
-              <ExternalLink className="mr-2 h-3 w-3" />
-              Open Slack to log in
-            </a>
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="w-6 h-6 flex items-center justify-center p-0 text-xs font-bold">4</Badge>
-            <CardTitle className="text-base">Refresh this page</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground mb-3">
-            After installing the extension and logging in, refresh this page. Slack will load fully embedded.
-          </p>
-          <Button size="sm" onClick={() => window.location.reload()}>
-            Refresh now
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <CardTitle className="text-sm text-green-800 dark:text-green-400">For teams (50+ users)</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground">
-            Use <strong>Chrome Enterprise Policies</strong> to force-install Requestly and push the header rule automatically to all managed devices — so agents never have to set this up manually.
-          </p>
-        </CardContent>
-      </Card>
-
-    </div>
-  </div>
-);
-
 const SlackWorkspace = () => {
   const { user } = useAuth();
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isBlocked, setIsBlocked] = useState(false);
+  const slackWindowRef = useRef<Window | null>(null);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (isLoading) {
-        setIsBlocked(true);
-        setIsLoading(false);
-      }
-    }, 5000);
+  // ─── Sidecar popup logic ───────────────────────────────────────────────────
+  const openSlackPopup = () => {
+    // If window is already open, just focus it — don't open a duplicate
+    if (slackWindowRef.current && !slackWindowRef.current.closed) {
+      slackWindowRef.current.focus();
+      return;
+    }
 
-    return () => clearTimeout(timer);
-  }, [isLoading]);
+    const width  = 400;
+    const height = window.screen.height;
+    const left   = window.screen.width - width;
+    const top    = 0;
 
-  if (isBlocked) {
-    return <SetupGuide />;
-  }
+    // Classic features string — Chrome opens this as a popup window, not a tab
+    const features = [
+      `width=${width}`,
+      `height=${height}`,
+      `left=${left}`,
+      `top=${top}`,
+      'menubar=no',
+      'toolbar=no',
+      'location=no',
+      'status=no',
+      'scrollbars=yes',
+      'resizable=yes',
+    ].join(',');
+
+    const win = window.open(SLACK_URL, 'SlackSidecar', features);
+    slackWindowRef.current = win;
+  };
+
+  // ─── Sliding iframe panel logic ────────────────────────────────────────────
+  const openPanel = () => {
+    setIsLoading(true);
+    setIsPanelOpen(true);
+    setTimeout(() => setIsLoading(false), 8000);
+  };
+
+  const closePanel = () => setIsPanelOpen(false);
+
+  const isPopupOpen = slackWindowRef.current && !slackWindowRef.current.closed;
 
   return (
-    <div className="relative h-full w-full bg-background">
-      {isLoading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm z-10">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-          <p className="text-sm text-muted-foreground">Loading Slack...</p>
-        </div>
-      )}
+    <>
+      {/* ── Launcher page ───────────────────────────────────────────────── */}
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] p-6 bg-background">
+        <div className="w-full max-w-md space-y-6 text-center">
 
-      <div className="h-full w-full flex flex-col">
-        <div className="flex-1 relative">
-          <iframe
-            src={SLACK_URL}
-            title="Slack Workspace"
-            className="w-full h-full border-0"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
-            allow="microphone; camera; autoplay; clipboard-read; clipboard-write; display-capture"
-            onLoad={() => setIsLoading(false)}
-            onError={() => {
-              setIsLoading(false);
-              setIsBlocked(true);
-            }}
-          />
-        </div>
-
-        <div className="border-t bg-muted/30 px-4 py-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="h-3 w-3" />
-              <span>Slack Integration</span>
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-16 h-16 rounded-2xl bg-[#4A154B] flex items-center justify-center shadow-lg">
+              <MessageSquare className="h-8 w-8 text-white" />
             </div>
-            <div className="flex items-center gap-3">
-              <Button asChild variant="ghost" size="sm" className="h-5 text-xs px-1">
-                <a href={SLACK_URL} target="_blank" rel="noreferrer">
-                  <ExternalLink className="mr-1 h-3 w-3" />
-                  Open in new tab
-                </a>
+            <div>
+              <h1 className="text-2xl font-semibold">Slack</h1>
+              <p className="text-sm text-muted-foreground mt-1">Open your team workspace</p>
+            </div>
+          </div>
+
+          <Card className="border-2">
+            <CardContent className="pt-6 pb-6 space-y-3">
+
+              {/* Option 1 — Popup window (sidecar) */}
+              <Button
+                className="w-full h-12 text-base bg-[#4A154B] hover:bg-[#3d1040] text-white"
+                onClick={openSlackPopup}
+              >
+                <MessageSquare className="mr-2 h-5 w-5" />
+                {isPopupOpen ? 'Focus Slack Window' : 'Open Slack Side Panel'}
               </Button>
-              <span>Logged in as: {user?.email}</span>
-            </div>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">or embed in portal</span>
+                </div>
+              </div>
+
+              {/* Option 2 — Sliding iframe panel */}
+              <Button variant="outline" className="w-full" onClick={openPanel}>
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Open Slack Panel (embedded)
+              </Button>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">or</span>
+                </div>
+              </div>
+
+              {/* Option 3 — New tab */}
+              <Button variant="ghost" className="w-full" onClick={() => window.open(SLACK_URL, '_blank')}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Open in New Tab
+              </Button>
+
+            </CardContent>
+          </Card>
+
+          <div className="border-t pt-4 text-xs text-muted-foreground">
+            Logged in as: {user?.email}
           </div>
         </div>
       </div>
-    </div>
+
+      {/* ── Sliding iframe panel ─────────────────────────────────────────── */}
+      <div
+        className={`fixed top-0 right-0 h-full z-50 flex transition-all duration-300 ease-in-out ${
+          isPanelOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        style={{ width: '540px' }}
+      >
+        {/* Collapse tab */}
+        <button
+          onClick={closePanel}
+          className="absolute -left-8 top-1/2 -translate-y-1/2 bg-[#4A154B] text-white rounded-l-lg p-2 shadow-lg hover:bg-[#3d1040] transition-colors"
+          title="Close Slack panel"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+
+        <div className="w-full h-full bg-white shadow-2xl border-l flex flex-col">
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-[#4A154B]">
+            <div className="flex items-center gap-2 text-white">
+              <MessageSquare className="h-4 w-4" />
+              <span className="text-sm font-semibold">Slack</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="ghost" size="sm" className="h-7 text-xs text-white/80 hover:text-white hover:bg-white/10">
+                <a href={SLACK_URL} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  New tab
+                </a>
+              </Button>
+              <button onClick={closePanel} className="text-white/80 hover:text-white p-1 rounded transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* iframe */}
+          <div className="flex-1 relative">
+            {isLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-white z-10">
+                <Loader2 className="h-8 w-8 animate-spin text-[#4A154B] mb-3" />
+                <p className="text-sm text-muted-foreground">Loading Slack...</p>
+              </div>
+            )}
+            <iframe
+              src={SLACK_URL}
+              title="Slack"
+              className="w-full h-full border-0"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
+              allow="microphone; camera; autoplay; clipboard-read; clipboard-write"
+              onLoad={() => setIsLoading(false)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Backdrop */}
+      {isPanelOpen && (
+        <div className="fixed inset-0 bg-black/20 z-40" onClick={closePanel} />
+      )}
+    </>
   );
 };
 
