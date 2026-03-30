@@ -153,10 +153,6 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                 {isAuthorizedUser && hasNavigationAccess && (
                   <>
                     <DropdownMenuLabel>Lead Management</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => navigate('/manager-dashboard')}>
-                      <BarChart3 className="mr-2 h-4 w-4" />
-                      Dashboard
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => navigate('/daily-deal-flow')}>
                       <Grid3X3 className="mr-2 h-4 w-4" />
                       Daily Deal Flow
@@ -198,7 +194,7 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
       
                     <DropdownMenuItem onClick={() => navigate('/leads')}>
                       <User className="mr-2 h-4 w-4" />
-                      Leads
+                      All Leads
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>

@@ -11,7 +11,6 @@ import { AgentActivityDashboard } from "@/components/AgentActivityDashboard";
 import ReportsPage from "./pages/Reports";
 import Auth from "./pages/Auth";
 import CenterAuth from "./pages/CenterAuth";
-import Dashboard from "./pages/Dashboard";
 import Leads from "./pages/Leads";
 import CenterLeadPortal from "./pages/CenterLeadPortal";
 import CenterCalendarView from "./pages/CenterCalendarView";
@@ -75,7 +74,7 @@ const App = () => (
               path="/leads" 
               element={
                 <ProtectedRoute>
-                  <AppShell title="Leads">
+                  <AppShell title="All Leads">
                     <Leads />
                   </AppShell>
                 </ProtectedRoute>
@@ -120,16 +119,6 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Retainers">
                     <RetainersKanbanPage />
-                  </AppShell>
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/manager-dashboard" 
-              element={
-                <ProtectedRoute>
-                  <AppShell title="Dashboard">
-                    <Dashboard />
                   </AppShell>
                 </ProtectedRoute>
               } 
