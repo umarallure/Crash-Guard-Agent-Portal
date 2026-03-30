@@ -25,13 +25,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Loader2, RefreshCw, Pencil, StickyNote } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAttorneys } from "@/hooks/useAttorneys";
-import { usePipelineStages, type PipelineStage } from "@/hooks/usePipelineStages";
+import { usePipelineStages } from "@/hooks/usePipelineStages";
 import {
   parseStageLabel,
   deriveParentStages,
   buildStatusLabel,
-  deriveParentKey,
-  type ParentStage,
 } from "@/lib/stageUtils";
 
 export interface SubmissionPortalRow {
@@ -103,20 +101,49 @@ const SubmissionPortalPage = () => {
     };
   }, [stageLabelByKey]);
 
-  // --- Derive parent stages (kanban columns) from flat DB stages ---
+  const submissionStageKeyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    (dbSubmissionStages ?? []).forEach((stage) => {
+      const key = (stage?.key ?? "").trim();
+      const label = (stage?.label ?? "").trim();
+      if (key && label) map.set(label, key);
+    });
+    return map;
+  }, [dbSubmissionStages]);
+
+  const normalizeSubmissionStatusKey = (value: string | null | undefined): string => {
+    const trimmed = (value || "").trim();
+    if (!trimmed) return "";
+
+    const exactKey = dbSubmissionStages.find((stage) => (stage?.key ?? "").trim() === trimmed);
+    if (exactKey?.key) return exactKey.key.trim();
+
+    const mappedKey = submissionStageKeyByLabel.get(trimmed);
+    if (mappedKey) return mappedKey;
+
+    return trimmed;
+  };
+
   const parentStages = useMemo(() => deriveParentStages(dbSubmissionStages), [dbSubmissionStages]);
 
   const kanbanStages = useMemo(() => {
-    return parentStages.map((s) => ({ key: s.key, label: s.label }));
-  }, [parentStages]);
+    return (dbSubmissionStages ?? [])
+      .map((stage) => ({
+        key: (stage?.key ?? "").trim(),
+        label: (stage?.label ?? "").trim(),
+        columnClass: stage?.column_class || "",
+        headerClass: stage?.header_class || "",
+      }))
+      .filter((stage) => stage.key && stage.label);
+  }, [dbSubmissionStages]);
 
   const stageTheme = useMemo(() => {
     const theme: Record<string, { column: string; header: string }> = {};
-    parentStages.forEach((s) => {
-      theme[s.key] = { column: s.columnClass, header: s.headerClass };
+    kanbanStages.forEach((stage) => {
+      theme[stage.key] = { column: stage.columnClass, header: stage.headerClass };
     });
     return theme;
-  }, [parentStages]);
+  }, [kanbanStages]);
 
   // Map of parent label → reasons for edit form
   const reasonsByParent = useMemo(() => {
@@ -128,9 +155,9 @@ const SubmissionPortalPage = () => {
   }, [parentStages]);
 
   const deriveStageKey = (row: SubmissionPortalRow): string => {
-    const status = (row.status || '').trim();
-    if (!status) return parentStages[0]?.key ?? '';
-    return deriveParentKey(status, dbSubmissionStages, parentStages);
+    const status = normalizeSubmissionStatusKey(row.status);
+    if (!status) return '';
+    return kanbanStages.some((stage) => stage.key === status) ? status : '';
   };
 
   const handleKanbanDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -155,31 +182,11 @@ const SubmissionPortalPage = () => {
   };
 
   const getStatusForStage = (stageKey: string) => {
-    const parent = parentStages.find((s) => s.key === stageKey);
-    if (!parent) return parentStages[0]?.label ?? '';
-    // If the parent has reasons, default to the first reason sub-stage
-    if (parent.reasons.length > 0) {
-      return buildStatusLabel(parent.label, parent.reasons[0]);
-    }
-    return parent.label;
+    return kanbanStages.find((stage) => stage.key === stageKey)?.label ?? '';
   };
 
   const getStatusKeyForStage = (columnStageKey: string) => {
-    const exact = dbSubmissionStages.find((s) => s.key === columnStageKey);
-    if (exact?.key) return exact.key;
-    const matches = (dbSubmissionStages ?? []).filter((s) => {
-      const { parent } = parseStageLabel((s?.label ?? '').trim());
-      if (!parent) return false;
-      const parentStage = parentStages.find((p) => p.label === parent);
-      return parentStage?.key === columnStageKey;
-    });
-
-    if (matches.length > 0) {
-      const sorted = [...matches].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
-      return sorted[0]?.key ?? columnStageKey;
-    }
-
-    return columnStageKey;
+    return kanbanStages.some((stage) => stage.key === columnStageKey) ? columnStageKey : '';
   };
 
   const buildAllowedStatuses = () => {
@@ -258,16 +265,7 @@ const SubmissionPortalPage = () => {
 
     // Apply status filter
     if (statusFilter !== "__ALL__") {
-      const selectedStageLabel = dbSubmissionStages.find((s) => s.key === statusFilter)?.label;
-      const selectedParentLabel = parentStages.find((s) => s.key === statusFilter)?.label;
-      filtered = filtered.filter((record) => {
-        const current = (record.status || '').trim();
-        if (!current) return false;
-        if (current === statusFilter) return true;
-        if (selectedStageLabel && current === selectedStageLabel) return true;
-        if (selectedParentLabel && current === selectedParentLabel) return true;
-        return false;
-      });
+      filtered = filtered.filter((record) => deriveStageKey(record) === statusFilter);
     }
 
     // Apply lead vendor filter
@@ -843,7 +841,9 @@ const SubmissionPortalPage = () => {
 
   const handleOpenEdit = (row: SubmissionPortalRow) => {
     setEditRow(row);
-    const { parent, reason } = parseStageLabel((row.status || '').trim());
+    const normalizedStatus = normalizeSubmissionStatusKey(row.status);
+    const statusLabel = toDispositionLabel(normalizedStatus) ?? normalizedStatus;
+    const { parent, reason } = parseStageLabel(statusLabel);
     setEditStage(parent);
     setEditReason(reason || '');
     setEditNotes('');
@@ -859,11 +859,12 @@ const SubmissionPortalPage = () => {
     // Build the full status: "Parent - Reason" or just "Parent"
     const reasons = reasonsByParent[parentLabel];
     const selectedReason = (editReason || '').trim();
-    const nextStage = reasons && reasons.length > 0 && selectedReason
+    const nextStageLabel = reasons && reasons.length > 0 && selectedReason
       ? buildStatusLabel(parentLabel, selectedReason)
       : parentLabel;
+    const nextStage = submissionStageKeyByLabel.get(nextStageLabel) ?? nextStageLabel;
 
-    const previousStage = (editRow.status || '').trim();
+    const previousStage = normalizeSubmissionStatusKey(editRow.status);
     const stageChanged = previousStage !== nextStage;
 
     try {

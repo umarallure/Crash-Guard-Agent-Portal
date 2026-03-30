@@ -24,6 +24,7 @@ import DailyDealFlowLeadDetailsPage from "./pages/DailyDealFlow/DailyDealFlowLea
 import LeadDetailsPage from "./pages/LeadDetails/LeadDetailsPage";
 import TransferPortalPage from "./pages/TransferPortalPage";
 import SubmissionPortalPage from "./pages/SubmissionPortalPage";
+import CloserPortalPage from "./pages/CloserPortalPage";
 import RetainersKanbanPage from "./pages/RetainersKanbanPage";
 import BulkLookupPage from "./pages/BulkLookupPage";
 import SalesMapPage from "./pages/SalesMapPage";
@@ -257,6 +258,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Submission Portal">
                     <SubmissionPortalPage />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/closer-portal" 
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Closer Portal">
+                    <CloserPortalPage />
                   </AppShell>
                 </ProtectedRoute>
               } 

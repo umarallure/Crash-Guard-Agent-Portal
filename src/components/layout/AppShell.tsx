@@ -231,6 +231,12 @@ const AppShell = ({
         show: canAccessAgentPages,
       },
       {
+        label: 'Closer Portal',
+        to: '/closer-portal',
+        icon: <Users className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
         label: 'Daily Deal Flow',
         to: '/daily-deal-flow',
         icon: <Grid3X3 className="h-4 w-4 text-current" />,

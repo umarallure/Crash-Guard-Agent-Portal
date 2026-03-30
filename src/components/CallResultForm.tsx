@@ -469,6 +469,31 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
     return map;
   }, [dbSubmissionStages]);
 
+  const qualifiedStageOptions = useMemo(() => {
+    return (dbSubmissionStages ?? []).filter((stage) => {
+      const key = (stage?.key ?? "").trim();
+      const label = (stage?.label ?? "").trim();
+
+      if (!key || !label) return false;
+      if (!key.startsWith("qualified_")) return false;
+
+      // Keep parent stages selectable, but hide reason sub-stages like
+      // "Qualified: Missing Information - Missing Police Report".
+      return !label.includes(" - ");
+    });
+  }, [dbSubmissionStages]);
+
+  const qualifiedMissingInfoLabel =
+    qualifiedStageOptions.find((stage) => (stage?.key ?? "").trim() === "qualified_missing_info")?.label ??
+    "Qualified Missing Information";
+
+  const getQualifiedStageKey = (value: string | null | undefined) => {
+    const trimmed = (value || "").trim();
+    if (!trimmed) return "";
+    if (stageKeyToLabel.has(trimmed)) return trimmed;
+    return qualifiedStageToKey.get(trimmed) ?? trimmed;
+  };
+
   const centerDid = useMemo(() => {
     const match = centers.find((c) => c.lead_vendor === leadVendor);
     return match?.center_did || null;
@@ -733,13 +758,33 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
             if (statusLabel) {
               savedStatus = statusLabel;
             }
-            
-            if (savedStatus.startsWith('Qualified Missing Information - ')) {
-              setQualifiedStage('Qualified Missing Information');
-              setQualifiedStageReason(savedStatus.replace('Qualified Missing Information - ', ''));
-            } else if (savedStatus === 'Qualified Missing Information' || savedStatus === 'Qualified Awaiting to be signed' || savedStatus === 'Qualified Approved' || savedStatus === 'Qualified/Payable') {
-              setQualifiedStage(savedStatus);
-              if (savedStatus === 'Qualified Missing Information' && existingResult.dq_reason) {
+
+            const missingInfoPrefixes = [
+              qualifiedMissingInfoLabel,
+              'Qualified Missing Information',
+              'Qualified: Missing Information',
+            ].filter(Boolean);
+
+            const matchingMissingInfoPrefix = missingInfoPrefixes.find((prefix) =>
+              savedStatus.startsWith(`${prefix} - `)
+            );
+
+            if (matchingMissingInfoPrefix) {
+              setQualifiedStage(qualifiedMissingInfoLabel);
+              setQualifiedStageReason(savedStatus.replace(`${matchingMissingInfoPrefix} - `, ''));
+            } else {
+              const matchedQualifiedStage = qualifiedStageOptions.find((stage) => {
+                const key = (stage?.key ?? '').trim();
+                const label = (stage?.label ?? '').trim();
+                return savedStatus === label || savedStatus === key;
+              });
+
+              if (matchedQualifiedStage?.label) {
+                setQualifiedStage(matchedQualifiedStage.label);
+              }
+
+              if (getQualifiedStageKey(savedStatus) === 'qualified_missing_info' && existingResult.dq_reason) {
+                setQualifiedStage(matchedQualifiedStage?.label || qualifiedMissingInfoLabel);
                 setQualifiedStageReason(existingResult.dq_reason);
               }
             }
@@ -995,7 +1040,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
     };
 
     loadExistingCallResult();
-  }, [submissionId]);
+  }, [submissionId, qualifiedMissingInfoLabel, qualifiedStageOptions, stageKeyToLabel]);
 
   // Reset related fields when status changes
   useEffect(() => {
@@ -1194,7 +1239,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
       let finalStatus = status;
       if (applicationSubmitted === true) {
         finalStatus = qualifiedStage || "Submitted";
-        if (qualifiedStage === "Qualified Missing Information" && qualifiedStageReason) {
+        if (getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" && qualifiedStageReason) {
           finalStatus = `${qualifiedStage} - ${qualifiedStageReason}`;
         }
         const stageKey = qualifiedStageToKey.get(finalStatus);
@@ -1456,16 +1501,9 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
             .single();
 
           if (!leadError && leadData) {
-            const qualifiedStatusMap: Record<string, string> = {
-              "Qualified Missing Information": qualifiedStageReason ? `Qualified: Missing Information - ${qualifiedStageReason}` : "qualified_missing_info",
-              "Qualified Awaiting to be signed": "qualified_awaiting_signature",
-              "Qualified Approved": "qualified_approved",
-              "Qualified/Payable": "qualified_payable"
-            };
-
             const slackStatus = applicationSubmitted === true
-              ? (qualifiedStatusMap[qualifiedStage] || qualifiedStage || 'Submitted')
-              : (qualifiedStatusMap[status] || status || 'Submitted');
+              ? (finalStatus || 'Submitted')
+              : (status || 'Submitted');
 
             const callResultForSlack = {
               application_submitted: applicationSubmitted,
@@ -1473,7 +1511,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
               agent_who_took_call: agentWhoTookCall,
               lead_vendor: leadData.lead_vendor || leadVendor || 'N/A',
               status: slackStatus,
-              qualified_stage: qualifiedStage || null,
+              qualified_stage: getQualifiedStageKey(qualifiedStage) || null,
               notes: finalNotes,
               dq_reason: showStatusReasonDropdown ? statusReason : null,
               ...(accidentDate && { accident_date: accidentDate }),
@@ -1830,15 +1868,16 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                       <SelectValue placeholder="Select stage" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Qualified Missing Information">Qualified Missing Information</SelectItem>
-                      <SelectItem value="Qualified Awaiting to be signed">Qualified Awaiting to be signed</SelectItem>
-                      <SelectItem value="Qualified Approved">Qualified Approved</SelectItem>
-                      <SelectItem value="Qualified/Payable">Qualified/Payable</SelectItem>
+                      {qualifiedStageOptions.map((stage) => (
+                        <SelectItem key={stage.key} value={stage.label}>
+                          {stage.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {qualifiedStage === "Qualified Missing Information" && (
+                {getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" && (
                   <div>
                     <Label htmlFor="qualifiedStageReason" className="text-base font-semibold">
                       Reason
