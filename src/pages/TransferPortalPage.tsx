@@ -28,6 +28,7 @@ import { usePipelineStages, type PipelineStage } from "@/hooks/usePipelineStages
 
 export interface TransferPortalRow {
   id: string;
+  daily_deal_flow_id?: string;
   submission_id: string;
   date?: string;
   insured_name?: string;
@@ -292,25 +293,16 @@ const TransferPortalPage = () => {
     try {
       setRefreshing(true);
 
-      let transfersQuery = supabase
-        .from('daily_deal_flow')
+      let leadsQuery = (supabase as any)
+        .from('leads')
         .select('*')
-        .order('date', { ascending: false })
+        .order('submission_date', { ascending: false })
         .order('created_at', { ascending: false });
 
-      if (dateFilter) {
-        transfersQuery = transfersQuery.eq('date', dateFilter);
-      }
+      const leadsRes = await leadsQuery;
 
-      const [transfersRes, transfersCountRes] = await Promise.all([
-        transfersQuery,
-        supabase
-          .from('daily_deal_flow')
-          .select('*', { count: 'exact', head: true }),
-      ]);
-
-      if (transfersRes.error) {
-        console.error("Error fetching transfer portal data:", transfersRes.error);
+      if (leadsRes.error) {
+        console.error("Error fetching transfer portal data:", leadsRes.error);
         toast({
           title: "Error",
           description: "Failed to fetch transfer portal data",
@@ -319,12 +311,31 @@ const TransferPortalPage = () => {
         return;
       }
 
-      setAllTimeTransfers(transfersCountRes.count ?? 0);
+      const transferRows = ((leadsRes.data ?? []) as any[]).map((lead) => {
+        const submissionId = (lead?.submission_id || '').trim();
+        const isCallback = Boolean(lead?.is_callback);
 
-      const transferRows = ((transfersRes.data ?? []) as unknown as TransferPortalRow[]).map((row) => {
-        const isCallback = Boolean((row as any).from_callback) || Boolean((row as any).is_callback);
         return {
-          ...row,
+          id: lead.id,
+          submission_id: submissionId,
+          insured_name: lead.customer_full_name || '',
+          client_phone_number: lead.phone_number || '',
+          lead_vendor: lead.lead_vendor || '',
+          buffer_agent: lead.buffer_agent || '',
+          agent: lead.agent || '',
+          licensed_agent_account: (lead as any).licensed_agent_account || '',
+          carrier: lead.carrier || '',
+          product_type: lead.product_type || '',
+          draft_date: lead.draft_date || '',
+          monthly_premium: lead.monthly_premium || null,
+          face_amount: (lead as any).coverage_amount || null,
+          status: (lead.status || '').trim(),
+          notes: '',
+          date: lead.submission_date ? String(lead.submission_date).split(' ')[0] : '',
+          created_at: lead.created_at || '',
+          updated_at: lead.updated_at || '',
+          from_callback: isCallback,
+          is_callback: isCallback,
           source_type: isCallback ? 'callback' : 'zapier',
         };
       });
@@ -336,7 +347,7 @@ const TransferPortalPage = () => {
         return status === ((transferApiStage?.label || '').trim());
       });
 
-      setData(transferPortalOnlyRows);
+      setAllTimeTransfers(transferPortalOnlyRows.length);
 
       const rowsForCounts = sourceTypeFilter === "__ALL__"
         ? transferPortalOnlyRows
@@ -344,7 +355,7 @@ const TransferPortalPage = () => {
 
       setData(rowsForCounts);
 
-      // Fetch aggregated note counts (lead_notes + legacy notes fields)
+      // Fetch note counts from daily_deal_flow only
       fetchNoteCounts(rowsForCounts);
 
       if (showRefreshToast) {
@@ -407,8 +418,8 @@ const TransferPortalPage = () => {
   };
 
   const handleView = (row: TransferPortalRow) => {
-    if (!row?.id) return;
-    navigate(`/daily-deal-flow/lead/${encodeURIComponent(row.id)}`, {
+    if (!row?.submission_id) return;
+    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
       state: { activeNav: '/transfer-portal' },
     });
   };
@@ -418,6 +429,32 @@ const TransferPortalPage = () => {
     if (!query) return allStageOptions;
     return allStageOptions.filter((label) => label.toLowerCase().includes(query));
   }, [allStageOptions, editStage]);
+
+  const syncLatestDailyDealFlowRow = async (submissionId: string | undefined, updates: Record<string, unknown>) => {
+    const normalizedSubmissionId = (submissionId || '').trim();
+    if (!normalizedSubmissionId) return;
+
+    const { data: latestRow, error: latestRowError } = await supabase
+      .from('daily_deal_flow')
+      .select('id')
+      .eq('submission_id', normalizedSubmissionId)
+      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestRowError) throw latestRowError;
+
+    const dailyDealFlowId = (latestRow as { id?: string } | null)?.id;
+    if (!dailyDealFlowId) return;
+
+    const { error: updateError } = await supabase
+      .from('daily_deal_flow')
+      .update(updates)
+      .eq('id', dailyDealFlowId);
+
+    if (updateError) throw updateError;
+  };
 
   const handleSaveEdit = async () => {
     if (!editRow) return;
@@ -431,71 +468,24 @@ const TransferPortalPage = () => {
     try {
       setEditSaving(true);
 
-      const { error } = await supabase
-        .from('daily_deal_flow')
-        .update({ status: nextStage, notes: editNotes })
+      const { error: leadsError } = await (supabase as any)
+        .from('leads')
+        .update({ status: nextStage })
         .eq('id', editRow.id);
 
-      if (error) {
+      if (leadsError) {
         toast({
           title: 'Error',
-          description: 'Failed to update transfer',
+          description: 'Failed to update lead status',
           variant: 'destructive',
         });
         return;
       }
 
-      const notesText = (editNotes || '').trim() || 'No notes provided.';
+      await syncLatestDailyDealFlowRow(editRow.submission_id, { status: nextStage, notes: editNotes });
 
-      // Append note to lead_notes when provided
       const trimmedNote = (editNotes || '').trim();
-      if (trimmedNote.length > 0) {
-        try {
-          const { data: userData, error: userErr } = await supabase.auth.getUser();
-          if (!userErr) {
-            const user = userData?.user;
-            const createdBy = user?.id || null; // created_by is uuid
-            const emailPrefix = user?.email ? user.email.split('@')[0] : null;
-
-            let displayName: string | null = null;
-            if (user?.id) {
-              try {
-                const { data: profileData } = await (supabase as any)
-                  .from('profiles')
-                  .select('display_name')
-                  .eq('user_id', user.id)
-                  .limit(1);
-
-                const raw = Array.isArray(profileData) ? profileData?.[0]?.display_name : profileData?.display_name;
-                displayName = typeof raw === 'string' ? raw.trim() : null;
-                if (displayName && displayName.length === 0) displayName = null;
-              } catch (e) {
-                console.warn('Failed to fetch profile display_name', e);
-              }
-            }
-
-            const authorName =
-              displayName || (user?.user_metadata as any)?.full_name || emailPrefix || user?.id || null;
-
-            const { error: insertErr } = await (supabase as any).from('lead_notes').insert({
-              lead_id: editRow.id,
-              submission_id: (editRow as any).submission_id ?? null,
-              note: trimmedNote,
-              source: 'Transfer Portal',
-              created_by: createdBy,
-              author_name: authorName,
-            });
-
-            if (insertErr) {
-              console.warn('Failed to insert lead note', insertErr);
-            }
-          } else {
-            console.warn('Failed to fetch auth user for note insert', userErr);
-          }
-        } catch (e) {
-          console.warn('Unexpected error inserting lead note', e);
-        }
-      }
+      const notesText = trimmedNote || 'No notes provided.';
 
       if (stageChanged || trimmedNote.length > 0) {
         try {
@@ -612,43 +602,17 @@ const TransferPortalPage = () => {
       counts[id] = 0;
     });
 
-    // lead_notes counts
-    try {
-      const { data: leadNoteRows, error: leadNoteErr } = await (supabase as any)
-        .from('lead_notes')
-        .select('lead_id')
-        .in('lead_id', ids);
-
-      if (!leadNoteErr && Array.isArray(leadNoteRows)) {
-        leadNoteRows.forEach((row: { lead_id: string }) => {
-          if (row.lead_id) {
-            counts[row.lead_id] = (counts[row.lead_id] || 0) + 1;
-          }
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to fetch lead note counts', e);
-    }
-
-    // Legacy notes on daily_deal_flow
-    rows.forEach((r) => {
-      if ((r.notes || '').trim()) {
-        counts[r.id] = (counts[r.id] || 0) + 1;
-      }
-    });
-
-    // Legacy notes on leads.additional_notes via submission_id
     const submissionIds = Array.from(submissionMap.keys());
     if (submissionIds.length > 0) {
       try {
-        const { data: leadRows, error: leadsErr } = await supabase
-          .from('leads')
-          .select('submission_id, additional_notes')
+        const { data: dealFlowRows, error: dealFlowErr } = await supabase
+          .from('daily_deal_flow')
+          .select('submission_id, notes')
           .in('submission_id', submissionIds);
 
-        if (!leadsErr && Array.isArray(leadRows)) {
-          leadRows.forEach((row) => {
-            const noteText = (row.additional_notes as string | null)?.trim();
+        if (!dealFlowErr && Array.isArray(dealFlowRows)) {
+          dealFlowRows.forEach((row) => {
+            const noteText = (row.notes as string | null)?.trim();
             if (noteText) {
               const leadId = submissionMap.get(row.submission_id as string);
               if (leadId) {
@@ -658,7 +622,7 @@ const TransferPortalPage = () => {
           });
         }
       } catch (e) {
-        console.warn('Failed to fetch legacy leads notes', e);
+        console.warn('Failed to fetch daily deal flow note counts', e);
       }
     }
 
@@ -678,12 +642,16 @@ const TransferPortalPage = () => {
     setData(next);
 
     try {
-      const { error } = await supabase
-        .from('daily_deal_flow')
+      const droppedRow = prev.find((row) => row.id === rowId);
+
+      const { error: leadsError } = await (supabase as any)
+        .from('leads')
         .update({ status: nextStatus })
         .eq('id', rowId);
 
-      if (error) throw error;
+      if (leadsError) throw leadsError;
+
+      await syncLatestDailyDealFlowRow(droppedRow?.submission_id, { status: nextStatus });
 
       toast({
         title: 'Status Updated',

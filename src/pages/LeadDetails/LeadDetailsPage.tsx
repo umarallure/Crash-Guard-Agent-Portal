@@ -17,21 +17,14 @@ import { useToast } from "@/hooks/use-toast";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
-type LeadNote = {
+type DailyDealFlowNote = {
   id: string;
-  lead_id: string | null;
-  submission_id?: string | null;
   note: string;
   created_at: string;
-  created_by?: string | null;
   author_name?: string | null;
   source?: string | null;
-};
-
-type LegacyNote = {
-  source: string;
-  note: string;
-  timestamp?: string | null;
+  status?: string | null;
+  call_result?: string | null;
 };
 
 type CallUpdate = {
@@ -117,13 +110,40 @@ const LeadDetailsPage = () => {
   const [dailyDealFlowStatus, setDailyDealFlowStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notesLoading, setNotesLoading] = useState(false);
-  const [notes, setNotes] = useState<LeadNote[]>([]);
-  const [legacyNotes, setLegacyNotes] = useState<LegacyNote[]>([]);
+  const [notes, setNotes] = useState<DailyDealFlowNote[]>([]);
   const [newNote, setNewNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [callUpdatesLoading, setCallUpdatesLoading] = useState(false);
   const [callUpdates, setCallUpdates] = useState<CallUpdate[]>([]);
+
+  const fetchCallUpdates = async (targetSubmissionId: string | null | undefined) => {
+    if (!targetSubmissionId) {
+      setCallUpdates([]);
+      return;
+    }
+
+    setCallUpdatesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('daily_deal_flow')
+        .select('*')
+        .eq('submission_id', targetSubmissionId)
+        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        setCallUpdates([]);
+        return;
+      }
+
+      setCallUpdates((data as unknown as CallUpdate[]) || []);
+    } catch {
+      setCallUpdates([]);
+    } finally {
+      setCallUpdatesLoading(false);
+    }
+  };
 
   useEffect(() => {
     const run = async () => {
@@ -169,12 +189,12 @@ const LeadDetailsPage = () => {
       setLead(data);
       setLoading(false);
 
-      // lead_notes.lead_id is FK to daily_deal_flow.id in this project
       try {
         const { data: ddfRow, error: ddfErr } = await supabase
           .from("daily_deal_flow")
           .select("id,status")
           .eq("submission_id", submissionId)
+          .order("updated_at", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -193,50 +213,12 @@ const LeadDetailsPage = () => {
         setDailyDealFlowStatus(null);
       }
 
-      fetchNotes(data.submission_id ?? null, null);
-      setLegacyNotes(
-        data.additional_notes
-          ? [
-              {
-                source: "Leads",
-                note: String(data.additional_notes).trim(),
-                timestamp: data.updated_at || data.created_at || null,
-              },
-            ]
-          : []
-      );
+      void fetchNotes(data.submission_id ?? null);
+      void fetchCallUpdates(data.submission_id ?? null);
     };
 
     run();
   }, [submissionId, toast]);
-
-  useEffect(() => {
-    const run = async () => {
-      if (!submissionId) return;
-
-      setCallUpdatesLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('daily_deal_flow')
-          .select('*')
-          .eq('submission_id', submissionId)
-          .order('created_at', { ascending: false });
-
-        if (error) {
-          setCallUpdates([]);
-          return;
-        }
-
-        setCallUpdates((data as unknown as CallUpdate[]) || []);
-      } catch (e) {
-        setCallUpdates([]);
-      } finally {
-        setCallUpdatesLoading(false);
-      }
-    };
-
-    run();
-  }, [submissionId]);
 
   const handleSaveNote = async () => {
     const trimmedNote = newNote.trim();
@@ -264,7 +246,6 @@ const LeadDetailsPage = () => {
       if (userErr) throw userErr;
 
       const user = userData?.user;
-      const createdBy = user?.id || null;
       const emailPrefix = user?.email ? user.email.split('@')[0] : null;
 
       const supabaseUntyped = supabase as unknown as {
@@ -278,7 +259,6 @@ const LeadDetailsPage = () => {
               limit: (n: number) => Promise<{ data: unknown; error: unknown }>;
             };
           };
-          insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>;
         };
       };
 
@@ -310,16 +290,27 @@ const LeadDetailsPage = () => {
       const authorName =
         displayName || metaFullName || emailPrefix || user?.id || null;
 
-      const { error: insertErr } = await supabaseUntyped.from('lead_notes').insert({
-        lead_id: dailyDealFlowId,
-        submission_id: lead.submission_id ?? null,
-        note: trimmedNote,
-        source: 'Lead Details',
-        created_by: createdBy,
-        author_name: authorName,
-      });
+      const { data: existingRow, error: existingErr } = await supabase
+        .from('daily_deal_flow')
+        .select('notes')
+        .eq('id', dailyDealFlowId)
+        .maybeSingle();
 
-      if (insertErr) throw insertErr;
+      if (existingErr) throw existingErr;
+
+      const timestamp = format(new Date(), "PPpp");
+      const notePrefix = authorName ? `[${timestamp}] ${authorName}:` : `[${timestamp}]`;
+      const existingNotes = ((existingRow as { notes?: string | null } | null)?.notes || '').trim();
+      const nextNotes = existingNotes
+        ? `${existingNotes}\n\n${notePrefix} ${trimmedNote}`
+        : `${notePrefix} ${trimmedNote}`;
+
+      const { error: updateErr } = await supabase
+        .from('daily_deal_flow')
+        .update({ notes: nextNotes })
+        .eq('id', dailyDealFlowId);
+
+      if (updateErr) throw updateErr;
 
       try {
         let dispositionLabel: string | null = null;
@@ -373,7 +364,10 @@ const LeadDetailsPage = () => {
 
       setNewNote("");
       setNoteDialogOpen(false);
-      await fetchNotes(lead.submission_id ?? null, null);
+      await Promise.all([
+        fetchNotes(lead.submission_id ?? null),
+        fetchCallUpdates(lead.submission_id ?? null),
+      ]);
     } catch (error) {
       console.error("Error saving note:", error);
       toast({
@@ -386,46 +380,55 @@ const LeadDetailsPage = () => {
     }
   };
 
-  const fetchNotes = async (submission_id: string | null, lead_id: string | null) => {
+  const fetchNotes = async (submission_id: string | null) => {
     setNotesLoading(true);
     try {
-      const supabaseUntyped = supabase as unknown as {
-        from: (
-          table: string
-        ) => {
-          select: (
-            cols: string
-          ) => {
-            order: (
-              column: string,
-              opts: { ascending: boolean }
-            ) => {
-              eq: (col: string, value: unknown) => Promise<{ data: unknown[] | null; error: unknown }>;
-            };
-          };
-        };
-      };
-
-      const baseQuery = supabaseUntyped
-        .from("lead_notes")
-        .select("id, lead_id, submission_id, note, created_at, created_by, author_name, source")
-        .order("created_at", { ascending: false });
-
-      const { data, error } = submission_id
-        ? await baseQuery.eq("submission_id", submission_id)
-        : lead_id
-          ? await baseQuery.eq("lead_id", lead_id)
-          : await baseQuery.eq("id", "__never__");
-
-      if (error) {
-        console.error("Failed to fetch lead notes", error);
+      if (!submission_id) {
         setNotes([]);
         return;
       }
 
-      setNotes((data as LeadNote[]) || []);
+      const { data, error } = await supabase
+        .from("daily_deal_flow")
+        .select("id, notes, created_at, updated_at, status, call_result, agent, buffer_agent, licensed_agent_account")
+        .eq("submission_id", submission_id)
+        .order("updated_at", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Failed to fetch daily deal flow notes", error);
+        setNotes([]);
+        return;
+      }
+
+      const mappedNotes = ((data as Array<Record<string, unknown>> | null) || [])
+        .filter((row) => typeof row.notes === "string" && row.notes.trim().length > 0)
+        .map((row) => {
+          const authorName =
+            (typeof row.agent === "string" && row.agent.trim()) ||
+            (typeof row.licensed_agent_account === "string" && row.licensed_agent_account.trim()) ||
+            (typeof row.buffer_agent === "string" && row.buffer_agent.trim()) ||
+            null;
+
+          const sourceParts = [
+            typeof row.status === "string" ? row.status.trim() : "",
+            typeof row.call_result === "string" ? row.call_result.trim() : "",
+          ].filter(Boolean);
+
+          return {
+            id: String(row.id || ""),
+            note: String(row.notes || "").trim(),
+            created_at: String(row.updated_at || row.created_at || ""),
+            author_name: authorName,
+            source: sourceParts.length > 0 ? sourceParts.join(" • ") : "Daily Deal Flow",
+            status: typeof row.status === "string" ? row.status : null,
+            call_result: typeof row.call_result === "string" ? row.call_result : null,
+          } satisfies DailyDealFlowNote;
+        });
+
+      setNotes(mappedNotes);
     } catch (e) {
-      console.error("Unexpected error fetching lead notes", e);
+      console.error("Unexpected error fetching daily deal flow notes", e);
       setNotes([]);
     } finally {
       setNotesLoading(false);
@@ -619,59 +622,34 @@ const LeadDetailsPage = () => {
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Loading notes...
                   </div>
-                ) : notes.length === 0 && legacyNotes.length === 0 ? (
+                ) : notes.length === 0 ? (
                   <div className="text-sm text-muted-foreground">No notes found for this lead.</div>
                 ) : (
                   <div className="space-y-6">
-                    {notes.length > 0 && (
-                      <div className="space-y-3">
-                        <div className="text-sm font-medium text-foreground">Notes</div>
-                        {notes.map((n) => {
-                          const author = (n.author_name || "").trim() || n.created_by || "Unknown";
-                          const source = (n.source || "").trim() || "Unknown source";
-                          const dateText = n.created_at ? format(new Date(n.created_at), "PPpp") : "";
-                          return (
-                            <div key={n.id} className="rounded-md border p-3">
-                              <div className="text-sm text-muted-foreground mb-1">
-                                <span className="font-medium text-foreground">{author}</span>
-                                <span className="mx-1">•</span>
-                                <span>{source}</span>
-                                {dateText && (
-                                  <>
-                                    <span className="mx-1">•</span>
-                                    <span>{dateText}</span>
-                                  </>
-                                )}
-                              </div>
-                              <div className="whitespace-pre-wrap text-sm text-foreground">{n.note}</div>
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium text-foreground">Daily Deal Flow Notes</div>
+                      {notes.map((n) => {
+                        const author = (n.author_name || "").trim() || "Daily Deal Flow";
+                        const source = (n.source || "").trim() || "Daily Deal Flow";
+                        const dateText = n.created_at ? format(new Date(n.created_at), "PPpp") : "";
+                        return (
+                          <div key={n.id} className="rounded-md border p-3">
+                            <div className="text-sm text-muted-foreground mb-1">
+                              <span className="font-medium text-foreground">{author}</span>
+                              <span className="mx-1">•</span>
+                              <span>{source}</span>
+                              {dateText && (
+                                <>
+                                  <span className="mx-1">•</span>
+                                  <span>{dateText}</span>
+                                </>
+                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {legacyNotes.length > 0 && (
-                      <div className="space-y-3">
-                        <div className="text-sm font-medium text-foreground">Legacy notes</div>
-                        {legacyNotes.map((ln, idx) => {
-                          const dateText = ln.timestamp ? format(new Date(ln.timestamp), "PPpp") : "";
-                          return (
-                            <div key={`legacy-${idx}`} className="rounded-md border p-3">
-                              <div className="text-sm text-muted-foreground mb-1">
-                                <span className="font-medium text-foreground">{ln.source}</span>
-                                {dateText && (
-                                  <>
-                                    <span className="mx-1">•</span>
-                                    <span>{dateText}</span>
-                                  </>
-                                )}
-                              </div>
-                              <div className="whitespace-pre-wrap text-sm text-foreground">{ln.note}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                            <div className="whitespace-pre-wrap text-sm text-foreground">{n.note}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -692,12 +670,17 @@ const LeadDetailsPage = () => {
                   (() => {
                     const first = (callUpdates[0] || {}) as Record<string, unknown>;
                     const preferred = [
+                      'date',
+                      'created_at',
+                      'updated_at',
                       'insured_name',
                       'client_phone_number',
                       'lead_vendor',
                       'state',
                       'status',
                       'call_result',
+                      'buffer_agent',
+                      'licensed_agent_account',
                       'agent',
                       'notes',
                     ];
@@ -705,9 +688,7 @@ const LeadDetailsPage = () => {
                     const shouldHideKey = (key: string) => {
                       const k = key.toLowerCase();
                       if (k === 'id') return true;
-                      if (k === 'created_at' || k === 'updated_at') return true;
                       if (k === 'submission_id') return true;
-                      if (k === 'date') return true;
                       if (k.endsWith('_id')) return true;
                       if (k.includes(' id')) return true;
                       if (k.startsWith('id_')) return true;
