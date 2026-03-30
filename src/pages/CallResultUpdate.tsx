@@ -1,6 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { LeadInfoCard } from "@/components/LeadInfoCard";
@@ -67,7 +70,98 @@ const CallResultUpdate = () => {
   const [sendingContract, setSendingContract] = useState(false);
   const [lastEnvelopeId, setLastEnvelopeId] = useState<string | null>(null);
 
+  const docusignTemplateId = import.meta.env.VITE_DOCUSIGN_TEMPLATE_ID as string | undefined;
+
   const { toast } = useToast();
+
+  const checkExistingVerificationSession = useCallback(async () => {
+    try {
+      const { data: sessions, error } = await supabase
+        .from('verification_sessions')
+        .select('id, status, buffer_agent_id, licensed_agent_id')
+        .eq('submission_id', submissionId)
+        .order('created_at', { ascending: false });
+
+      console.log('Verification sessions found:', sessions);
+
+      if (error) {
+        console.error('Error fetching verification sessions:', error);
+        return;
+      }
+
+      // Get the most recent session (first in the ordered list)
+      if (sessions && sessions.length > 0) {
+        const latestSession = sessions[0];
+        console.log('Using latest verification session:', latestSession);
+        setVerificationSessionId(latestSession.id);
+        setShowVerificationPanel(true);
+      } else {
+        console.log('No verification sessions found for this submission');
+      }
+    } catch (error) {
+      console.error('Error in checkExistingVerificationSession:', error);
+    }
+  }, [submissionId]);
+
+  const fetchLead = useCallback(async () => {
+    try {
+      // Trim the submission ID
+      const trimmedSubmissionId = submissionId ? submissionId.trim() : "";
+      
+      if (!trimmedSubmissionId) {
+        toast({
+          title: "Error",
+          description: "Invalid submission ID",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Direct query - fetch lead by submission ID only
+      const { data: directLead, error: directError } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("submission_id", trimmedSubmissionId)
+        .single();
+
+      if (directError) {
+        console.error("Error fetching lead:", directError);
+        toast({
+          title: "Lead Not Found",
+          description: `Could not find lead with submission ID: ${trimmedSubmissionId}`,
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (directLead) {
+        const typedLead = directLead as Lead;
+        setLead(typedLead);
+        setContractRecipientEmail(typedLead.email || "");
+        setLoading(false);
+        return;
+      }
+
+      // If no lead found
+      toast({
+        title: "Lead Not Found",
+        description: `No lead found with submission ID: ${trimmedSubmissionId}`,
+        variant: "destructive",
+      });
+      setLoading(false);
+
+    } catch (error) {
+      console.error("Error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+      setLoading(false);
+    }
+  }, [submissionId, toast]);
 
   useEffect(() => {
     if (!submissionId) {
@@ -82,7 +176,7 @@ const CallResultUpdate = () => {
 
     fetchLead();
     checkExistingVerificationSession();
-  }, [submissionId]);
+  }, [submissionId, fetchLead, checkExistingVerificationSession, toast]);
 
   useEffect(() => {
     const seedVerifiedFields = async () => {
@@ -115,32 +209,66 @@ const CallResultUpdate = () => {
     seedVerifiedFields();
   }, [verificationSessionId]);
 
-  const checkExistingVerificationSession = async () => {
+  const handleSendContract = async () => {
+    type SendContractResponse = { envelopeId?: string };
+
+    const email = (contractRecipientEmail || "").trim();
+    if (!submissionId) {
+      toast({
+        title: "Error",
+        description: "No submission ID provided",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!email) {
+      toast({
+        title: "Error",
+        description: "Please enter an email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!docusignTemplateId) {
+      toast({
+        title: "Error",
+        description: "Missing DocuSign template ID (VITE_DOCUSIGN_TEMPLATE_ID)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSendingContract(true);
     try {
-      const { data: sessions, error } = await supabase
-        .from('verification_sessions')
-        .select('id, status, buffer_agent_id, licensed_agent_id')
-        .eq('submission_id', submissionId)
-        .order('created_at', { ascending: false });
+      const response = await supabase.functions.invoke<SendContractResponse>("docusign-send-contract", {
+        body: {
+          submissionId,
+          recipientEmail: email,
+          templateId: docusignTemplateId,
+        },
+      });
 
-      console.log('Verification sessions found:', sessions);
+      if (response.error) throw response.error;
 
-      if (error) {
-        console.error('Error fetching verification sessions:', error);
-        return;
-      }
+      const envelopeId = response.data?.envelopeId ?? null;
+      setLastEnvelopeId(envelopeId);
 
-      // Get the most recent session (first in the ordered list)
-      if (sessions && sessions.length > 0) {
-        const latestSession = sessions[0];
-        console.log('Using latest verification session:', latestSession);
-        setVerificationSessionId(latestSession.id);
-        setShowVerificationPanel(true);
-      } else {
-        console.log('No verification sessions found for this submission');
-      }
-    } catch (error) {
-      console.error('Error in checkExistingVerificationSession:', error);
+      toast({
+        title: "Contract sent",
+        description: envelopeId ? `Envelope ID: ${envelopeId}` : "Contract email was sent successfully",
+      });
+    } catch (e: unknown) {
+      console.error("Error sending contract:", e);
+      const message = e instanceof Error ? e.message : "Failed to send contract";
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setSendingContract(false);
     }
   };
 
@@ -155,7 +283,7 @@ const CallResultUpdate = () => {
         .eq("session_id", verificationSessionId);
       if (items && Array.isArray(items)) {
         const total = items.length;
-        const verified = items.filter((item: any) => item.is_verified).length;
+        const verified = (items as Array<{ is_verified: boolean | null }>).filter((item) => Boolean(item.is_verified)).length;
         setVerificationProgress(total > 0 ? Math.round((verified / total) * 100) : 0);
       }
     };
@@ -228,65 +356,6 @@ const CallResultUpdate = () => {
     }
   };
 
-  const fetchLead = async () => {
-    try {
-      // Trim the submission ID
-      const trimmedSubmissionId = submissionId ? submissionId.trim() : "";
-      
-      if (!trimmedSubmissionId) {
-        toast({
-          title: "Error",
-          description: "Invalid submission ID",
-          variant: "destructive",
-        });
-        setLoading(false);
-        return;
-      }
-
-      // Direct query - fetch lead by submission ID only
-      const { data: directLead, error: directError } = await supabase
-        .from("leads")
-        .select("*")
-        .eq("submission_id", trimmedSubmissionId)
-        .single();
-
-      if (directError) {
-        console.error("Error fetching lead:", directError);
-        toast({
-          title: "Lead Not Found",
-          description: `Could not find lead with submission ID: ${trimmedSubmissionId}`,
-          variant: "destructive",
-        });
-        setLoading(false);
-        return;
-      }
-
-      if (directLead) {
-        setLead(directLead);
-        setContractRecipientEmail(directLead.email || "");
-        setLoading(false);
-        return;
-      }
-
-      // If no lead found
-      toast({
-        title: "Lead Not Found",
-        description: `No lead found with submission ID: ${trimmedSubmissionId}`,
-        variant: "destructive",
-      });
-      setLoading(false);
-
-    } catch (error) {
-      console.error("Error:", error);
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred",
-        variant: "destructive",
-      });
-      setLoading(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -352,6 +421,40 @@ const CallResultUpdate = () => {
             </div>
           )}
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Send Contract</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end">
+              <div className="space-y-2">
+                <Label htmlFor="contractRecipientEmail">Recipient Email</Label>
+                <Input
+                  id="contractRecipientEmail"
+                  type="email"
+                  value={contractRecipientEmail}
+                  onChange={(e) => setContractRecipientEmail(e.target.value)}
+                  placeholder="name@example.com"
+                />
+                {lastEnvelopeId ? (
+                  <div className="text-sm text-muted-foreground">Last envelope: {lastEnvelopeId}</div>
+                ) : null}
+              </div>
+
+              <Button onClick={handleSendContract} disabled={sendingContract}>
+                {sendingContract ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sending...
+                  </span>
+                ) : (
+                  "Send Contract"
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {showVerificationPanel && verificationSessionId ? (
           <>
