@@ -216,19 +216,18 @@ const AppShell = ({
         label: 'Score Board',
         to: '/scoreboard-dashboard',
         icon: <TrendingUp className="h-4 w-4 text-current" />,
-        show: isAdmin && canAccessAgentPages,
-      },
-      {
-        label: 'Dashboard',
-        to: '/manager-dashboard',
-        icon: <LayoutDashboard className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {
-        label: 'Leads',
-        to: '/leads',
-        icon: <Users className="h-4 w-4 text-current" />,
-        end: true,
+        label: 'Transfer Portal',
+        to: '/transfer-portal',
+        icon: <Eye className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
+        label: 'Submission Portal',
+        to: '/submission-portal',
+        icon: <CheckCircle className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {
@@ -250,15 +249,10 @@ const AppShell = ({
         show: canAccessAgentPages,
       },
       {
-        label: 'Transfer Portal',
-        to: '/transfer-portal',
-        icon: <Eye className="h-4 w-4 text-current" />,
-        show: canAccessAgentPages,
-      },
-      {
-        label: 'Submission Portal',
-        to: '/submission-portal',
-        icon: <CheckCircle className="h-4 w-4 text-current" />,
+        label: 'All Leads',
+        to: '/leads',
+        icon: <Users className="h-4 w-4 text-current" />,
+        end: true,
         show: canAccessAgentPages,
       },
       {
