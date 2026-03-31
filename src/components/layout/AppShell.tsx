@@ -74,12 +74,16 @@ const AppShell = ({
   const activeNavOverride = locationState?.activeNav;
 
   const isDailyDealFlowRoute = location.pathname.startsWith('/daily-deal-flow');
+  const isCallUpdateRoute = location.pathname.startsWith('/call-result-update');
   const isScoreboardRoute = location.pathname.startsWith('/scoreboard-dashboard');
+  const forceCollapsedSidebar = isCallUpdateRoute;
   const hideSidebarOnMobile = isScoreboardRoute;
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (forceCollapsedSidebar) return true;
+
     // Outside Daily Deal Flow, keep sidebar open.
     if (!isDailyDealFlowRoute) return false;
 
@@ -110,10 +114,15 @@ const AppShell = ({
   }, [sidebarCollapsed, defaultSidebarCollapsed, isDailyDealFlowRoute]);
 
   useEffect(() => {
+    if (forceCollapsedSidebar) {
+      setSidebarCollapsed(true);
+      return;
+    }
+
     // Whenever we arrive on a non–Daily Deal Flow route, default the sidebar to open.
     if (isDailyDealFlowRoute) return;
     setSidebarCollapsed(false);
-  }, [isDailyDealFlowRoute, location.pathname]);
+  }, [forceCollapsedSidebar, isDailyDealFlowRoute, location.pathname]);
 
   useEffect(() => {
     // If a route forces a default (e.g., Daily Deal Flow), apply it immediately.
@@ -122,7 +131,7 @@ const AppShell = ({
     setSidebarCollapsed(defaultSidebarCollapsed);
   }, [defaultSidebarCollapsed, isDailyDealFlowRoute]);
 
-  const isSidebarCollapsed = sidebarCollapsed;
+  const isSidebarCollapsed = forceCollapsedSidebar ? true : sidebarCollapsed;
 
   const autoCollapseTimeoutRef = useRef<number | null>(null);
 
@@ -415,7 +424,7 @@ const AppShell = ({
                       </nav>
                     </SheetContent>
                   </Sheet>
-                ) : (
+                ) : !isCallUpdateRoute ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -432,7 +441,7 @@ const AppShell = ({
                       <PanelLeftClose className="h-4 w-4" />
                     )}
                   </Button>
-                )}
+                ) : null}
 
                 {hideSidebarOnMobile && (
                   <img src="/assets/logo.png" alt="Crash Guard" className="h-6 w-auto md:hidden" />

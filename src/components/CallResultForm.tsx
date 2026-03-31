@@ -764,7 +764,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
             setStatusReason(existingResult.dq_reason);
           }
           
-          // Restore qualified stage and reason from saved status
+          // Restore stage/pipeline selections from saved status
           if (existingResult.application_submitted) {
             let savedStatus = existingResult.status || '';
             // Convert key back to label if it's a submission portal key
@@ -815,6 +815,33 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                 setQualifiedStage(matchedQualifiedStage?.label || qualifiedMissingInfoLabel);
                 setQualifiedStageReason(existingResult.dq_reason);
               }
+            }
+          } else {
+            let savedStatus = existingResult.status || '';
+            const statusLabel = stageKeyToLabel.get(savedStatus);
+            if (statusLabel) {
+              savedStatus = statusLabel;
+              setStatus(statusLabel);
+            }
+
+            const matchedTransferStage = transferStageOptions.find((stage) => {
+              const key = (stage?.key ?? '').trim();
+              const label = (stage?.label ?? '').trim();
+              return savedStatus === label || savedStatus === key;
+            });
+
+            const matchedSubmissionStage = submissionStageOptions.find((stage) => {
+              const key = (stage?.key ?? '').trim();
+              const label = (stage?.label ?? '').trim();
+              return savedStatus === label || savedStatus === key;
+            });
+
+            if (matchedTransferStage?.label) {
+              setSelectedPipeline("transfer_portal");
+              setStatus(matchedTransferStage.label);
+            } else if (matchedSubmissionStage?.label) {
+              setSelectedPipeline("submission_portal");
+              setStatus(matchedSubmissionStage.label);
             }
           }
           
@@ -1278,6 +1305,11 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
         if (stageKey) {
           finalStatus = stageKey;
         }
+      } else if (status) {
+        const stageKey = pipelineStageLabelToKey.get(status);
+        if (stageKey) {
+          finalStatus = stageKey;
+        }
       }
 
       // Map status for sheet value
@@ -1311,6 +1343,8 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
         submission_id: submissionId,
         application_submitted: applicationSubmitted,
         status: finalStatus,
+        pipeline_name: selectedPipeline,
+        qualified_stage: getQualifiedStageKey(applicationSubmitted === true ? qualifiedStage : status) || null,
         notes: finalNotes,
         dq_reason: applicationSubmitted === true && qualifiedStage === "Qualified Missing Information" && qualifiedStageReason
           ? qualifiedStageReason
@@ -2044,15 +2078,67 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
           )}
 
           {/* Fields for not submitted applications */}
-          {showNotSubmittedFields && (
-            <div className="space-y-4 p-4 border rounded-lg bg-orange-50">
-              <h3 className="font-semibold text-orange-800">Application Not Submitted</h3>
-              
-              {/* Call Information for Not Submitted */}
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <Label htmlFor="agentWhoTookCallNotSubmitted">
-                    Agent who took the call <span className="text-red-500">*</span>
+	          {showNotSubmittedFields && (
+	            <div className="space-y-4 p-4 border rounded-lg bg-orange-50">
+	              <h3 className="font-semibold text-orange-800">Application Not Submitted</h3>
+	              
+	              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+	                <div>
+	                  <Label htmlFor="pipelineNameNotSubmitted" className="text-base font-semibold">
+	                    Pipeline Name
+	                  </Label>
+	                  <Select
+	                    value={selectedPipeline}
+	                    onValueChange={(val: "transfer_portal" | "submission_portal") => {
+	                      setSelectedPipeline(val);
+	                      setStatus("");
+	                      setStatusReason("");
+	                    }}
+	                  >
+	                    <SelectTrigger>
+	                      <SelectValue placeholder="Select pipeline" />
+	                    </SelectTrigger>
+	                    <SelectContent>
+	                      <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
+	                      <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
+	                    </SelectContent>
+	                  </Select>
+	                </div>
+
+	                <div>
+	                  <Label htmlFor="statusPipelineStage">
+	                    Status/Stage <span className="text-red-500">*</span>
+	                  </Label>
+	                  <Select
+	                    value={status}
+	                    onValueChange={(val) => {
+	                      setStatus(val);
+	                      setStatusReason("");
+	                    }}
+	                    required
+	                  >
+	                    <SelectTrigger className={`${!status ? 'border-red-300 focus:border-red-500' : ''}`}>
+	                      <SelectValue placeholder="Select stage (required)" />
+	                    </SelectTrigger>
+	                    <SelectContent>
+	                      {selectedPipelineStageOptions.map((stage) => (
+	                        <SelectItem key={stage.key} value={stage.label}>
+	                          {stage.label}
+	                        </SelectItem>
+	                      ))}
+	                    </SelectContent>
+	                  </Select>
+	                  {!status && (
+	                    <p className="text-sm text-red-500 mt-1">Status/Stage is required</p>
+	                  )}
+	                </div>
+	              </div>
+
+	              {/* Call Information for Not Submitted */}
+	              <div className="grid grid-cols-1 gap-4">
+	                <div>
+	                  <Label htmlFor="agentWhoTookCallNotSubmitted">
+	                    Agent who took the call <span className="text-red-500">*</span>
                   </Label>
                   <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall} required>
                     <SelectTrigger className={`${!agentWhoTookCall ? 'border-red-300 focus:border-red-500' : ''}`}>
@@ -2072,29 +2158,8 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                 </div>
               </div>
               
-              <div>
-                <Label htmlFor="status">
-                  Status/Stage <span className="text-red-500">*</span>
-                </Label>
-                <Select value={status} onValueChange={setStatus} required>
-                  <SelectTrigger className={`${!status ? 'border-red-300 focus:border-red-500' : ''}`}>
-                    <SelectValue placeholder="Select status (required)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!status && (
-                  <p className="text-sm text-red-500 mt-1">Status/Stage is required</p>
-                )}
-              </div>
-
-              {/* Status Reason dropdown - shows for DQ, Needs Callback, Not Interested, Future Submission Date, Updated Banking/draft date, Fulfilled carrier requirements */}
-              {showStatusReasonDropdown && (
+	              {/* Status Reason dropdown - shows for DQ, Needs Callback, Not Interested, Future Submission Date, Updated Banking/draft date, Fulfilled carrier requirements */}
+	              {showStatusReasonDropdown && (
                 <div>
                   <Label htmlFor="statusReason">
                     {status === "⁠DQ" ? "Reason for DQ" : 
