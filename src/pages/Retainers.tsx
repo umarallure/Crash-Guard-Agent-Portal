@@ -17,6 +17,8 @@ import { ClaimDroppedCallModal } from '@/components/ClaimDroppedCallModal';
 import { ClaimLicensedAgentModal } from '@/components/ClaimLicensedAgentModal';
 import { logCallUpdate, getLeadInfo } from '@/lib/callLogging';
 import { getTodayDateEST } from '@/lib/dateUtils';
+import { PresetDateRangeFilter } from '@/components/PresetDateRangeFilter';
+import { isDateInRange, type DateRangePreset } from '@/lib/dateRangeFilter';
 
 type Lead = Database['public']['Tables']['leads']['Row'];
 type CallResult = Database['public']['Tables']['call_results']['Row'];
@@ -37,7 +39,9 @@ const Retainers = () => {
   const [isSearching, setIsSearching] = useState(false);
   // Track which lead cards are expanded (show accident details)
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
-  const [dateFilter, setDateFilter] = useState('');
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [vendorFilter, setVendorFilter] = useState('all');
   const [vendorOptions, setVendorOptions] = useState<string[]>(['all']);
   const [nameFilter, setNameFilter] = useState('');
@@ -154,7 +158,7 @@ const Retainers = () => {
   useEffect(() => {
     applyFilters();
     setCurrentPage(1); 
-  }, [leads, dateFilter, vendorFilter, nameFilter]);
+  }, [leads, datePreset, customStartDate, customEndDate, vendorFilter, nameFilter]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -229,9 +233,9 @@ const Retainers = () => {
 
     let filtered = leads;
 
-    if (dateFilter) {
-      filtered = filtered.filter((lead) => lead.created_at?.startsWith(dateFilter));
-    }
+    filtered = filtered.filter((lead) =>
+      isDateInRange(lead.submission_date || lead.created_at, datePreset, customStartDate, customEndDate)
+    );
 
     if (vendorFilter !== 'all') {
       const targetVendor = vendorFilter.toLowerCase();
@@ -597,11 +601,13 @@ const Retainers = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="date-filter">Date</Label>
-                <Input
-                  id="date-filter"
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
+                <PresetDateRangeFilter
+                  preset={datePreset}
+                  onPresetChange={setDatePreset}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomStartDateChange={setCustomStartDate}
+                  onCustomEndDateChange={setCustomEndDate}
                 />
               </div>
               <div className="space-y-2">

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { isCenterUser } from '@/lib/userPermissions';
+import { isCenterUser, isRestrictedUser } from '@/lib/userPermissions';
 import { Loader2, ShieldCheck, Zap, BarChart3, Lock, Eye, EyeOff } from 'lucide-react';
 
 const Auth = () => {
@@ -74,8 +74,10 @@ const Auth = () => {
         const isCenter = await isCenterUser(user.id);
         if (isCenter) {
           navigate('/center-lead-portal');
+        } else if (isRestrictedUser(user.id)) {
+          navigate('/daily-deal-flow');
         } else {
-          navigate('/dashboard');
+          navigate('/scoreboard-dashboard');
         }
       }
     };

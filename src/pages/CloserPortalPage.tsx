@@ -16,9 +16,12 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, RefreshCw, StickyNote } from "lucide-react";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
+import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
+import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 
 interface CloserPortalRow {
   id: string;
+  daily_deal_flow_id?: string;
   submission_id: string;
   date?: string;
   insured_name?: string;
@@ -62,7 +65,9 @@ const CloserPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
+  const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
   const [showDuplicates, setShowDuplicates] = useState(true);
@@ -215,9 +220,9 @@ const CloserPortalPage = () => {
   const applyFilters = (records: CloserPortalRow[]) => {
     let filtered = records;
 
-    if (dateFilter) {
-      filtered = filtered.filter((record) => record.date === dateFilter);
-    }
+    filtered = filtered.filter((record) =>
+      isDateInRange(record.date || record.created_at || null, datePreset, customStartDate, customEndDate)
+    );
 
     if (leadVendorFilter !== "__ALL__") {
       filtered = filtered.filter((record) => (record.lead_vendor || "") === leadVendorFilter);
@@ -275,62 +280,16 @@ const CloserPortalPage = () => {
     });
 
     const submissionIds = Array.from(submissionMap.keys());
-
-    try {
-      let query = (supabase as any)
-        .from("lead_notes")
-        .select("id, lead_id, submission_id");
-
-      if (leadIds.length > 0) {
-        query = query.in("lead_id", leadIds);
-      }
-      if (submissionIds.length > 0) {
-        query = query.in("submission_id", submissionIds);
-      }
-
-      const { data: noteRows, error: noteError } = await query;
-
-      if (!noteError && Array.isArray(noteRows)) {
-        const seen = new Set<string>();
-        noteRows.forEach((row: { id: string; lead_id?: string | null; submission_id?: string | null }) => {
-          if (!row?.id || seen.has(row.id)) return;
-          seen.add(row.id);
-
-          const directLeadId = (row.lead_id || "").toString();
-          if (directLeadId && counts[directLeadId] !== undefined) {
-            counts[directLeadId] = (counts[directLeadId] || 0) + 1;
-            return;
-          }
-
-          const submissionId = (row.submission_id || "").toString();
-          if (submissionId) {
-            const leadId = submissionMap.get(submissionId);
-            if (leadId) {
-              counts[leadId] = (counts[leadId] || 0) + 1;
-            }
-          }
-        });
-      }
-    } catch (error) {
-      console.warn("Failed to fetch closer portal note counts", error);
-    }
-
-    rows.forEach((row) => {
-      if ((row.notes || "").trim()) {
-        counts[row.id] = (counts[row.id] || 0) + 1;
-      }
-    });
-
     if (submissionIds.length > 0) {
       try {
-        const { data: leadRows, error: leadError } = await supabase
-          .from("leads")
-          .select("submission_id, additional_notes")
+        const { data: noteRows, error: noteError } = await supabase
+          .from("daily_deal_flow")
+          .select("submission_id, notes")
           .in("submission_id", submissionIds);
 
-        if (!leadError && Array.isArray(leadRows)) {
-          leadRows.forEach((row) => {
-            const noteText = (row.additional_notes as string | null)?.trim();
+        if (!noteError && Array.isArray(noteRows)) {
+          noteRows.forEach((row) => {
+            const noteText = (row.notes as string | null)?.trim();
             if (!noteText) return;
 
             const leadId = submissionMap.get(row.submission_id as string);
@@ -340,7 +299,7 @@ const CloserPortalPage = () => {
           });
         }
       } catch (error) {
-        console.warn("Failed to fetch legacy closer portal note counts", error);
+        console.warn("Failed to fetch closer portal note counts", error);
       }
     }
 
@@ -351,20 +310,16 @@ const CloserPortalPage = () => {
     try {
       setRefreshing(true);
 
-      let query = supabase
-        .from("daily_deal_flow")
+      let leadsQuery = (supabase as any)
+        .from("leads")
         .select("*")
-        .order("date", { ascending: false })
+        .order("submission_date", { ascending: false })
         .order("created_at", { ascending: false });
 
-      if (dateFilter) {
-        query = query.eq("date", dateFilter);
-      }
+      const leadsRes = await leadsQuery;
 
-      const { data: rows, error } = await query;
-
-      if (error) {
-        console.error("Error fetching closer portal data:", error);
+      if (leadsRes.error) {
+        console.error("Error fetching closer portal data:", leadsRes.error);
         toast({
           title: "Error",
           description: "Failed to fetch closer portal data",
@@ -373,10 +328,28 @@ const CloserPortalPage = () => {
         return;
       }
 
-      const normalizedRows = ((rows ?? []) as unknown as CloserPortalRow[]).map((row) => {
-        const isCallback = Boolean((row as any).from_callback) || Boolean((row as any).is_callback);
+      const normalizedRows = ((leadsRes.data ?? []) as any[]).map((lead) => {
+        const submissionId = (lead?.submission_id || "").trim();
+        const isCallback = Boolean(lead?.is_callback);
         return {
-          ...row,
+          id: lead.id,
+          submission_id: submissionId,
+          insured_name: lead.customer_full_name || "",
+          client_phone_number: lead.phone_number || "",
+          lead_vendor: lead.lead_vendor || "",
+          buffer_agent: lead.buffer_agent || "",
+          agent: lead.agent || "",
+          licensed_agent_account: (lead as any).licensed_agent_account || "",
+          assigned_attorney_id: (lead as any).assigned_attorney_id || null,
+          carrier: lead.carrier || "",
+          product_type: lead.product_type || "",
+          notes: "",
+          status: (lead.status || "").trim(),
+          date: lead.submission_date ? String(lead.submission_date).split(" ")[0] : "",
+          created_at: lead.created_at || "",
+          updated_at: lead.updated_at || "",
+          from_callback: isCallback,
+          is_callback: isCallback,
           source_type: isCallback ? "callback" : "zapier",
         };
       });
@@ -405,12 +378,12 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, dateFilter, leadVendorFilter, statusFilter, searchTerm, showDuplicates, timeTick]);
+  }, [data, datePreset, customStartDate, customEndDate, leadVendorFilter, statusFilter, searchTerm, showDuplicates, timeTick]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
     void fetchData();
-  }, [dateFilter, closerStagesLoading]);
+  }, [closerStagesLoading]);
 
   const leadsByStage = useMemo(() => {
     const grouped = new Map<string, CloserPortalRow[]>();
@@ -442,8 +415,8 @@ const CloserPortalPage = () => {
   };
 
   const handleView = (row: CloserPortalRow) => {
-    if (!row?.id) return;
-    navigate(`/daily-deal-flow/lead/${encodeURIComponent(row.id)}`, {
+    if (!row?.submission_id) return;
+    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
       state: { activeNav: "/closer-portal" },
     });
   };
@@ -549,12 +522,17 @@ const CloserPortalPage = () => {
                 </SelectContent>
               </Select>
 
-              <Input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="md:w-72"
-              />
+              <div className="md:w-[28rem]">
+                <PresetDateRangeFilter
+                  preset={datePreset}
+                  onPresetChange={setDatePreset}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomStartDateChange={setCustomStartDate}
+                  onCustomEndDateChange={setCustomEndDate}
+                  selectClassName="w-full"
+                />
+              </div>
             </div>
           </div>
         </div>

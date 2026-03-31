@@ -13,6 +13,8 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { CallbackRequestForm } from '@/components/CallbackRequestForm';
 import { CenterCreateLeadModal } from '@/components/CenterCreateLeadModal';
+import { PresetDateRangeFilter } from '@/components/PresetDateRangeFilter';
+import { isDateInRange, type DateRangePreset } from '@/lib/dateRangeFilter';
 
 type Lead = {
   id: string;
@@ -36,7 +38,9 @@ const CenterLeadPortal = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState('');
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [nameFilter, setNameFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
@@ -57,7 +61,7 @@ const CenterLeadPortal = () => {
   useEffect(() => {
     applyFilters();
     setCurrentPage(1); // Reset to first page when filters change
-  }, [leads, dateFilter, nameFilter]);
+  }, [leads, datePreset, customStartDate, customEndDate, nameFilter]);
 
   const fetchLeads = async () => {
     if (!leadVendor) return;
@@ -88,11 +92,9 @@ const CenterLeadPortal = () => {
   const applyFilters = () => {
     let filtered = leads;
 
-    if (dateFilter) {
-      filtered = filtered.filter(lead =>
-        lead.created_at && lead.created_at.includes(dateFilter)
-      );
-    }
+    filtered = filtered.filter((lead) =>
+      isDateInRange(lead.submission_date || lead.created_at, datePreset, customStartDate, customEndDate)
+    );
 
     if (nameFilter) {
       filtered = filtered.filter(lead =>
@@ -246,11 +248,13 @@ const CenterLeadPortal = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="date-filter">Date</Label>
-                <Input
-                  id="date-filter"
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
+                <PresetDateRangeFilter
+                  preset={datePreset}
+                  onPresetChange={setDatePreset}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomStartDateChange={setCustomStartDate}
+                  onCustomEndDateChange={setCustomEndDate}
                 />
               </div>
               <div className="space-y-2">

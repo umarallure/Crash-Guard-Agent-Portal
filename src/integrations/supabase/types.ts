@@ -591,6 +591,7 @@ export type Database = {
           previous_applications: string | null
           product_type: string | null
           social_security: string | null
+          status: string | null
           state: string | null
           street_address: string | null
           submission_date: string | null
@@ -653,6 +654,7 @@ export type Database = {
           previous_applications?: string | null
           product_type?: string | null
           social_security?: string | null
+          status?: string | null
           state?: string | null
           street_address?: string | null
           submission_date?: string | null
@@ -715,6 +717,7 @@ export type Database = {
           previous_applications?: string | null
           product_type?: string | null
           social_security?: string | null
+          status?: string | null
           state?: string | null
           street_address?: string | null
           submission_date?: string | null
