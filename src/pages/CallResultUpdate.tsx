@@ -525,6 +525,9 @@ const CallResultUpdate = () => {
   const [isDncLookupCollapsed, setIsDncLookupCollapsed] = useState(false);
   const [isDisclaimerCollapsed, setIsDisclaimerCollapsed] = useState(false);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
+  const [isContractCollapsed, setIsContractCollapsed] = useState(false);
+  const [isDocumentUploadCollapsed, setIsDocumentUploadCollapsed] = useState(false);
+  const [openScriptSections, setOpenScriptSections] = useState<Record<string, boolean>>({});
 
   const docusignTemplateId = import.meta.env.VITE_DOCUSIGN_TEMPLATE_ID as string | undefined;
 
@@ -621,6 +624,13 @@ const CallResultUpdate = () => {
 
   const screeningPhone = normalizePhoneForLookup(verifiedFieldValues.phone_number || lead?.phone_number);
   const callFlowSections = callScriptTabs.flatMap((tab) => tab.sections);
+
+  const toggleScriptSection = (sectionKey: string, fallbackOpen: boolean) => {
+    setOpenScriptSections((prev) => ({
+      ...prev,
+      [sectionKey]: !(prev[sectionKey] ?? fallbackOpen),
+    }));
+  };
 
   const dncLookupCardContent = (() => {
     if (!screeningPhone && !lead?.phone_number) {
@@ -802,7 +812,7 @@ const CallResultUpdate = () => {
           {/* Question 2 */}
           <div className="rounded-lg border border-amber-200 bg-white px-4 py-3 text-sm leading-6 text-foreground">
             Sir/Ma'am, even if your phone number is on the Federal National or State Do Not Call List, do we still
-            have your permission to call you and submit your application for insurance to AMAM - 31/03/2026 via your
+            have your permission to call you and submit your application to Accident Payments via your
             phone number{" "}
             <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">
               {lead?.phone_number || "on file"}
@@ -895,118 +905,237 @@ const CallResultUpdate = () => {
               <ScrollArea className="h-[36rem] rounded-xl border bg-background">
                 <div className="space-y-4 p-4">
                   {callFlowSections.map((section, sectionIndex) => (
-                    <div key={`${section.eyebrow}-${section.title}-${sectionIndex}`} className="rounded-xl border bg-card p-4 shadow-sm">
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                            {section.eyebrow}
-                          </div>
-                          <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px] font-medium">
-                            Step {sectionIndex + 1} of {callFlowSections.length}
-                          </Badge>
-                        </div>
-                        <h3 className="text-sm font-semibold text-foreground">{section.title}</h3>
-                        {section.summary ? (
-                          <p className="text-sm leading-6 text-muted-foreground">{section.summary}</p>
-                        ) : null}
-                      </div>
+                    (() => {
+                      const sectionKey = `${section.eyebrow}-${section.title}-${sectionIndex}`;
+                      const defaultOpen = sectionIndex === 0;
+                      const isSectionOpen = openScriptSections[sectionKey] ?? defaultOpen;
 
-                      {section.script?.length ? (
-                        <div className="mt-3 rounded-lg border border-primary/10 bg-primary/5 px-4 py-3">
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">
-                            Agent Script
-                          </div>
-                          <div className="space-y-2 text-sm leading-6 text-foreground">
-                            {section.script.map((line) => (
-                              <p key={line}>{line}</p>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
+                      return (
+                        <Collapsible key={sectionKey} open={isSectionOpen} onOpenChange={() => toggleScriptSection(sectionKey, defaultOpen)}>
+                          <div className="rounded-xl border bg-card shadow-sm">
+                            <CollapsibleTrigger asChild>
+                              <button
+                                type="button"
+                                className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/20"
+                              >
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                      {section.eyebrow}
+                                    </div>
+                                    <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px] font-medium">
+                                      Step {sectionIndex + 1} of {callFlowSections.length}
+                                    </Badge>
+                                  </div>
+                                  <h3 className="text-sm font-semibold text-foreground">{section.title}</h3>
+                                  {section.summary ? (
+                                    <p className="text-sm leading-6 text-muted-foreground">{section.summary}</p>
+                                  ) : null}
+                                </div>
+                                <div className="mt-0.5 shrink-0 rounded-full border bg-background p-1.5">
+                                  {isSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                </div>
+                              </button>
+                            </CollapsibleTrigger>
 
-                      {section.questions?.length ? (
-                        <div className="mt-3">
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                            Questions To Ask
-                          </div>
-                          <ul className="space-y-2 text-sm leading-6 text-foreground">
-                            {section.questions.map((item) => (
-                              <li key={item} className="flex gap-2">
-                                <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
+                            <CollapsibleContent>
+                              <div className="space-y-3 border-t px-4 pb-4 pt-3">
+                                {section.script?.length ? (
+                                  <div className="rounded-lg border border-primary/10 bg-primary/5 px-4 py-3">
+                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">
+                                      Agent Script
+                                    </div>
+                                    <div className="space-y-2 text-sm leading-6 text-foreground">
+                                      {section.script.map((line) => (
+                                        <p key={line}>{line}</p>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
 
-                      {section.checklist?.length ? (
-                        <div className="mt-3">
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                            Checklist
-                          </div>
-                          <ul className="space-y-2 text-sm leading-6 text-foreground">
-                            {section.checklist.map((item) => (
-                              <li key={item} className="flex gap-2">
-                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
+                                {section.questions?.length ? (
+                                  <div>
+                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                      Questions To Ask
+                                    </div>
+                                    <ul className="space-y-2 text-sm leading-6 text-foreground">
+                                      {section.questions.map((item) => (
+                                        <li key={item} className="flex gap-2">
+                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
 
-                      {section.tips?.length ? (
-                        <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50/80 px-4 py-3">
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-800">
-                            Verification Tips
-                          </div>
-                          <ul className="space-y-2 text-sm leading-6 text-sky-950">
-                            {section.tips.map((item) => (
-                              <li key={item} className="flex gap-2">
-                                <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
+                                {section.checklist?.length ? (
+                                  <div>
+                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                      Checklist
+                                    </div>
+                                    <ul className="space-y-2 text-sm leading-6 text-foreground">
+                                      {section.checklist.map((item) => (
+                                        <li key={item} className="flex gap-2">
+                                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
 
-                      {section.redFlags?.length ? (
-                        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50/80 px-4 py-3">
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800">
-                            Red Flags
-                          </div>
-                          <ul className="space-y-2 text-sm leading-6 text-rose-950">
-                            {section.redFlags.map((item) => (
-                              <li key={item} className="flex gap-2">
-                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
+                                {section.tips?.length ? (
+                                  <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-4 py-3">
+                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-800">
+                                      Verification Tips
+                                    </div>
+                                    <ul className="space-y-2 text-sm leading-6 text-sky-950">
+                                      {section.tips.map((item) => (
+                                        <li key={item} className="flex gap-2">
+                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
 
-                      {section.notes?.length ? (
-                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3">
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">
-                            Internal Notes
+                                {section.redFlags?.length ? (
+                                  <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-4 py-3">
+                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800">
+                                      Red Flags
+                                    </div>
+                                    <ul className="space-y-2 text-sm leading-6 text-rose-950">
+                                      {section.redFlags.map((item) => (
+                                        <li key={item} className="flex gap-2">
+                                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
+
+                                {section.notes?.length ? (
+                                  <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3">
+                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">
+                                      Internal Notes
+                                    </div>
+                                    <ul className="space-y-2 text-sm leading-6 text-amber-950">
+                                      {section.notes.map((item) => (
+                                        <li key={item} className="flex gap-2">
+                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </CollapsibleContent>
                           </div>
-                          <ul className="space-y-2 text-sm leading-6 text-amber-950">
-                            {section.notes.map((item) => (
-                              <li key={item} className="flex gap-2">
-                                <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </div>
+                        </Collapsible>
+                      );
+                    })()
                   ))}
                 </div>
               </ScrollArea>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
+      <Card className="mb-2">
+        <Collapsible open={!isContractCollapsed} onOpenChange={(open) => setIsContractCollapsed(!open)}>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Send Contract</CardTitle>
+                <p className="text-xs text-muted-foreground">Send the retainer/contract packet to the recipient email on file.</p>
+              </div>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="gap-2">
+                  {isContractCollapsed ? (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Expand
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="h-4 w-4" />
+                      Collapse
+                    </>
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-1 items-end gap-4 lg:grid-cols-[1fr_auto]">
+                <div className="space-y-2">
+                  <Label htmlFor="contractRecipientEmail">Recipient Email</Label>
+                  <Input
+                    id="contractRecipientEmail"
+                    type="email"
+                    value={contractRecipientEmail}
+                    onChange={(e) => setContractRecipientEmail(e.target.value)}
+                    placeholder="name@example.com"
+                  />
+                  {lastEnvelopeId ? (
+                    <div className="text-sm text-muted-foreground">Last envelope: {lastEnvelopeId}</div>
+                  ) : null}
+                </div>
+
+                <Button onClick={handleSendContract} disabled={sendingContract}>
+                  {sendingContract ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sending...
+                    </span>
+                  ) : (
+                    "Send Contract"
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
+      <Card className="mt-2 mb-2">
+        <Collapsible open={!isDocumentUploadCollapsed} onOpenChange={(open) => setIsDocumentUploadCollapsed(!open)}>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Document Upload</CardTitle>
+                <p className="text-xs text-muted-foreground">Generate and review document uploads for this lead.</p>
+              </div>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="gap-2">
+                  {isDocumentUploadCollapsed ? (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Expand
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="h-4 w-4" />
+                      Collapse
+                    </>
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              <DocumentUploadCard
+                submissionId={submissionId!}
+                customerPhoneNumber={lead?.phone_number}
+                embedded
+              />
             </CardContent>
           </CollapsibleContent>
         </Collapsible>
@@ -1101,7 +1230,7 @@ const CallResultUpdate = () => {
     seedVerifiedFields();
   }, [verificationSessionId]);
 
-  const handleSendContract = async () => {
+  async function handleSendContract() {
     type SendContractResponse = { envelopeId?: string };
 
     const email = (contractRecipientEmail || "").trim();
@@ -1164,7 +1293,7 @@ const CallResultUpdate = () => {
     } finally {
       setSendingContract(false);
     }
-  };
+  }
 
   useEffect(() => {
     if (!verificationSessionId) return;
@@ -1316,40 +1445,6 @@ const CallResultUpdate = () => {
           )}
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Send Contract</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end">
-              <div className="space-y-2">
-                <Label htmlFor="contractRecipientEmail">Recipient Email</Label>
-                <Input
-                  id="contractRecipientEmail"
-                  type="email"
-                  value={contractRecipientEmail}
-                  onChange={(e) => setContractRecipientEmail(e.target.value)}
-                  placeholder="name@example.com"
-                />
-                {lastEnvelopeId ? (
-                  <div className="text-sm text-muted-foreground">Last envelope: {lastEnvelopeId}</div>
-                ) : null}
-              </div>
-
-              <Button onClick={handleSendContract} disabled={sendingContract}>
-                {sendingContract ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sending...
-                  </span>
-                ) : (
-                  "Send Contract"
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
         {showVerificationPanel && verificationSessionId ? (
           <>
             {/* Main Content - 50/50 Split */}
@@ -1380,13 +1475,6 @@ const CallResultUpdate = () => {
             
             <div className="grid grid-cols-1 items-start lg:grid-cols-2 gap-6">
               <div className="self-start">
-                <DocumentUploadCard
-                  submissionId={submissionId!}
-                  customerPhoneNumber={lead.phone_number}
-                />
-              </div>
-
-              <div className="self-start">
                 <OrderRecommendationsCard
                   submissionId={submissionId!}
                   leadId={lead.id}
@@ -1406,13 +1494,6 @@ const CallResultUpdate = () => {
             {/* Lead Details */}
             <div className="grid grid-cols-1 gap-6">
               <div className="grid grid-cols-1 items-start xl:grid-cols-2 gap-6">
-                <div className="self-start">
-                  <DocumentUploadCard
-                    submissionId={submissionId!}
-                    customerPhoneNumber={lead.phone_number}
-                  />
-                </div>
-
                 <div className="self-start">
                   <OrderRecommendationsCard
                     submissionId={submissionId!}

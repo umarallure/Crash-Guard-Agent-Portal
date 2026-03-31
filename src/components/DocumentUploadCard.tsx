@@ -11,6 +11,7 @@ import { DocumentUploadModal } from "./DocumentUploadModal";
 interface DocumentUploadCardProps {
   submissionId: string;
   customerPhoneNumber?: string | null;
+  embedded?: boolean;
 }
 
 type DocumentCategory = "police_report" | "insurance_document" | "medical_report";
@@ -89,7 +90,7 @@ const documentCategoryByFolder: Record<string, DocumentCategory> = {
   medical_reports: "medical_report",
 };
 
-export function DocumentUploadCard({ submissionId, customerPhoneNumber }: DocumentUploadCardProps) {
+export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded = false }: DocumentUploadCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [generatedPasscode, setGeneratedPasscode] = useState<string>("");
   const [loadingDocuments, setLoadingDocuments] = useState(true);
@@ -424,16 +425,17 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber }: Docume
     return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
   };
 
-  return (
+  const content = (
     <>
-      <Card>
+      {embedded ? null : (
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Document Upload
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
+      )}
+      <CardContent className="space-y-5">
           <p className="text-sm text-muted-foreground mb-4">
             Generate a secure upload link for the customer to submit their documents.
           </p>
@@ -587,9 +589,13 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber }: Docume
               </ScrollArea>
             )}
           </div>
-        </CardContent>
-      </Card>
+      </CardContent>
+    </>
+  );
 
+  return (
+    <>
+      {embedded ? content : <Card>{content}</Card>}
       <DocumentUploadModal
         open={showModal}
         onOpenChange={setShowModal}
