@@ -14,10 +14,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, RefreshCw, StickyNote } from "lucide-react";
+import { Loader2, RefreshCw, StickyNote, UserPlus } from "lucide-react";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
-import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
 import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
+import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
+import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
+import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 
 interface CloserPortalRow {
   id: string;
@@ -52,6 +54,27 @@ const CLOSER_STAGE_KEYS = {
   returnedToCenter: "returned_to_center",
 } as const;
 
+interface ColumnInfoDetail { label: string; value: string; }
+interface ColumnInfo { description: string; details?: ColumnInfoDetail[]; }
+
+const getColumnInfo = (label: string): ColumnInfo => {
+  const l = label.toLowerCase();
+
+  if (l.includes("new transfer") || l === "transfer_api" || l === "transfer api")
+    return { description: "Newly transferred leads that arrived within the last hour. Closers should act on these quickly before they move to Pending Disposition." };
+
+  if (l.includes("pending disposition") || l === "pending_disposition")
+    return { description: "Leads that have been active for over 1 hour without a disposition. These require immediate follow-up and an outcome to be recorded." };
+
+  if (l.includes("dispositioned") && !l.includes("pending"))
+    return { description: "Leads that have been reviewed and given a final disposition by the closer. An outcome (sold, not sold, callback, etc.) has been recorded." };
+
+  if (l.includes("returned") || l.includes("return to center") || l.includes("dq"))
+    return { description: "Leads sent back to the call center because they could not be sold or were disqualified. No further closer action is needed." };
+
+  return { description: `Leads currently in the "${label}" stage of the closer pipeline.` };
+};
+
 const CloserPortalPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -65,15 +88,25 @@ const CloserPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [datePreset, setDatePreset] = useState<DateRangePreset>("today");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
+  const datePreset: DateRangePreset = "today";
+  const customStartDate = "";
+  const customEndDate = "";
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
   const [showDuplicates, setShowDuplicates] = useState(true);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [timeTick, setTimeTick] = useState(() => Date.now());
+
+  // Claim call modal state
+  const [claimModalOpen, setClaimModalOpen] = useState(false);
+  const [claimSessionId, setClaimSessionId] = useState<string | null>(null);
+  const [claimSubmissionId, setClaimSubmissionId] = useState<string | null>(null);
+  const [claimLicensedAgent, setClaimLicensedAgent] = useState<string>("");
+  const [claimLoading, setClaimLoading] = useState(false);
+  const [claimLead, setClaimLead] = useState<any>(null);
+  const [licensedAgents, setLicensedAgents] = useState<any[]>([]);
+  const [fetchingAgents, setFetchingAgents] = useState(false);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -421,22 +454,180 @@ const CloserPortalPage = () => {
     });
   };
 
-  const getCurrentStageLabel = (row: CloserPortalRow) => {
-    const stageKey = deriveCloserStageKey(row);
-    return kanbanStages.find((stage) => stage.key === stageKey)?.label || stageLabelByKey[stageKey] || stageKey;
+  type AgentStatusRow = { user_id: string };
+  type AppUserRow = { user_id: string; display_name: string | null; email: string | null };
+  type AppUsersQueryClient = {
+    from: (table: "app_users") => {
+      select: (columns: string) => {
+        in: (column: "user_id", values: string[]) => Promise<{ data: AppUserRow[] | null }>;
+      };
+    };
   };
 
-  const getElapsedLabel = (row: CloserPortalRow) => {
-    const statusTimestamp = getStatusTimestamp(row);
-    if (!statusTimestamp) return null;
+  const fetchAgents = async () => {
+    setFetchingAgents(true);
+    try {
+      const { data: agentStatus } = await supabase
+        .from("agent_status")
+        .select("user_id")
+        .eq("agent_type", "licensed");
 
-    const elapsedMinutes = Math.max(0, Math.floor((timeTick - statusTimestamp) / 60_000));
-    if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+      const ids = (agentStatus as AgentStatusRow[] | null | undefined)?.map((a) => a.user_id) || [];
+      let profiles: Array<{ user_id: string; display_name: string }> = [];
 
-    const hours = Math.floor(elapsedMinutes / 60);
-    const minutes = elapsedMinutes % 60;
-    if (minutes === 0) return `${hours}h`;
-    return `${hours}h ${minutes}m`;
+      if (ids.length > 0) {
+        const { data: fetchedProfiles } = await (supabase as unknown as AppUsersQueryClient)
+          .from("app_users")
+          .select("user_id, display_name, email")
+          .in("user_id", ids);
+
+        profiles = ((fetchedProfiles || []) as AppUserRow[]).map((u) => ({
+          user_id: u.user_id,
+          display_name: u.display_name || (u.email ? String(u.email).split("@")[0] : ""),
+        }));
+      }
+
+      setLicensedAgents(profiles);
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setFetchingAgents(false);
+    }
+  };
+
+  const openClaimModal = async (submissionId: string) => {
+    const { data: existingSession } = await supabase
+      .from("verification_sessions")
+      .select("id, status, total_fields")
+      .eq("submission_id", submissionId)
+      .gt("total_fields", 0)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let sessionId = existingSession?.id;
+
+    if (!sessionId) {
+      const { data: leadData, error: leadError } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("submission_id", submissionId)
+        .single();
+
+      if (leadError || !leadData) {
+        toast({ title: "Error", description: "Failed to fetch lead data", variant: "destructive" });
+        return;
+      }
+
+      const { data: newSession, error } = await supabase
+        .from("verification_sessions")
+        .insert({ submission_id: submissionId, status: "pending", progress_percentage: 0, total_fields: 0, verified_fields: 0 })
+        .select("id")
+        .single();
+
+      if (error) {
+        toast({ title: "Error", description: "Failed to create verification session", variant: "destructive" });
+        return;
+      }
+      sessionId = newSession.id;
+
+      const leadFields = [
+        "accident_date", "accident_location", "accident_scenario", "injuries", "medical_attention",
+        "police_attended", "insured", "vehicle_registration", "insurance_company",
+        "third_party_vehicle_registration", "other_party_admit_fault", "passengers_count",
+        "prior_attorney_involved", "prior_attorney_details", "contact_name", "contact_number",
+        "contact_address", "lead_vendor", "customer_full_name", "street_address", "beneficiary_information",
+        "billing_and_mailing_address_is_the_same", "date_of_birth", "age", "phone_number",
+        "social_security", "driver_license", "exp", "existing_coverage",
+        "applied_to_life_insurance_last_two_years", "height", "weight", "doctors_name",
+        "tobacco_use", "health_conditions", "medications", "insurance_application_details",
+        "carrier", "monthly_premium", "coverage_amount", "draft_date", "first_draft",
+        "institution_name", "beneficiary_routing", "beneficiary_account", "account_type",
+        "city", "state", "zip_code", "birth_state", "call_phone_landline", "additional_notes",
+      ];
+
+      const verificationItems = leadFields
+        .map((field) => {
+          const value = leadData[field as keyof typeof leadData];
+          if (value === null || value === undefined) return null;
+          return { session_id: sessionId, field_name: field, original_value: String(value), verified_value: String(value), is_verified: false, is_modified: false };
+        })
+        .filter(Boolean);
+
+      if (verificationItems.length > 0) {
+        await supabase.from("verification_items").insert(verificationItems);
+        await supabase.from("verification_sessions").update({ total_fields: verificationItems.length }).eq("id", sessionId);
+      }
+    }
+
+    const { data: lead } = await supabase
+      .from("leads")
+      .select("lead_vendor, customer_full_name, is_retention_call")
+      .eq("submission_id", submissionId)
+      .single();
+
+    setClaimSessionId(sessionId);
+    setClaimSubmissionId(submissionId);
+    setClaimLead(lead);
+    setClaimLicensedAgent("");
+    setClaimModalOpen(true);
+    fetchAgents();
+  };
+
+  const handleClaimCall = async () => {
+    setClaimLoading(true);
+    try {
+      if (!claimLicensedAgent) {
+        toast({ title: "Error", description: "Please select a closer", variant: "destructive" });
+        return;
+      }
+
+      await supabase
+        .from("verification_sessions")
+        .update({ status: "in_progress", licensed_agent_id: claimLicensedAgent })
+        .eq("id", claimSessionId);
+
+      const agentName = licensedAgents.find((a) => a.user_id === claimLicensedAgent)?.display_name || "Licensed Agent";
+      const { customerName, leadVendor } = await getLeadInfo(claimSubmissionId!);
+
+      await logCallUpdate({
+        submissionId: claimSubmissionId!,
+        agentId: claimLicensedAgent,
+        agentType: "licensed",
+        agentName,
+        eventType: "call_claimed",
+        eventDetails: {
+          verification_session_id: claimSessionId,
+          claimed_at: new Date().toISOString(),
+          claimed_from_dashboard: true,
+          claim_type: "manual_claim",
+        },
+        verificationSessionId: claimSessionId!,
+        customerName,
+        leadVendor,
+        isRetentionCall: false,
+      });
+
+      await supabase.functions.invoke("center-transfer-notification", {
+        body: { type: "reconnected", submissionId: claimSubmissionId, agentType: "licensed", agentName, leadData: claimLead },
+      });
+
+      const submissionIdForRedirect = claimSubmissionId;
+      setClaimModalOpen(false);
+      setClaimSessionId(null);
+      setClaimSubmissionId(null);
+      setClaimLead(null);
+      setClaimLicensedAgent("");
+
+      toast({ title: "Success", description: `Call claimed by ${agentName}` });
+      void fetchData();
+      navigate(`/call-result-update?submissionId=${submissionIdForRedirect}`);
+    } catch (error) {
+      console.error("Error claiming call:", error);
+      toast({ title: "Error", description: "Failed to claim call", variant: "destructive" });
+    } finally {
+      setClaimLoading(false);
+    }
   };
 
   if (loading || closerStagesLoading) {
@@ -522,17 +713,6 @@ const CloserPortalPage = () => {
                 </SelectContent>
               </Select>
 
-              <div className="md:w-[28rem]">
-                <PresetDateRangeFilter
-                  preset={datePreset}
-                  onPresetChange={setDatePreset}
-                  customStartDate={customStartDate}
-                  customEndDate={customEndDate}
-                  onCustomStartDateChange={setCustomStartDate}
-                  onCustomEndDateChange={setCustomEndDate}
-                  selectClassName="w-full"
-                />
-              </div>
             </div>
           </div>
         </div>
@@ -546,7 +726,10 @@ const CloserPortalPage = () => {
                 </CardContent>
               </Card>
             ) : (
-              <div className="flex min-h-0 gap-3 pr-2" style={{ minWidth: `${kanbanStages.length * 18}rem` }}>
+              <div
+                className="grid min-h-0 min-w-full grid-flow-col gap-3 pr-2"
+                style={{ gridAutoColumns: "minmax(18.5rem, calc((100% - 2.25rem) / 4))" }}
+              >
                 {kanbanStages.map((stage) => {
                   const rows = leadsByStage.get(stage.key) || [];
                   const pageSize = 25;
@@ -558,10 +741,13 @@ const CloserPortalPage = () => {
                   return (
                     <Card
                       key={stage.key}
-                      className={`flex min-h-[560px] w-[26rem] flex-col bg-muted/20 ${stageTheme[stage.key]?.column ?? ""}`}
+                      className={`flex min-h-[560px] flex-col bg-muted/20 ${stageTheme[stage.key]?.column ?? ""}`}
                     >
                       <CardHeader className={`flex flex-row items-center justify-between border-b px-3 py-2 ${stageTheme[stage.key]?.header ?? ""}`}>
-                        <CardTitle className="text-sm font-semibold">{stage.label}</CardTitle>
+                        <div className="flex items-center gap-1.5">
+                          <CardTitle className="text-sm font-semibold">{stage.label}</CardTitle>
+                          <ColumnInfoPopover info={getColumnInfo(stage.label)} />
+                        </div>
                         <Badge variant="secondary">{rows.length}</Badge>
                       </CardHeader>
                       <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
@@ -571,9 +757,8 @@ const CloserPortalPage = () => {
                           </div>
                         ) : (
                           pageRows.map((row) => {
-                            const closer = row.licensed_agent_account || row.agent || row.buffer_agent || "-";
-                            const elapsed = getElapsedLabel(row);
                             const statusText = toDispositionLabel(row.status) || row.status || "No status";
+                            const noteCount = noteCounts[row.id] ?? 0;
 
                             return (
                               <Card
@@ -581,43 +766,41 @@ const CloserPortalPage = () => {
                                 className="w-full cursor-pointer transition hover:shadow-md"
                                 onClick={() => handleView(row)}
                               >
-                                <CardContent className="p-2">
-                                  <div className="min-w-0">
-                                    <div className="truncate text-sm font-semibold">{row.insured_name || "—"}</div>
-                                    <div className="mt-0.5 text-xs text-muted-foreground">
-                                      <div className="flex items-center gap-2">
-                                        <span>{row.client_phone_number || "—"}</span>
-                                        <div className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
+                                <CardContent className="space-y-2 p-2.5">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1 space-y-1.5">
+                                      <div className="truncate text-[1.05rem] font-semibold leading-tight tracking-[-0.01em]">
+                                        {row.insured_name || "—"}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                                        <span className="truncate whitespace-nowrap tabular-nums">{row.client_phone_number || "—"}</span>
+                                        <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-foreground/80">
                                           <StickyNote className="h-3.5 w-3.5" />
-                                          <span>{noteCounts[row.id] ?? 0}</span>
+                                          <span>{noteCount}</span>
                                         </div>
                                       </div>
                                     </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 shrink-0 self-start gap-1 border-primary/40 px-2 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openClaimModal(row.submission_id);
+                                      }}
+                                    >
+                                      <UserPlus className="h-3 w-3" />
+                                      Claim
+                                    </Button>
                                   </div>
 
-                                  <div className="mt-2 flex items-center justify-between gap-2">
-                                    <Badge variant="secondary" className="text-xs">{row.lead_vendor || "—"}</Badge>
-                                    <div className="text-xs text-muted-foreground">{row.date || ""}</div>
-                                  </div>
-
-                                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline" className="text-[11px] font-normal">
+                                  <div className="flex flex-col gap-1.5 pt-0.5">
+                                    <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
+                                      {row.lead_vendor || "—"}
+                                    </Badge>
+                                    <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
                                       {statusText}
                                     </Badge>
-                                    <Badge variant="outline" className="text-[11px] font-normal">
-                                      {getCurrentStageLabel(row)}
-                                    </Badge>
-                                    {elapsed ? (
-                                      <Badge variant="outline" className="text-[11px] font-normal">
-                                        {elapsed}
-                                      </Badge>
-                                    ) : null}
-                                  </div>
-
-                                  <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-muted-foreground">
-                                    <div>
-                                      <span className="font-medium">Closer:</span> {closer}
-                                    </div>
                                   </div>
                                 </CardContent>
                               </Card>
@@ -664,6 +847,17 @@ const CloserPortalPage = () => {
           </div>
         </div>
       </div>
+
+      <ClaimDroppedCallModal
+        open={claimModalOpen}
+        loading={claimLoading}
+        licensedAgents={licensedAgents}
+        fetchingAgents={fetchingAgents}
+        claimLicensedAgent={claimLicensedAgent}
+        onLicensedAgentChange={setClaimLicensedAgent}
+        onCancel={() => setClaimModalOpen(false)}
+        onClaim={handleClaimCall}
+      />
     </div>
   );
 };

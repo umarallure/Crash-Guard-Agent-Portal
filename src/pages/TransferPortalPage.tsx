@@ -23,10 +23,13 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeftRight, Loader2, Pencil, RefreshCw, Users, StickyNote } from "lucide-react";
+import { ArrowLeftRight, Loader2, Pencil, RefreshCw, Users, StickyNote, UserPlus } from "lucide-react";
 import { usePipelineStages, type PipelineStage } from "@/hooks/usePipelineStages";
 import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
 import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
+import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
+import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
+import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 
 export interface TransferPortalRow {
   id: string;
@@ -58,6 +61,45 @@ export interface TransferPortalRow {
 }
 
 const TRANSFER_HANDOFF_STAGE_KEY = "retainer_signed";
+
+interface ColumnInfoDetail { label: string; value: string; }
+interface ColumnInfo { description: string; details?: ColumnInfoDetail[]; }
+
+const getColumnInfo = (label: string): ColumnInfo => {
+  const l = label.toLowerCase();
+
+  if (l.includes("transfer api") || l === "transfer_api")
+    return { description: "Leads that arrived via the Transfer API (Zapier). These are fresh inbound transfers waiting to be worked by a closer." };
+
+  if (l.includes("incomplete transfer") || l === "incomplete_transfer")
+    return { description: "Transfers that were initiated but not completed. A closer was connected but the call did not result in a full transfer. Needs re-engagement." };
+
+  if (l.includes("retainer signed") || l === "retainer_signed")
+    return { description: "Leads that have signed the retainer agreement. Ready to be reviewed, tiered, and submitted to the submission pipeline." };
+
+  if ((l.includes("returned") || l.includes("return")) && (l.includes("center") || l.includes("dq")))
+    return { description: "Leads returned to the call center due to disqualification or failure to meet transfer criteria. No further transfer action needed." };
+
+  if (l.includes("previously sold") || (l.includes("bpo") && l.includes("sold")))
+    return { description: "Leads that were previously sold through BPO channels. Not eligible for resubmission." };
+
+  if (l.includes("needs bpo") || l.includes("bpo call"))
+    return { description: "Leads that require a BPO (Business Process Outsourcing) verification call before they can proceed to transfer." };
+
+  if (l.includes("tier 1") || l.includes("tier1"))
+    return { description: "Qualified Tier 1 cases ready for transfer.", details: [{ label: "Price", value: "$2,500 / case" }, { label: "Accident", value: "12+ Months Ago" }, { label: "Injury", value: "Minor to Moderate" }] };
+
+  if (l.includes("tier 2") || l.includes("tier2") || l.includes("bronze"))
+    return { description: "Qualified Tier 2 (Bronze) cases ready for transfer.", details: [{ label: "Price", value: "$3,500 / case" }, { label: "Accident", value: "6–12 Months Ago" }, { label: "Injury", value: "Moderate to Severe" }] };
+
+  if (l.includes("tier 3") || l.includes("tier3") || l.includes("silver"))
+    return { description: "Qualified Tier 3 (Silver) cases ready for transfer.", details: [{ label: "Price", value: "$4,500 / case" }, { label: "Accident", value: "3–6 Months Ago" }, { label: "Injury", value: "Moderate to Severe" }] };
+
+  if (l.includes("tier 4") || l.includes("tier4") || l.includes("gold"))
+    return { description: "Qualified Tier 4 (Gold) cases ready for transfer.", details: [{ label: "Price", value: "$6,000 / case" }, { label: "Accident", value: "0–3 Months Ago" }, { label: "Injury", value: "Moderate to Catastrophic" }] };
+
+  return { description: `Leads currently in the "${label}" stage of the transfer pipeline.` };
+};
 
 const TransferPortalPage = () => {
   const navigate = useNavigate();
@@ -254,6 +296,16 @@ const TransferPortalPage = () => {
   const [editStage, setEditStage] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
   const [editStageOpen, setEditStageOpen] = useState(false);
+
+  // Claim call modal state
+  const [claimModalOpen, setClaimModalOpen] = useState(false);
+  const [claimSessionId, setClaimSessionId] = useState<string | null>(null);
+  const [claimSubmissionId, setClaimSubmissionId] = useState<string | null>(null);
+  const [claimLicensedAgent, setClaimLicensedAgent] = useState<string>("");
+  const [claimLoading, setClaimLoading] = useState(false);
+  const [claimLead, setClaimLead] = useState<any>(null);
+  const [licensedAgents, setLicensedAgents] = useState<any[]>([]);
+  const [fetchingAgents, setFetchingAgents] = useState(false);
 
   // Remove duplicates based on insured_name, client_phone_number, and lead_vendor
   const removeDuplicates = (records: TransferPortalRow[]): TransferPortalRow[] => {
@@ -458,6 +510,85 @@ const TransferPortalPage = () => {
     navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
       state: { activeNav: '/transfer-portal' },
     });
+  };
+
+  type AgentStatusRow = { user_id: string };
+  type AppUserRow = { user_id: string; display_name: string | null; email: string | null };
+  type AppUsersQueryClient = {
+    from: (table: "app_users") => {
+      select: (columns: string) => {
+        in: (column: "user_id", values: string[]) => Promise<{ data: AppUserRow[] | null }>;
+      };
+    };
+  };
+
+  const fetchClaimAgents = async () => {
+    setFetchingAgents(true);
+    try {
+      const { data: agentStatus } = await supabase.from("agent_status").select("user_id").eq("agent_type", "licensed");
+      const ids = (agentStatus as AgentStatusRow[] | null)?.map((a) => a.user_id) || [];
+      let profiles: Array<{ user_id: string; display_name: string }> = [];
+      if (ids.length > 0) {
+        const { data: fetchedProfiles } = await (supabase as unknown as AppUsersQueryClient)
+          .from("app_users").select("user_id, display_name, email").in("user_id", ids);
+        profiles = ((fetchedProfiles || []) as AppUserRow[]).map((u) => ({
+          user_id: u.user_id,
+          display_name: u.display_name || (u.email ? String(u.email).split("@")[0] : ""),
+        }));
+      }
+      setLicensedAgents(profiles);
+    } catch (e) { console.log(e); } finally { setFetchingAgents(false); }
+  };
+
+  const openClaimModal = async (submissionId: string) => {
+    const { data: existingSession } = await supabase
+      .from("verification_sessions").select("id, total_fields")
+      .eq("submission_id", submissionId).gt("total_fields", 0)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+    let sessionId = existingSession?.id;
+    if (!sessionId) {
+      const { data: leadData, error: leadError } = await supabase.from("leads").select("*").eq("submission_id", submissionId).single();
+      if (leadError || !leadData) { toast({ title: "Error", description: "Failed to fetch lead data", variant: "destructive" }); return; }
+      const { data: newSession, error } = await supabase
+        .from("verification_sessions")
+        .insert({ submission_id: submissionId, status: "pending", progress_percentage: 0, total_fields: 0, verified_fields: 0 })
+        .select("id").single();
+      if (error) { toast({ title: "Error", description: "Failed to create verification session", variant: "destructive" }); return; }
+      sessionId = newSession.id;
+      const leadFields = [
+        "accident_date","accident_location","accident_scenario","injuries","medical_attention","police_attended","insured","vehicle_registration","insurance_company","third_party_vehicle_registration","other_party_admit_fault","passengers_count","prior_attorney_involved","prior_attorney_details","contact_name","contact_number","contact_address","lead_vendor","customer_full_name","street_address","beneficiary_information","billing_and_mailing_address_is_the_same","date_of_birth","age","phone_number","social_security","driver_license","exp","existing_coverage","applied_to_life_insurance_last_two_years","height","weight","doctors_name","tobacco_use","health_conditions","medications","insurance_application_details","carrier","monthly_premium","coverage_amount","draft_date","first_draft","institution_name","beneficiary_routing","beneficiary_account","account_type","city","state","zip_code","birth_state","call_phone_landline","additional_notes",
+      ];
+      const items = leadFields.map((f) => { const v = leadData[f as keyof typeof leadData]; return v != null ? { session_id: sessionId, field_name: f, original_value: String(v), verified_value: String(v), is_verified: false, is_modified: false } : null; }).filter(Boolean);
+      if (items.length > 0) {
+        await supabase.from("verification_items").insert(items);
+        await supabase.from("verification_sessions").update({ total_fields: items.length }).eq("id", sessionId);
+      }
+    }
+    const { data: lead } = await supabase.from("leads").select("lead_vendor, customer_full_name, is_retention_call").eq("submission_id", submissionId).single();
+    setClaimSessionId(sessionId);
+    setClaimSubmissionId(submissionId);
+    setClaimLead(lead);
+    setClaimLicensedAgent("");
+    setClaimModalOpen(true);
+    fetchClaimAgents();
+  };
+
+  const handleClaimCall = async () => {
+    setClaimLoading(true);
+    try {
+      if (!claimLicensedAgent) { toast({ title: "Error", description: "Please select a closer", variant: "destructive" }); return; }
+      await supabase.from("verification_sessions").update({ status: "in_progress", licensed_agent_id: claimLicensedAgent }).eq("id", claimSessionId);
+      const agentName = licensedAgents.find((a) => a.user_id === claimLicensedAgent)?.display_name || "Licensed Agent";
+      const { customerName, leadVendor } = await getLeadInfo(claimSubmissionId!);
+      await logCallUpdate({ submissionId: claimSubmissionId!, agentId: claimLicensedAgent, agentType: "licensed", agentName, eventType: "call_claimed", eventDetails: { verification_session_id: claimSessionId, claimed_at: new Date().toISOString(), claimed_from_dashboard: true, claim_type: "manual_claim" }, verificationSessionId: claimSessionId!, customerName, leadVendor, isRetentionCall: false });
+      await supabase.functions.invoke("center-transfer-notification", { body: { type: "reconnected", submissionId: claimSubmissionId, agentType: "licensed", agentName, leadData: claimLead } });
+      const submissionIdForRedirect = claimSubmissionId;
+      setClaimModalOpen(false); setClaimSessionId(null); setClaimSubmissionId(null); setClaimLead(null); setClaimLicensedAgent("");
+      toast({ title: "Success", description: `Call claimed by ${agentName}` });
+      navigate(`/call-result-update?submissionId=${submissionIdForRedirect}`);
+    } catch (e) { console.error(e); toast({ title: "Error", description: "Failed to claim call", variant: "destructive" }); }
+    finally { setClaimLoading(false); }
   };
 
   const editStageMatches = useMemo(() => {
@@ -969,7 +1100,10 @@ const TransferPortalPage = () => {
 
           {viewMode === "kanban" ? (
             <div className="mt-4 min-h-0 flex-1 overflow-auto" onDragOver={handleKanbanDragOver}>
-              <div className="flex min-h-0 min-w-[2200px] gap-3 pr-2">
+              <div
+                className="grid min-h-0 min-w-full grid-flow-col gap-3 pr-2"
+                style={{ gridAutoColumns: "minmax(18.5rem, calc((100% - 2.25rem) / 4))" }}
+              >
                 {kanbanStages.map((stage) => {
                   const rows = leadsByStage.get(stage.key) || [];
                   const current = Number(columnPage[stage.key] ?? 1);
@@ -981,7 +1115,7 @@ const TransferPortalPage = () => {
                     <Card
                       key={stage.key}
                       className={
-                        `flex min-h-[560px] w-[26rem] flex-col bg-muted/20 ${stageTheme[stage.key].column}` +
+                        `flex min-h-[560px] flex-col bg-muted/20 ${stageTheme[stage.key].column}` +
                         (dragOverStage === stage.key ? ' ring-2 ring-primary/30' : '')
                       }
                       onDragOver={(e) => e.preventDefault()}
@@ -997,9 +1131,10 @@ const TransferPortalPage = () => {
                       }}
                     >
                       <CardHeader className="flex flex-row items-center justify-between border-b px-3 py-2">
-                        <CardTitle className="text-sm font-semibold">
-                          {stage.label}
-                        </CardTitle>
+                        <div className="flex items-center gap-1.5">
+                          <CardTitle className="text-sm font-semibold">{stage.label}</CardTitle>
+                          <ColumnInfoPopover info={getColumnInfo(stage.label)} />
+                        </div>
                         <Badge variant="secondary">{rows.length}</Badge>
                       </CardHeader>
                       <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
@@ -1008,55 +1143,79 @@ const TransferPortalPage = () => {
                             No leads
                           </div>
                         ) : (
-                          pageRows.map((row) => (
-                            <Card
-                              key={row.id}
-                              draggable
-                              className="relative w-full cursor-pointer transition hover:shadow-md"
-                              onClick={() => handleView(row)}
-                              onDragStart={(e) => {
-                                e.dataTransfer.effectAllowed = 'move';
-                                e.dataTransfer.setData('text/plain', row.id);
-                                setDraggingId(row.id);
-                              }}
-                              onDragEnd={() => {
-                                setDraggingId(null);
-                                setDragOverStage(null);
-                              }}
-                              style={draggingId === row.id ? { opacity: 0.7 } : undefined}
-                            >
-                              <CardContent className="p-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="icon"
-                                  className="absolute right-2 top-2 h-7 w-7"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenEdit(row);
-                                  }}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <div className="truncate text-sm font-semibold">{row.insured_name || "Unnamed"}</div>
-                                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                                      <span>{row.client_phone_number || "N/A"}</span>
-                                      <div className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
-                                        <StickyNote className="h-3.5 w-3.5" />
-                                        <span>{noteCounts[row.id] ?? 0}</span>
+                          pageRows.map((row) => {
+                            const statusText =
+                              toDispositionLabel(row.status ?? null) ||
+                              kanbanStages.find((item) => item.key === stage.key)?.label ||
+                              row.status ||
+                              "No status";
+
+                            return (
+                              <Card
+                                key={row.id}
+                                draggable
+                                className="w-full cursor-pointer transition hover:shadow-md"
+                                onClick={() => handleView(row)}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.effectAllowed = 'move';
+                                  e.dataTransfer.setData('text/plain', row.id);
+                                  setDraggingId(row.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingId(null);
+                                  setDragOverStage(null);
+                                }}
+                                style={draggingId === row.id ? { opacity: 0.7 } : undefined}
+                              >
+                                <CardContent className="space-y-2 p-2.5">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1 space-y-1.5">
+                                      <div className="truncate text-[1.05rem] font-semibold leading-tight tracking-[-0.01em]">
+                                        {row.insured_name || "—"}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                                        <span className="truncate whitespace-nowrap tabular-nums">{row.client_phone_number || "—"}</span>
+                                        <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-foreground/80">
+                                          <StickyNote className="h-3.5 w-3.5" />
+                                          <span>{noteCounts[row.id] ?? 0}</span>
+                                        </div>
                                       </div>
                                     </div>
+                                    <div className="flex shrink-0 flex-col items-stretch gap-1">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        className="h-7 w-7 self-end"
+                                        onClick={(e) => { e.stopPropagation(); handleOpenEdit(row); }}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 gap-1 self-end border-primary/40 px-2 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground"
+                                        onClick={(e) => { e.stopPropagation(); openClaimModal(row.submission_id); }}
+                                      >
+                                        <UserPlus className="h-3 w-3" />
+                                        Claim
+                                      </Button>
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="mt-2 flex items-center justify-between gap-2">
-                                  <Badge variant="secondary" className="text-xs">{row.lead_vendor || "Unknown"}</Badge>
-                                  <div className="text-xs text-muted-foreground">{row.date || ""}</div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))
+
+                                  <div className="flex flex-col gap-1.5 pt-0.5">
+                                    <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
+                                      {row.lead_vendor || "—"}
+                                    </Badge>
+                                    <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
+                                      {statusText}
+                                    </Badge>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })
                         )}
                       </CardContent>
 
@@ -1267,6 +1426,17 @@ const TransferPortalPage = () => {
           </Dialog>
         </div>
       </div>
+
+      <ClaimDroppedCallModal
+        open={claimModalOpen}
+        loading={claimLoading}
+        licensedAgents={licensedAgents}
+        fetchingAgents={fetchingAgents}
+        claimLicensedAgent={claimLicensedAgent}
+        onLicensedAgentChange={setClaimLicensedAgent}
+        onCancel={() => setClaimModalOpen(false)}
+        onClaim={handleClaimCall}
+      />
     </div>
   );
 };

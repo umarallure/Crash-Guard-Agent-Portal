@@ -92,6 +92,7 @@ const OrderFulfillmentPage = () => {
 
   const [query, setQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<'all' | OrderStatus>('all');
+  const [selectedCaseType, setSelectedCaseType] = useState<string>('all');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -140,6 +141,7 @@ const OrderFulfillmentPage = () => {
 
     return orders.filter((o) => {
       if (selectedStatus !== 'all' && o.status !== selectedStatus) return false;
+      if (selectedCaseType !== 'all' && (o.case_type || '').trim() !== selectedCaseType) return false;
 
       if (!q) return true;
       const lawyerLabel = attorneyLabelById.get(o.lawyer_id) || o.lawyer_id;
@@ -152,7 +154,22 @@ const OrderFulfillmentPage = () => {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [orders, query, selectedStatus, attorneyLabelById]);
+  }, [orders, query, selectedStatus, selectedCaseType, attorneyLabelById]);
+
+  const caseTypeOptions = useMemo(() => {
+    const values = Array.from(
+      new Set(
+        orders
+          .map((order) => (order.case_type || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+
+    return [
+      { label: 'All Case Categories', value: 'all' },
+      ...values.map((value) => ({ label: value, value })),
+    ];
+  }, [orders]);
 
   const stats = useMemo(() => {
     const total = orders.length;
@@ -249,6 +266,21 @@ const OrderFulfillmentPage = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="w-full sm:w-64">
+                <Select value={selectedCaseType} onValueChange={setSelectedCaseType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Case Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {caseTypeOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
                       </SelectItem>

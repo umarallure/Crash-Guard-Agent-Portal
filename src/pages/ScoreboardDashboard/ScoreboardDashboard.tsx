@@ -844,14 +844,14 @@ const ScoreboardDashboard = () => {
                     className={`flex items-center gap-2 transition-all ${activityType === 'inbound' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-blue-900' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900'}`}
                   >
                     <Phone className="h-4 w-4" />
-                    Inbound Transfer Activity
+                    Publisher Activity
                   </TabsTrigger>
                   <TabsTrigger 
                     value="followup" 
                     className={`flex items-center gap-2 transition-all ${activityType === 'followup' ? 'bg-orange-500 text-white shadow-lg shadow-orange-200 dark:shadow-orange-900' : 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:hover:bg-orange-900'}`}
                   >
                     <Clock className="h-4 w-4" />
-                    Followup Activity
+                    Internal Activity
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
@@ -861,7 +861,7 @@ const ScoreboardDashboard = () => {
           {/* Key Metrics */}
           <div>
             <h2 className="text-lg sm:text-xl font-semibold mb-4">
-              {activityType === 'inbound' ? 'Inbound Transfer Activity Metrics' : 'FollowUp Activity Metrics'}
+              {activityType === 'inbound' ? 'Publisher Activity Metrics' : 'Internal Activity Metrics'}
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Total Transfers */}

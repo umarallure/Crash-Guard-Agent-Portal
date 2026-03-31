@@ -10,8 +10,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { format } from "date-fns";
-import { CalendarIcon, CheckCircle, XCircle, Loader2, Shield, Wrench, Info, Copy } from "lucide-react";
+import { CalendarIcon, CheckCircle, XCircle, Loader2, Shield, Wrench, Info, Copy, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { getTodayDateEST, getCurrentTimestampEST, formatDateESTLocale } from "@/lib/dateUtils";
@@ -399,6 +400,7 @@ const combineNotes = (structuredNotes: string, additionalNotes: string) => {
 };
 
 export const CallResultForm = ({ submissionId, customerName, onSuccess, initialAssignedAttorneyId, verificationSessionId, verifiedFieldValues, verificationProgress = 0 }: CallResultFormProps) => {
+  const [selectedPipeline, setSelectedPipeline] = useState<"transfer_portal" | "submission_portal">("submission_portal");
   const [applicationSubmitted, setApplicationSubmitted] = useState<boolean | null>(true);
   const [status, setStatus] = useState("");
   const [statusReason, setStatusReason] = useState("");
@@ -410,6 +412,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
   const [agentWhoTookCall, setAgentWhoTookCall] = useState("");
   const [leadVendor, setLeadVendor] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [callSource, setCallSource] = useState("");
   const [newDraftDate, setNewDraftDate] = useState<Date>();
   const [isRetentionCall, setIsRetentionCall] = useState(false);
@@ -447,51 +450,62 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
   const { centers, leadVendors, loading: centersLoading } = useCenters();
   const { attorneys, loading: attorneysLoading } = useAttorneys();
   const { stages: dbSubmissionStages } = usePipelineStages("submission_portal");
+  const { stages: dbTransferStages } = usePipelineStages("transfer_portal");
 
-  const qualifiedStageToKey = useMemo(() => {
+  const pipelineStageLabelToKey = useMemo(() => {
     const map = new Map<string, string>();
-    (dbSubmissionStages ?? []).forEach((s) => {
+    [...(dbTransferStages ?? []), ...(dbSubmissionStages ?? [])].forEach((s) => {
       const label = (s?.label ?? "").trim();
       if (label && s?.key) {
         map.set(label, s.key);
       }
     });
     return map;
-  }, [dbSubmissionStages]);
+  }, [dbSubmissionStages, dbTransferStages]);
 
   const stageKeyToLabel = useMemo(() => {
     const map = new Map<string, string>();
-    (dbSubmissionStages ?? []).forEach((s) => {
+    [...(dbTransferStages ?? []), ...(dbSubmissionStages ?? [])].forEach((s) => {
       if (s?.key && s?.label) {
         map.set(s.key, s.label);
       }
     });
     return map;
-  }, [dbSubmissionStages]);
+  }, [dbSubmissionStages, dbTransferStages]);
 
-  const qualifiedStageOptions = useMemo(() => {
+  const submissionStageOptions = useMemo(() => {
     return (dbSubmissionStages ?? []).filter((stage) => {
       const key = (stage?.key ?? "").trim();
       const label = (stage?.label ?? "").trim();
 
       if (!key || !label) return false;
-      if (!key.startsWith("qualified_")) return false;
-
-      // Keep parent stages selectable, but hide reason sub-stages like
-      // "Qualified: Missing Information - Missing Police Report".
       return !label.includes(" - ");
     });
   }, [dbSubmissionStages]);
 
+  const transferStageOptions = useMemo(() => {
+    return (dbTransferStages ?? []).filter((stage) => {
+      const key = (stage?.key ?? "").trim();
+      const label = (stage?.label ?? "").trim();
+
+      if (!key || !label) return false;
+      return !label.includes(" - ");
+    });
+  }, [dbTransferStages]);
+
+  const selectedPipelineStageOptions = useMemo(() => {
+    return selectedPipeline === "transfer_portal" ? transferStageOptions : submissionStageOptions;
+  }, [selectedPipeline, submissionStageOptions, transferStageOptions]);
+
   const qualifiedMissingInfoLabel =
-    qualifiedStageOptions.find((stage) => (stage?.key ?? "").trim() === "qualified_missing_info")?.label ??
+    submissionStageOptions.find((stage) => (stage?.key ?? "").trim() === "qualified_missing_info")?.label ??
     "Qualified Missing Information";
 
   const getQualifiedStageKey = (value: string | null | undefined) => {
     const trimmed = (value || "").trim();
     if (!trimmed) return "";
     if (stageKeyToLabel.has(trimmed)) return trimmed;
-    return qualifiedStageToKey.get(trimmed) ?? trimmed;
+    return pipelineStageLabelToKey.get(trimmed) ?? trimmed;
   };
 
   const centerDid = useMemo(() => {
@@ -770,20 +784,34 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
             );
 
             if (matchingMissingInfoPrefix) {
+              setSelectedPipeline("submission_portal");
               setQualifiedStage(qualifiedMissingInfoLabel);
               setQualifiedStageReason(savedStatus.replace(`${matchingMissingInfoPrefix} - `, ''));
             } else {
-              const matchedQualifiedStage = qualifiedStageOptions.find((stage) => {
+              const matchedTransferStage = transferStageOptions.find((stage) => {
                 const key = (stage?.key ?? '').trim();
                 const label = (stage?.label ?? '').trim();
                 return savedStatus === label || savedStatus === key;
               });
 
-              if (matchedQualifiedStage?.label) {
+              if (matchedTransferStage?.label) {
+                setSelectedPipeline("transfer_portal");
+                setQualifiedStage(matchedTransferStage.label);
+              }
+
+              const matchedQualifiedStage = submissionStageOptions.find((stage) => {
+                const key = (stage?.key ?? '').trim();
+                const label = (stage?.label ?? '').trim();
+                return savedStatus === label || savedStatus === key;
+              });
+
+              if (!matchedTransferStage?.label && matchedQualifiedStage?.label) {
+                setSelectedPipeline("submission_portal");
                 setQualifiedStage(matchedQualifiedStage.label);
               }
 
-              if (getQualifiedStageKey(savedStatus) === 'qualified_missing_info' && existingResult.dq_reason) {
+              if (!matchedTransferStage?.label && getQualifiedStageKey(savedStatus) === 'qualified_missing_info' && existingResult.dq_reason) {
+                setSelectedPipeline("submission_portal");
                 setQualifiedStage(matchedQualifiedStage?.label || qualifiedMissingInfoLabel);
                 setQualifiedStageReason(existingResult.dq_reason);
               }
@@ -1040,7 +1068,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
     };
 
     loadExistingCallResult();
-  }, [submissionId, qualifiedMissingInfoLabel, qualifiedStageOptions, stageKeyToLabel]);
+  }, [submissionId, qualifiedMissingInfoLabel, submissionStageOptions, transferStageOptions, stageKeyToLabel]);
 
   // Reset related fields when status changes
   useEffect(() => {
@@ -1239,10 +1267,14 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
       let finalStatus = status;
       if (applicationSubmitted === true) {
         finalStatus = qualifiedStage || "Submitted";
-        if (getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" && qualifiedStageReason) {
+        if (
+          selectedPipeline === "submission_portal" &&
+          getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" &&
+          qualifiedStageReason
+        ) {
           finalStatus = `${qualifiedStage} - ${qualifiedStageReason}`;
         }
-        const stageKey = qualifiedStageToKey.get(finalStatus);
+        const stageKey = pipelineStageLabelToKey.get(finalStatus);
         if (stageKey) {
           finalStatus = stageKey;
         }
@@ -1511,6 +1543,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
               agent_who_took_call: agentWhoTookCall,
               lead_vendor: leadData.lead_vendor || leadVendor || 'N/A',
               status: slackStatus,
+              pipeline_name: applicationSubmitted === true ? selectedPipeline : null,
               qualified_stage: getQualifiedStageKey(qualifiedStage) || null,
               notes: finalNotes,
               dq_reason: showStatusReasonDropdown ? statusReason : null,
@@ -1711,20 +1744,37 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
       )}
       
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Update Call Result</CardTitle>
-            <div className="flex items-center gap-2">
-              {isRetentionCall && (
-                <Badge className="bg-purple-600 hover:bg-purple-700 flex items-center gap-1">
-                  <Shield className="h-3 w-3" />
-                  Retention Call
-                </Badge>
-              )}
+        <Collapsible open={!isCollapsed} onOpenChange={(open) => setIsCollapsed(!open)}>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <CardTitle>Update Call Result</CardTitle>
+                {isRetentionCall && (
+                  <Badge className="bg-purple-600 hover:bg-purple-700 flex items-center gap-1">
+                    <Shield className="h-3 w-3" />
+                    Retention Call
+                  </Badge>
+                )}
+              </div>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="gap-2">
+                  {isCollapsed ? (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Expand
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="h-4 w-4" />
+                      Collapse
+                    </>
+                  )}
+                </Button>
+              </CollapsibleTrigger>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Primary Question */}
           <div className="space-y-3">
@@ -1859,25 +1909,49 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                   </div>
                 </div>
 
-                <div>
-                  <Label htmlFor="qualifiedStage" className="text-base font-semibold">
-                    Status / Stage
-                  </Label>
-                  <Select value={qualifiedStage} onValueChange={(val) => { setQualifiedStage(val); setQualifiedStageReason(""); }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select stage" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {qualifiedStageOptions.map((stage) => (
-                        <SelectItem key={stage.key} value={stage.label}>
-                          {stage.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor="pipelineName" className="text-base font-semibold">
+                      Pipeline Name
+                    </Label>
+                    <Select
+                      value={selectedPipeline}
+                      onValueChange={(val: "transfer_portal" | "submission_portal") => {
+                        setSelectedPipeline(val);
+                        setQualifiedStage("");
+                        setQualifiedStageReason("");
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select pipeline" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
+                        <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="qualifiedStage" className="text-base font-semibold">
+                      Status / Stage
+                    </Label>
+                    <Select value={qualifiedStage} onValueChange={(val) => { setQualifiedStage(val); setQualifiedStageReason(""); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select stage" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedPipelineStageOptions.map((stage) => (
+                          <SelectItem key={stage.key} value={stage.label}>
+                            {stage.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                {getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" && (
+                {selectedPipeline === "submission_portal" && getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" && (
                   <div>
                     <Label htmlFor="qualifiedStageReason" className="text-base font-semibold">
                       Reason
@@ -2229,8 +2303,10 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
               </Button>
             </div>
           </form>
-      </CardContent>
-    </Card>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
     </>
   );
 };
