@@ -246,6 +246,8 @@ const CallResultUpdate = () => {
         body: {
           submissionId,
           recipientEmail: email,
+          recipientName: lead?.customer_full_name || email,
+          accidentDate: lead?.accident_date || "",
           templateId: docusignTemplateId,
         },
       });
