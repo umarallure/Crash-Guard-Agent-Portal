@@ -219,6 +219,12 @@ const AppShell = ({
         show: canAccessAgentPages,
       },
       {
+        label: 'Closer Portal',
+        to: '/closer-portal',
+        icon: <Users className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
         label: 'Transfer Portal',
         to: '/transfer-portal',
         icon: <Eye className="h-4 w-4 text-current" />,
@@ -228,12 +234,6 @@ const AppShell = ({
         label: 'Submission Portal',
         to: '/submission-portal',
         icon: <CheckCircle className="h-4 w-4 text-current" />,
-        show: canAccessAgentPages,
-      },
-      {
-        label: 'Closer Portal',
-        to: '/closer-portal',
-        icon: <Users className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {
