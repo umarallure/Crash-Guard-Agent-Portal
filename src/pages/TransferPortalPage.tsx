@@ -100,6 +100,26 @@ const TransferPortalPage = () => {
     return dbSubmissionStages.map((s) => s.label);
   }, [dbSubmissionStages]);
 
+  const transferStageKeyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    dbTransferStages.forEach((stage) => {
+      const key = (stage.key || '').trim();
+      const label = (stage.label || '').trim();
+      if (key && label) map.set(label, key);
+    });
+    return map;
+  }, [dbTransferStages]);
+
+  const submissionStageKeyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    dbSubmissionStages.forEach((stage) => {
+      const key = (stage.key || '').trim();
+      const label = (stage.label || '').trim();
+      if (key && label) map.set(label, key);
+    });
+    return map;
+  }, [dbSubmissionStages]);
+
   const allStageOptions = useMemo(() => {
     return Array.from(
       new Set(
@@ -110,10 +130,42 @@ const TransferPortalPage = () => {
     );
   }, [kanbanStages, submissionPortalStageLabels]);
 
+  const transferApiStage = useMemo(() => {
+    return dbTransferStages.find((stage) => (stage.key || '').trim() === 'transfer_api') ?? dbTransferStages[0] ?? null;
+  }, [dbTransferStages]);
+
+  const transferStageKeys = useMemo(() => {
+    const keys = new Set<string>();
+    dbTransferStages.forEach((stage) => {
+      const key = (stage.key || '').trim();
+      if (key) keys.add(key);
+    });
+    return keys;
+  }, [dbTransferStages]);
+
+  const resolveStatusKey = (value: string | null | undefined): string => {
+    const trimmed = (value || '').trim();
+    if (!trimmed) return '';
+
+    if (transferStageKeys.has(trimmed)) return trimmed;
+
+    const transferStageKey = transferStageKeyByLabel.get(trimmed);
+    if (transferStageKey) return transferStageKey;
+
+    const submissionStage = dbSubmissionStages.find((stage) => (stage.key || '').trim() === trimmed);
+    if (submissionStage?.key) return submissionStage.key.trim();
+
+    const submissionStageKey = submissionStageKeyByLabel.get(trimmed);
+    if (submissionStageKey) return submissionStageKey;
+
+    return trimmed;
+  };
+
   const deriveStageKey = (row: TransferPortalRow): string => {
-    const status = (row.status || '').trim();
-    const exact = kanbanStages.find((s) => s.label === status);
-    return exact?.key ?? kanbanStages[0]?.key ?? 'transfer_api';
+    const resolvedStatus = resolveStatusKey(row.status);
+    if (!resolvedStatus) return transferApiStage?.key ?? 'transfer_api';
+    if (transferStageKeys.has(resolvedStatus)) return resolvedStatus;
+    return '';
   };
 
   const handleKanbanDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -277,13 +329,11 @@ const TransferPortalPage = () => {
         };
       });
 
-      const transferStageStatuses = new Set<string>(kanbanStages.map((s) => (s.label || '').trim()).filter(Boolean));
-      const submissionStatuses = new Set<string>(['Pending Approval', ...submissionPortalStageLabels]);
       const transferPortalOnlyRows = transferRows.filter((row) => {
         const status = (row.status || '').trim();
         if (!status) return true;
-        if (transferStageStatuses.has(status)) return true;
-        return !submissionStatuses.has(status);
+        if (transferStageKeys.has(status)) return true;
+        return status === ((transferApiStage?.label || '').trim());
       });
 
       setData(transferPortalOnlyRows);
@@ -345,7 +395,12 @@ const TransferPortalPage = () => {
 
   const handleOpenEdit = (row: TransferPortalRow) => {
     setEditRow(row);
-    setEditStage((row.status || '').trim() || kanbanStages[0].label);
+    setEditStage(
+      toDispositionLabel(row.status ?? null) ||
+      transferApiStage?.label ||
+      kanbanStages[0]?.label ||
+      ""
+    );
     setEditNotes('');
     setEditStageOpen(false);
     setEditOpen(true);
@@ -367,7 +422,7 @@ const TransferPortalPage = () => {
   const handleSaveEdit = async () => {
     if (!editRow) return;
 
-    const nextStage = normalizeSubmissionTransitionStatus((editStage || '').trim());
+    const nextStage = resolveStatusKey(editStage);
     if (!nextStage) return;
 
     const previousStage = (editRow.status || '').trim();
@@ -531,8 +586,9 @@ const TransferPortalPage = () => {
   };
 
   useEffect(() => {
+    if (transferStagesLoading || submissionStagesLoading) return;
     fetchData();
-  }, []);
+  }, [transferStagesLoading, submissionStagesLoading]);
 
   const handleRefresh = () => {
     fetchData(true);
@@ -611,20 +667,11 @@ const TransferPortalPage = () => {
 
   const getStatusForStage = (stageKey: string): string => {
     const stage = kanbanStages.find((s) => s.key === stageKey);
-    return (stage?.label || '').trim() || stageKey;
-  };
-
-  const normalizeSubmissionTransitionStatus = (status: string): string => {
-    const trimmed = (status || '').trim();
-    if (trimmed !== 'Pending Approval') return trimmed;
-    const insuranceDocsStatus = submissionPortalStageLabels.find((label) =>
-      label.includes('Insurance Docs Pending')
-    );
-    return (insuranceDocsStatus || submissionPortalStageLabels[0] || trimmed).trim();
+    return (stage?.key || '').trim() || stageKey;
   };
 
   const handleDropToStage = async (rowId: string, stageKey: string) => {
-    const nextStatus = normalizeSubmissionTransitionStatus(getStatusForStage(stageKey));
+    const nextStatus = getStatusForStage(stageKey);
 
     const prev = data;
     const next = prev.map((r) => (r.id === rowId ? { ...r, status: nextStatus } : r));
@@ -640,7 +687,7 @@ const TransferPortalPage = () => {
 
       toast({
         title: 'Status Updated',
-        description: `Transfer updated to "${nextStatus}"`,
+        description: `Transfer updated to "${toDispositionLabel(nextStatus) ?? nextStatus}"`,
       });
     } catch (e) {
       console.error('Error updating transfer status:', e);
@@ -1060,7 +1107,11 @@ const TransferPortalPage = () => {
                       <tbody>
                         {currentPageData.map((row) => {
                           const stageKey = deriveStageKey(row);
-                          const stageLabel = (row.status || '').trim() || kanbanStages.find((stage) => stage.key === stageKey)?.label;
+                          const stageLabel =
+                            toDispositionLabel(row.status ?? null) ||
+                            kanbanStages.find((stage) => stage.key === stageKey)?.label ||
+                            row.status ||
+                            "";
                           return (
                             <tr key={row.id} className="border-b last:border-0">
                               <td className="px-4 py-3">{row.insured_name || "Unnamed"}</td>
