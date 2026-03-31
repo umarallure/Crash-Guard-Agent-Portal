@@ -25,6 +25,8 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeftRight, Loader2, Pencil, RefreshCw, Users, StickyNote } from "lucide-react";
 import { usePipelineStages, type PipelineStage } from "@/hooks/usePipelineStages";
+import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
+import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 
 export interface TransferPortalRow {
   id: string;
@@ -54,6 +56,8 @@ export interface TransferPortalRow {
   updated_at?: string;
   source_type?: string;
 }
+
+const TRANSFER_HANDOFF_STAGE_KEY = "retainer_signed";
 
 const TransferPortalPage = () => {
   const navigate = useNavigate();
@@ -144,6 +148,28 @@ const TransferPortalPage = () => {
     return keys;
   }, [dbTransferStages]);
 
+  const isTransferHandoffStage = (value: string | null | undefined): boolean => {
+    const trimmed = (value || "").trim();
+    if (!trimmed) return false;
+
+    if (trimmed === "document_signed_api") return true;
+    if (trimmed.toLowerCase().includes("document_signed")) return true;
+    if (trimmed.toLowerCase().includes("document signed")) return true;
+
+    const matchingStage = dbTransferStages.find((stage) => {
+      const key = (stage.key || "").trim().toLowerCase();
+      const label = (stage.label || "").trim().toLowerCase();
+      const needle = trimmed.toLowerCase();
+      return key === needle || label === needle;
+    });
+
+    if (!matchingStage) return false;
+
+    const key = (matchingStage.key || "").trim().toLowerCase();
+    const label = (matchingStage.label || "").trim().toLowerCase();
+    return key.includes("document_signed") || label.includes("document signed");
+  };
+
   const resolveStatusKey = (value: string | null | undefined): string => {
     const trimmed = (value || '').trim();
     if (!trimmed) return '';
@@ -160,6 +186,14 @@ const TransferPortalPage = () => {
     if (submissionStageKey) return submissionStageKey;
 
     return trimmed;
+  };
+
+  const resolveStoredStatusKey = (value: string | null | undefined): string => {
+    const resolvedKey = resolveStatusKey(value);
+    if (isTransferHandoffStage(resolvedKey) || isTransferHandoffStage(value)) {
+      return TRANSFER_HANDOFF_STAGE_KEY;
+    }
+    return resolvedKey;
   };
 
   const deriveStageKey = (row: TransferPortalRow): string => {
@@ -195,7 +229,9 @@ const TransferPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [allTimeTransfers, setAllTimeTransfers] = useState(0);
-  const [dateFilter, setDateFilter] = useState<string>("");
+  const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("__ALL__");
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [showDuplicates, setShowDuplicates] = useState(true);
@@ -240,9 +276,9 @@ const TransferPortalPage = () => {
     let filtered = records;
 
     // Apply date filter
-    if (dateFilter) {
-      filtered = filtered.filter(record => record.date === dateFilter);
-    }
+    filtered = filtered.filter((record) =>
+      isDateInRange(record.date || record.created_at || null, datePreset, customStartDate, customEndDate)
+    );
 
     // Apply source type filter
     if (sourceTypeFilter !== "__ALL__") {
@@ -381,7 +417,7 @@ const TransferPortalPage = () => {
   useEffect(() => {
     setFilteredData(applyFilters(data));
     setCurrentPage(1); // Reset to first page when filters change
-  }, [data, dateFilter, sourceTypeFilter, leadVendorFilter, showDuplicates, searchTerm]);
+  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, leadVendorFilter, showDuplicates, searchTerm]);
 
   // Pagination calculations
   const stageFilteredData = useMemo(() => {
@@ -459,7 +495,8 @@ const TransferPortalPage = () => {
   const handleSaveEdit = async () => {
     if (!editRow) return;
 
-    const nextStage = resolveStatusKey(editStage);
+    const selectedStage = resolveStatusKey(editStage);
+    const nextStage = resolveStoredStatusKey(editStage);
     if (!nextStage) return;
 
     const previousStage = (editRow.status || '').trim();
@@ -529,7 +566,10 @@ const TransferPortalPage = () => {
 
       toast({
         title: 'Saved',
-        description: 'Transfer updated successfully',
+        description:
+          isTransferHandoffStage(selectedStage)
+            ? 'Lead moved to Retainer Signed and handed off to Submission Portal.'
+            : 'Transfer updated successfully',
       });
     } finally {
       setEditSaving(false);
@@ -635,7 +675,10 @@ const TransferPortalPage = () => {
   };
 
   const handleDropToStage = async (rowId: string, stageKey: string) => {
-    const nextStatus = getStatusForStage(stageKey);
+    const selectedStage = getStatusForStage(stageKey);
+    const nextStatus = isTransferHandoffStage(selectedStage)
+      ? TRANSFER_HANDOFF_STAGE_KEY
+      : selectedStage;
 
     const prev = data;
     const next = prev.map((r) => (r.id === rowId ? { ...r, status: nextStatus } : r));
@@ -655,7 +698,10 @@ const TransferPortalPage = () => {
 
       toast({
         title: 'Status Updated',
-        description: `Transfer updated to "${toDispositionLabel(nextStatus) ?? nextStatus}"`,
+        description:
+          isTransferHandoffStage(selectedStage)
+            ? 'Lead moved to "Retainer Signed" and handed off to Submission Portal.'
+            : `Transfer updated to "${toDispositionLabel(nextStatus) ?? nextStatus}"`,
       });
     } catch (e) {
       console.error('Error updating transfer status:', e);
@@ -872,7 +918,14 @@ const TransferPortalPage = () => {
                   <label className="block text-xs font-semibold uppercase text-muted-foreground">
                     Date
                   </label>
-                  <Input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
+                  <PresetDateRangeFilter
+                    preset={datePreset}
+                    onPresetChange={setDatePreset}
+                    customStartDate={customStartDate}
+                    customEndDate={customEndDate}
+                    onCustomStartDateChange={setCustomStartDate}
+                    onCustomEndDateChange={setCustomEndDate}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold uppercase text-muted-foreground">

@@ -16,6 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, RefreshCw, StickyNote } from "lucide-react";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
+import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
+import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 
 interface CloserPortalRow {
   id: string;
@@ -63,7 +65,9 @@ const CloserPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
+  const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
   const [showDuplicates, setShowDuplicates] = useState(true);
@@ -216,9 +220,9 @@ const CloserPortalPage = () => {
   const applyFilters = (records: CloserPortalRow[]) => {
     let filtered = records;
 
-    if (dateFilter) {
-      filtered = filtered.filter((record) => record.date === dateFilter);
-    }
+    filtered = filtered.filter((record) =>
+      isDateInRange(record.date || record.created_at || null, datePreset, customStartDate, customEndDate)
+    );
 
     if (leadVendorFilter !== "__ALL__") {
       filtered = filtered.filter((record) => (record.lead_vendor || "") === leadVendorFilter);
@@ -374,12 +378,12 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, dateFilter, leadVendorFilter, statusFilter, searchTerm, showDuplicates, timeTick]);
+  }, [data, datePreset, customStartDate, customEndDate, leadVendorFilter, statusFilter, searchTerm, showDuplicates, timeTick]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
     void fetchData();
-  }, [dateFilter, closerStagesLoading]);
+  }, [closerStagesLoading]);
 
   const leadsByStage = useMemo(() => {
     const grouped = new Map<string, CloserPortalRow[]>();
@@ -518,12 +522,17 @@ const CloserPortalPage = () => {
                 </SelectContent>
               </Select>
 
-              <Input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="md:w-72"
-              />
+              <div className="md:w-[28rem]">
+                <PresetDateRangeFilter
+                  preset={datePreset}
+                  onPresetChange={setDatePreset}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomStartDateChange={setCustomStartDate}
+                  onCustomEndDateChange={setCustomEndDate}
+                  selectClassName="w-full"
+                />
+              </div>
             </div>
           </div>
         </div>

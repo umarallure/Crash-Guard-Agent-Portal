@@ -31,6 +31,8 @@ import {
   deriveParentStages,
   buildStatusLabel,
 } from "@/lib/stageUtils";
+import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
+import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 
 export interface SubmissionPortalRow {
   id: string;
@@ -112,8 +114,17 @@ const SubmissionPortalPage = () => {
     return map;
   }, [dbSubmissionStages]);
 
-  const normalizeSubmissionStatusKey = (value: string | null | undefined): string => {
+  const normalizePortalHandoffStatus = (value: string | null | undefined): string => {
     const trimmed = (value || "").trim();
+    if (!trimmed) return "";
+
+    const lower = trimmed.toLowerCase();
+    if (lower === "document_signed_api") return "retainer_signed";
+    return trimmed;
+  };
+
+  const normalizeSubmissionStatusKey = (value: string | null | undefined): string => {
+    const trimmed = normalizePortalHandoffStatus(value);
     if (!trimmed) return "";
 
     const exactKey = dbSubmissionStages.find((stage) => (stage?.key ?? "").trim() === trimmed);
@@ -206,7 +217,9 @@ const SubmissionPortalPage = () => {
   const [filteredData, setFilteredData] = useState<SubmissionPortalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dateFilter, setDateFilter] = useState<string>("");
+  const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -260,9 +273,9 @@ const SubmissionPortalPage = () => {
     let filtered = records;
 
     // Apply date filter
-    if (dateFilter) {
-      filtered = filtered.filter(record => record.date === dateFilter);
-    }
+    filtered = filtered.filter((record) =>
+      isDateInRange(record.date || record.submission_date || record.created_at || null, datePreset, customStartDate, customEndDate)
+    );
 
     // Apply status filter
     if (statusFilter !== "__ALL__") {
@@ -456,13 +469,7 @@ const SubmissionPortalPage = () => {
         .from('submission_portal')
         .select('*');
 
-      // Apply date filter if set
-      if (dateFilter) {
-        submissionQuery = submissionQuery.eq('date', dateFilter);
-      }
-
-      // Note: We don't apply status filter here to ensure all submission data is available
-      // for merging with transfer data, regardless of current filter selection
+      // Note: We don't apply client-side filters at query time so the same preset logic works everywhere
 
       const [leadsRes, submissionRes] = await Promise.all([
         leadsQuery,
@@ -498,7 +505,7 @@ const SubmissionPortalPage = () => {
         const submissionId = (lead?.submission_id || '').trim();
         const submission = submissionId ? submissionMap.get(submissionId) : null;
 
-        const normalizedStatus = ((lead?.status || '') as string).trim();
+        const normalizedStatus = normalizePortalHandoffStatus((lead?.status || '') as string);
         if (normalizedStatus && transferStatusSet.has(normalizedStatus)) {
           return null;
         }
@@ -629,12 +636,12 @@ const SubmissionPortalPage = () => {
   // Update filtered data whenever data or filters change
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, dateFilter, statusFilter, leadVendorFilter, showDuplicates, searchTerm, dataCompletenessFilter]);
+  }, [data, datePreset, customStartDate, customEndDate, statusFilter, leadVendorFilter, showDuplicates, searchTerm, dataCompletenessFilter]);
 
   useEffect(() => {
     if (stagesLoading) return;
     fetchData();
-  }, [dateFilter, stagesLoading]);
+  }, [stagesLoading]);
 
   const handleRefresh = () => {
     fetchData(true);
@@ -974,7 +981,19 @@ const SubmissionPortalPage = () => {
                 </SelectContent>
               </Select>
 
-              <Input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="w-56" />
+              <div className="w-full md:w-56 md:shrink-0">
+                <PresetDateRangeFilter
+                  preset={datePreset}
+                  onPresetChange={setDatePreset}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomStartDateChange={setCustomStartDate}
+                  onCustomEndDateChange={setCustomEndDate}
+                  selectClassName="w-full"
+                  containerClassName="relative"
+                  customFieldsClassName="absolute left-0 top-full z-20 mt-2 grid w-56 grid-cols-1 gap-2 rounded-md border bg-background p-2 shadow-md"
+                />
+              </div>
 
               <Select value={showDuplicates ? "true" : "false"} onValueChange={(v) => setShowDuplicates(v === "true")}>
                 <SelectTrigger className="w-56">

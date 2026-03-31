@@ -66,7 +66,7 @@ const App = () => (
               path="/dashboard" 
               element={
                 <ProtectedRoute>
-                  <Navigate to="/leads" replace />
+                  <Navigate to="/scoreboard-dashboard" replace />
                 </ProtectedRoute>
               } 
             />

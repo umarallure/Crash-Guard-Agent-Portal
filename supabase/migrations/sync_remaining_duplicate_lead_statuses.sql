@@ -34,16 +34,28 @@ with ranked as (
 chosen as (
   select
     r.submission_id,
-    coalesce(
-      (
-        select ps.key
-        from portal_stages ps
-        where ps.label = r.status
-        order by ps.is_active desc, ps.display_order asc
-        limit 1
-      ),
-      r.status
-    ) as normalized_status
+    case
+      when coalesce(
+        (
+          select ps.key
+          from portal_stages ps
+          where ps.label = r.status
+          order by ps.is_active desc, ps.display_order asc
+          limit 1
+        ),
+        r.status
+      ) = 'document_signed_api' then 'retainer_signed'
+      else coalesce(
+        (
+          select ps.key
+          from portal_stages ps
+          where ps.label = r.status
+          order by ps.is_active desc, ps.display_order asc
+          limit 1
+        ),
+        r.status
+      )
+    end as normalized_status
   from ranked r
   where r.rn = 1
 )

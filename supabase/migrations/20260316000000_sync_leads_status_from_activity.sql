@@ -16,7 +16,13 @@ begin
   order by ps.is_active desc, ps.display_order asc
   limit 1;
 
-  return coalesce(normalized, raw_status);
+  normalized := coalesce(normalized, raw_status);
+
+  if normalized = 'document_signed_api' then
+    return 'retainer_signed';
+  end if;
+
+  return normalized;
 end;
 $$;
 
