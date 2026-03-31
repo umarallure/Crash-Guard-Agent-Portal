@@ -46,6 +46,7 @@ import UserManagement from "./pages/UserManagement";
 import LawyerRequirements from "./pages/LawyerRequirements";
 import AlowareDialer from "./pages/AlowareDialer";
 import SlackWorkspace from "./pages/SlackWorkspace";
+import ProductsPage from "./pages/ProductsPage";
 import AppShell from "@/components/layout/AppShell";
 import { Navigate } from "react-router-dom";
 
@@ -246,7 +247,7 @@ const App = () => (
               path="/transfer-portal" 
               element={
                 <ProtectedRoute>
-                  <AppShell title="Transfer Portal">
+                  <AppShell title="Transfer Pipeline">
                     <TransferPortalPage />
                   </AppShell>
                 </ProtectedRoute>
@@ -256,7 +257,7 @@ const App = () => (
               path="/submission-portal" 
               element={
                 <ProtectedRoute>
-                  <AppShell title="Submission Portal">
+                  <AppShell title="Submission Pipeline">
                     <SubmissionPortalPage />
                   </AppShell>
                 </ProtectedRoute>
@@ -409,6 +410,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Slack">
                     <SlackWorkspace />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/products"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Products">
+                    <ProductsPage />
                   </AppShell>
                 </ProtectedRoute>
               }

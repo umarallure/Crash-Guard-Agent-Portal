@@ -18,6 +18,7 @@ import {
   Scale,
   Phone,
   MessageSquare,
+  Tag,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -225,13 +226,13 @@ const AppShell = ({
         show: canAccessAgentPages,
       },
       {
-        label: 'Transfer Portal',
+        label: 'Transfer Pipeline',
         to: '/transfer-portal',
         icon: <Eye className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {
-        label: 'Submission Portal',
+        label: 'Submission Pipeline',
         to: '/submission-portal',
         icon: <CheckCircle className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
@@ -259,7 +260,7 @@ const AppShell = ({
         to: '/leads',
         icon: <Users className="h-4 w-4 text-current" />,
         end: true,
-        show: canAccessAgentPages,
+        show: false,
       },
       {
         label: 'Dialer',
@@ -271,6 +272,12 @@ const AppShell = ({
         label: 'Slack',
         to: '/slack',
         icon: <MessageSquare className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
+        label: 'Products',
+        to: '/products',
+        icon: <Tag className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {
