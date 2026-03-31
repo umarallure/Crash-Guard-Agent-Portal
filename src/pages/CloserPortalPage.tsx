@@ -65,7 +65,7 @@ const CloserPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
+  const [datePreset, setDatePreset] = useState<DateRangePreset>("today");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
