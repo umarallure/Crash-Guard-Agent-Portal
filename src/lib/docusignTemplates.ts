@@ -1,4 +1,20 @@
 export const DOCUSIGN_TEMPLATE_IDS: string[] = [
   "d22b4142-8da8-435a-9cfb-6f8c5e7487fb",
-  "ac822168-12c7-4be9-83b4-10642881d89c"
+  "ac822168-12c7-4be9-83b4-10642881d89c",
+  "9d8518ed-48c2-4f94-bc84-e675a7a40202",
+  "9d8518ed-48c2-4f94-bc84-e675a7a40202",
+  "f2930eec-9fc7-43fc-a38f-0f7c30514541",
+  "f9e64cfa-036d-4430-860a-e2be1eff43fc",
+  "4d4995fd-409d-44fc-b144-d4d82a8bfb06",
+  "3a99d00b-88a4-4afa-9897-ad1da6b063d7",
+  "201db321-e704-47de-8b30-8ab2cf288c07",
+  "ec860c72-c6ac-4abd-83fd-21ce0e8e9a1f",
+  "dd9262b2-d0ae-4cf8-8a96-34195c2b765e",
+  "6db02d1a-e882-4d82-84ab-7e94d7df15ad",
+  "93dac150-9ed4-46f3-847e-9f6e81d0a52d",
+  "e599e955-e813-46d9-abb5-88b1d1c23598",
+  "335e2134-780e-41c6-9746-4b711ab293ea",
+  "3f63d4a5-850a-4fdd-9b9d-31243ec328a6",
+  "26567ee8-0f3c-410f-bb9a-7604c51eb214",
+  "8d37144c-c974-4769-86e9-4a3aaaa4c1a6"
 ];
