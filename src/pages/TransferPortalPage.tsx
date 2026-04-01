@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeftRight, Loader2, Pencil, RefreshCw, Users, StickyNote, UserPlus } from "lucide-react";
+import { ArrowLeftRight, Eye, Loader2, Pencil, RefreshCw, Users, StickyNote, UserPlus } from "lucide-react";
 import { usePipelineStages, type PipelineStage } from "@/hooks/usePipelineStages";
 import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
 import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
@@ -512,6 +512,26 @@ const TransferPortalPage = () => {
     });
   };
 
+  const handleOpenLeadAction = async (row: TransferPortalRow) => {
+    if (!row?.submission_id) return;
+
+    const { data: existingSession } = await supabase
+      .from("verification_sessions")
+      .select("id")
+      .eq("submission_id", row.submission_id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if ((existingSession || []).length > 0) {
+      navigate(`/call-result-update?submissionId=${encodeURIComponent(row.submission_id)}`);
+      return;
+    }
+
+    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+      state: { activeNav: '/transfer-portal' },
+    });
+  };
+
   type AgentStatusRow = { user_id: string };
   type AppUserRow = { user_id: string; display_name: string | null; email: string | null };
   type AppUsersQueryClient = {
@@ -714,8 +734,20 @@ const TransferPortalPage = () => {
       const stageKey = deriveStageKey(row);
       grouped.get(stageKey)?.push(row);
     });
+
+    // Sort transfer_api column: most recent at top
+    const transferApiKey = transferApiStage?.key ?? 'transfer_api';
+    const transferApiRows = grouped.get(transferApiKey);
+    if (transferApiRows) {
+      transferApiRows.sort((a, b) => {
+        const dateA = new Date(a.created_at || a.date || 0).getTime();
+        const dateB = new Date(b.created_at || b.date || 0).getTime();
+        return dateB - dateA;
+      });
+    }
+
     return grouped;
-  }, [stageFilteredData, kanbanStages]);
+  }, [stageFilteredData, kanbanStages, transferApiStage]);
 
   useEffect(() => {
     setColumnPage((prev) => {
@@ -1182,6 +1214,18 @@ const TransferPortalPage = () => {
                                       </div>
                                     </div>
                                     <div className="flex shrink-0 flex-col items-stretch gap-1">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        className="h-7 w-7 self-end"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void handleOpenLeadAction(row);
+                                        }}
+                                      >
+                                        <Eye className="h-3.5 w-3.5" />
+                                      </Button>
                                       <Button
                                         type="button"
                                         variant="outline"

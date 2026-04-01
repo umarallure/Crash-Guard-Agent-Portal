@@ -508,6 +508,16 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
     return pipelineStageLabelToKey.get(trimmed) ?? trimmed;
   };
 
+  const submittedStageReasonOptions = useMemo(() => {
+    if (!qualifiedStage) return [];
+
+    if (selectedPipeline === "submission_portal" && getQualifiedStageKey(qualifiedStage) === "qualified_missing_info") {
+      return pendingInformationReasonOptions;
+    }
+
+    return getReasonOptions(qualifiedStage);
+  }, [qualifiedStage, selectedPipeline]);
+
   const centerDid = useMemo(() => {
     const match = centers.find((c) => c.lead_vendor === leadVendor);
     return match?.center_did || null;
@@ -813,6 +823,8 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
               if (!matchedTransferStage?.label && getQualifiedStageKey(savedStatus) === 'qualified_missing_info' && existingResult.dq_reason) {
                 setSelectedPipeline("submission_portal");
                 setQualifiedStage(matchedQualifiedStage?.label || qualifiedMissingInfoLabel);
+                setQualifiedStageReason(existingResult.dq_reason);
+              } else if (existingResult.dq_reason) {
                 setQualifiedStageReason(existingResult.dq_reason);
               }
             }
@@ -1346,7 +1358,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
         pipeline_name: selectedPipeline,
         qualified_stage: getQualifiedStageKey(applicationSubmitted === true ? qualifiedStage : status) || null,
         notes: finalNotes,
-        dq_reason: applicationSubmitted === true && qualifiedStage === "Qualified Missing Information" && qualifiedStageReason
+        dq_reason: applicationSubmitted === true && qualifiedStageReason
           ? qualifiedStageReason
           : (showStatusReasonDropdown ? statusReason : null),
         buffer_agent: bufferAgent,
@@ -1985,7 +1997,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                   </div>
                 </div>
 
-                {selectedPipeline === "submission_portal" && getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" && (
+                {submittedStageReasonOptions.length > 0 && (
                   <div>
                     <Label htmlFor="qualifiedStageReason" className="text-base font-semibold">
                       Reason
@@ -1995,10 +2007,11 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                         <SelectValue placeholder="Select reason" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Missing Police Report">Missing Police Report</SelectItem>
-                        <SelectItem value="Medical Report">Medical Report</SelectItem>
-                        <SelectItem value="Insurance Documents">Insurance Documents</SelectItem>
-                        <SelectItem value="Awaiting Report">Awaiting Report</SelectItem>
+                        {submittedStageReasonOptions.map((reason) => (
+                          <SelectItem key={reason} value={reason}>
+                            {reason}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

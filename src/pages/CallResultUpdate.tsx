@@ -8,6 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { LeadInfoCard } from "@/components/LeadInfoCard";
@@ -18,6 +19,7 @@ import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard"
 import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, ShieldAlert, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { TopVerificationProgress } from "@/components/TopVerificationProgress";
+import { DOCUSIGN_TEMPLATE_IDS } from "@/lib/docusignTemplates";
 
 interface Lead {
   id: string;
@@ -529,7 +531,10 @@ const CallResultUpdate = () => {
   const [isDocumentUploadCollapsed, setIsDocumentUploadCollapsed] = useState(false);
   const [openScriptSections, setOpenScriptSections] = useState<Record<string, boolean>>({});
 
-  const docusignTemplateId = import.meta.env.VITE_DOCUSIGN_TEMPLATE_ID as string | undefined;
+  const [contractTemplates, setContractTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [contractRecipientName, setContractRecipientName] = useState("");
 
   const { toast } = useToast();
 
@@ -1073,22 +1078,58 @@ const CallResultUpdate = () => {
           </CardHeader>
           <CollapsibleContent>
             <CardContent className="pt-0">
-              <div className="grid grid-cols-1 items-end gap-4 lg:grid-cols-[1fr_auto]">
+              <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="contractRecipientEmail">Recipient Email</Label>
-                  <Input
-                    id="contractRecipientEmail"
-                    type="email"
-                    value={contractRecipientEmail}
-                    onChange={(e) => setContractRecipientEmail(e.target.value)}
-                    placeholder="name@example.com"
-                  />
-                  {lastEnvelopeId ? (
-                    <div className="text-sm text-muted-foreground">Last envelope: {lastEnvelopeId}</div>
-                  ) : null}
+                  <Label>Contract Template</Label>
+                  {loadingTemplates ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Loading templates...
+                    </div>
+                  ) : (
+                    <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a template" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contractTemplates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
-                <Button onClick={handleSendContract} disabled={sendingContract}>
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="contractRecipientName">Recipient Name</Label>
+                    <Input
+                      id="contractRecipientName"
+                      type="text"
+                      value={contractRecipientName}
+                      onChange={(e) => setContractRecipientName(e.target.value)}
+                      placeholder="Full name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contractRecipientEmail">Recipient Email</Label>
+                    <Input
+                      id="contractRecipientEmail"
+                      type="email"
+                      value={contractRecipientEmail}
+                      onChange={(e) => setContractRecipientEmail(e.target.value)}
+                      placeholder="name@example.com"
+                    />
+                  </div>
+                </div>
+
+                {lastEnvelopeId ? (
+                  <div className="text-sm text-muted-foreground">Last envelope: {lastEnvelopeId}</div>
+                ) : null}
+
+                <Button onClick={handleSendContract} disabled={sendingContract || loadingTemplates || !selectedTemplateId}>
                   {sendingContract ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -1230,6 +1271,33 @@ const CallResultUpdate = () => {
     seedVerifiedFields();
   }, [verificationSessionId]);
 
+  // Fetch template names from DocuSign and seed recipient name from lead
+  useEffect(() => {
+    if (!DOCUSIGN_TEMPLATE_IDS.length) return;
+    setLoadingTemplates(true);
+    Promise.all(
+      DOCUSIGN_TEMPLATE_IDS.map(async (id) => {
+        try {
+          const res = await supabase.functions.invoke<{ name?: string }>("docusign-send-contract", {
+            body: { templateId: id, recipientEmail: "noop@example.com", debug: true },
+          });
+          return { id, name: res.data?.name || id };
+        } catch {
+          return { id, name: id };
+        }
+      })
+    ).then((templates) => {
+      setContractTemplates(templates);
+      setSelectedTemplateId(templates[0]?.id ?? "");
+    }).finally(() => setLoadingTemplates(false));
+  }, []);
+
+  useEffect(() => {
+    if (lead?.customer_full_name && !contractRecipientName) {
+      setContractRecipientName(lead.customer_full_name);
+    }
+  }, [lead?.customer_full_name]);
+
   async function handleSendContract() {
     type SendContractResponse = { envelopeId?: string };
 
@@ -1252,10 +1320,10 @@ const CallResultUpdate = () => {
       return;
     }
 
-    if (!docusignTemplateId) {
+    if (!selectedTemplateId) {
       toast({
         title: "Error",
-        description: "Missing DocuSign template ID (VITE_DOCUSIGN_TEMPLATE_ID)",
+        description: "Please select a contract template",
         variant: "destructive",
       });
       return;
@@ -1267,9 +1335,9 @@ const CallResultUpdate = () => {
         body: {
           submissionId,
           recipientEmail: email,
-          recipientName: lead?.customer_full_name || email,
+          recipientName: (contractRecipientName || "").trim() || email,
           accidentDate: lead?.accident_date || "",
-          templateId: docusignTemplateId,
+          templateId: selectedTemplateId,
         },
       });
 
