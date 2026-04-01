@@ -38,6 +38,9 @@ interface StartVerificationModalProps {
   onVerificationStarted: (sessionId: string) => void;
 }
 
+const NEW_TRANSFER_SOURCE_STATUSES = ["new_transfer", "transfer_api"];
+const PENDING_DISPOSITION_STATUS = "pending_disposition";
+
 export const StartVerificationModal = ({ submissionId, onVerificationStarted }: StartVerificationModalProps) => {
   const [open, setOpen] = useState(false);
   const [licensedAgents, setLicensedAgents] = useState<LicensedAgent[]>([]);
@@ -158,6 +161,16 @@ export const StartVerificationModal = ({ submissionId, onVerificationStarted }: 
 
       if (leadUpdateError) {
         console.warn('Failed to update lead retention flag:', leadUpdateError);
+      }
+
+      const { error: leadStatusError } = await supabase
+        .from('leads')
+        .update({ status: PENDING_DISPOSITION_STATUS })
+        .eq('submission_id', submissionId)
+        .in('status', NEW_TRANSFER_SOURCE_STATUSES);
+
+      if (leadStatusError) {
+        console.warn('Failed to move lead to pending disposition on verification start:', leadStatusError);
       }
 
       // Initialize verification items for both workflows

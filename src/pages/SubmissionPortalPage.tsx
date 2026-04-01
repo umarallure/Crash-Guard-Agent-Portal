@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, RefreshCw, Pencil, StickyNote, UserPlus } from "lucide-react";
+import { Eye, Loader2, RefreshCw, Pencil, StickyNote, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
@@ -900,6 +900,26 @@ const SubmissionPortalPage = () => {
     });
   };
 
+  const handleOpenLeadAction = async (row: SubmissionPortalRow) => {
+    if (!row?.submission_id) return;
+
+    const { data: existingSession } = await supabase
+      .from("verification_sessions")
+      .select("id")
+      .eq("submission_id", row.submission_id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if ((existingSession || []).length > 0) {
+      navigate(`/call-result-update?submissionId=${encodeURIComponent(row.submission_id)}`);
+      return;
+    }
+
+    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+      state: { activeNav: '/submission-portal' },
+    });
+  };
+
   type AgentStatusRow = { user_id: string };
   type AppUserRow = { user_id: string; display_name: string | null; email: string | null };
   type AppUsersQueryClient = {
@@ -1277,7 +1297,7 @@ const SubmissionPortalPage = () => {
                                 <CardContent className="space-y-2 p-2.5">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0 flex-1 space-y-1.5">
-                                      <div className="truncate text-[1.05rem] font-semibold leading-tight tracking-[-0.01em]">
+                                      <div className="text-[0.95rem] font-semibold leading-snug break-words">
                                         {row.insured_name || '—'}
                                       </div>
                                       <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
@@ -1291,14 +1311,27 @@ const SubmissionPortalPage = () => {
                                       </div>
                                     </div>
                                     <div className="flex shrink-0 flex-col items-stretch gap-1">
-                                      <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7 self-end"
-                                        onClick={(e) => { e.stopPropagation(); handleOpenEdit(row); }}
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </Button>
+                                      <div className="flex items-center justify-end gap-1">
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleOpenLeadAction(row);
+                                          }}
+                                        >
+                                          <Eye className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={(e) => { e.stopPropagation(); handleOpenEdit(row); }}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
                                       <Button
                                         variant="outline"
                                         size="sm"

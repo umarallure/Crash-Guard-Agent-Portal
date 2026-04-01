@@ -14,9 +14,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, RefreshCw, StickyNote, UserPlus } from "lucide-react";
+import { Eye, Loader2, RefreshCw, StickyNote, UserPlus } from "lucide-react";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
-import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
@@ -46,6 +45,7 @@ interface CloserPortalRow {
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
+const NEW_TRANSFER_SOURCE_STATUSES = ["new_transfer", "transfer_api"];
 
 const CLOSER_STAGE_KEYS = {
   newTransfer: "new_transfer",
@@ -88,15 +88,14 @@ const CloserPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const datePreset: DateRangePreset = "today";
-  const customStartDate = "";
-  const customEndDate = "";
+  const LAST_24H_MS = 24 * 60 * 60 * 1000;
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
   const [showDuplicates, setShowDuplicates] = useState(true);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [timeTick, setTimeTick] = useState(() => Date.now());
+  const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -211,8 +210,11 @@ const CloserPortalPage = () => {
     const normalizedStatus = normalizeStatusKey(row.status);
     const statusLabel = (toDispositionLabel(row.status) ?? row.status ?? "").trim();
 
+    const hasSession = Boolean(row.submission_id && activeSessionIds.has(row.submission_id));
+
     if (closerStageKeys.has(normalizedStatus)) {
       if (normalizedStatus === CLOSER_STAGE_KEYS.newTransfer) {
+        if (hasSession) return CLOSER_STAGE_KEYS.pendingDisposition;
         const statusTimestamp = getStatusTimestamp(row);
         if (statusTimestamp && timeTick - statusTimestamp >= ONE_HOUR_MS) {
           return CLOSER_STAGE_KEYS.pendingDisposition;
@@ -231,6 +233,7 @@ const CloserPortalPage = () => {
       (transferStageKeys.has(normalizedStatus) && normalizedStatus === "transfer_api");
 
     if (isTransferApiStatus) {
+      if (hasSession) return CLOSER_STAGE_KEYS.pendingDisposition;
       return CLOSER_STAGE_KEYS.newTransfer;
     }
 
@@ -253,9 +256,11 @@ const CloserPortalPage = () => {
   const applyFilters = (records: CloserPortalRow[]) => {
     let filtered = records;
 
-    filtered = filtered.filter((record) =>
-      isDateInRange(record.date || record.created_at || null, datePreset, customStartDate, customEndDate)
-    );
+    const cutoff = Date.now() - LAST_24H_MS;
+    filtered = filtered.filter((record) => {
+      const ts = record.created_at ? new Date(record.created_at).getTime() : NaN;
+      return !Number.isNaN(ts) && ts >= cutoff;
+    });
 
     if (leadVendorFilter !== "__ALL__") {
       filtered = filtered.filter((record) => (record.lead_vendor || "") === leadVendorFilter);
@@ -387,6 +392,17 @@ const CloserPortalPage = () => {
         };
       });
 
+      // Fetch submission_ids that have a verification session started
+      const { data: sessionRows } = await supabase
+        .from("verification_sessions")
+        .select("submission_id");
+      const sessionSet = new Set<string>(
+        ((sessionRows ?? []) as any[])
+          .map((r: any) => (r.submission_id || "").trim())
+          .filter(Boolean)
+      );
+      setActiveSessionIds(sessionSet);
+
       setData(normalizedRows);
       void fetchNoteCounts(normalizedRows);
 
@@ -411,7 +427,7 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, datePreset, customStartDate, customEndDate, leadVendorFilter, statusFilter, searchTerm, showDuplicates, timeTick]);
+  }, [data, leadVendorFilter, statusFilter, searchTerm, showDuplicates, timeTick, activeSessionIds]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
@@ -428,7 +444,7 @@ const CloserPortalPage = () => {
     });
 
     return grouped;
-  }, [filteredData, kanbanStages, timeTick]);
+  }, [filteredData, kanbanStages, timeTick, activeSessionIds]);
 
   useEffect(() => {
     setColumnPage((prev) => {
@@ -454,6 +470,26 @@ const CloserPortalPage = () => {
     });
   };
 
+  const handleOpenLeadAction = async (row: CloserPortalRow) => {
+    if (!row?.submission_id) return;
+
+    const { data: existingSession } = await supabase
+      .from("verification_sessions")
+      .select("id")
+      .eq("submission_id", row.submission_id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if ((existingSession || []).length > 0) {
+      navigate(`/call-result-update?submissionId=${encodeURIComponent(row.submission_id)}`);
+      return;
+    }
+
+    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+      state: { activeNav: "/closer-portal" },
+    });
+  };
+
   type AgentStatusRow = { user_id: string };
   type AppUserRow = { user_id: string; display_name: string | null; email: string | null };
   type AppUsersQueryClient = {
@@ -467,6 +503,10 @@ const CloserPortalPage = () => {
   const fetchAgents = async () => {
     setFetchingAgents(true);
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       const { data: agentStatus } = await supabase
         .from("agent_status")
         .select("user_id")
@@ -488,6 +528,13 @@ const CloserPortalPage = () => {
       }
 
       setLicensedAgents(profiles);
+
+      if (user?.id) {
+        const matchingCloser = profiles.find((profile) => profile.user_id === user.id);
+        if (matchingCloser) {
+          setClaimLicensedAgent(matchingCloser.user_id);
+        }
+      }
     } catch (error) {
       console.log(error);
     } finally {
@@ -586,6 +633,16 @@ const CloserPortalPage = () => {
         .from("verification_sessions")
         .update({ status: "in_progress", licensed_agent_id: claimLicensedAgent })
         .eq("id", claimSessionId);
+
+      const { error: leadStatusError } = await supabase
+        .from("leads")
+        .update({ status: CLOSER_STAGE_KEYS.pendingDisposition })
+        .eq("submission_id", claimSubmissionId)
+        .in("status", NEW_TRANSFER_SOURCE_STATUSES);
+
+      if (leadStatusError) {
+        console.warn("Failed to move lead to pending disposition on claim:", leadStatusError);
+      }
 
       const agentName = licensedAgents.find((a) => a.user_id === claimLicensedAgent)?.display_name || "Licensed Agent";
       const { customerName, leadVendor } = await getLeadInfo(claimSubmissionId!);
@@ -780,18 +837,31 @@ const CloserPortalPage = () => {
                                         </div>
                                       </div>
                                     </div>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 shrink-0 self-start gap-1 border-primary/40 px-2 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openClaimModal(row.submission_id);
-                                      }}
-                                    >
-                                      <UserPlus className="h-3 w-3" />
-                                      Claim
-                                    </Button>
+                                    <div className="flex shrink-0 flex-col items-stretch gap-1">
+                                      <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="h-7 w-7 self-end"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void handleOpenLeadAction(row);
+                                        }}
+                                      >
+                                        <Eye className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 shrink-0 self-end gap-1 border-primary/40 px-2 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openClaimModal(row.submission_id);
+                                        }}
+                                      >
+                                        <UserPlus className="h-3 w-3" />
+                                        Claim
+                                      </Button>
+                                    </div>
                                   </div>
 
                                   <div className="flex flex-col gap-1.5 pt-0.5">
