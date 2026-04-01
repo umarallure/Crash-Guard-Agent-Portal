@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeftRight, Eye, Loader2, Pencil, RefreshCw, Users, StickyNote, UserPlus } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Eye, Loader2, Pencil, RefreshCw, Users, StickyNote, UserPlus } from "lucide-react";
 import { usePipelineStages, type PipelineStage } from "@/hooks/usePipelineStages";
 import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
 import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
@@ -64,6 +64,12 @@ const TRANSFER_HANDOFF_STAGE_KEY = "retainer_signed";
 
 interface ColumnInfoDetail { label: string; value: string; }
 interface ColumnInfo { description: string; details?: ColumnInfoDetail[]; }
+
+const TRANSFER_STATS_STAGE_KEYS = {
+  newTransfers: ["transfer_api"],
+  needsFollowUp: ["incomplete_transfer", "needs_bpo_callback", "pending_information"],
+  returnedOrDq: ["returned_to_center_dq"],
+} as const;
 
 const getColumnInfo = (label: string): ColumnInfo => {
   const l = label.toLowerCase();
@@ -482,14 +488,67 @@ const TransferPortalPage = () => {
   const endIndex = startIndex + itemsPerPage;
   const currentPageData = stageFilteredData.slice(startIndex, endIndex);
 
-  const zapierTransfers = useMemo(
-    () => stageFilteredData.filter((row) => row.source_type === 'zapier').length,
-    [stageFilteredData]
-  );
+  const transferStats = useMemo(() => {
+    const rows = filteredData;
+    const hasStageKey = (row: TransferPortalRow, allowedKeys: readonly string[]) => {
+      const stageKey = deriveStageKey(row);
+      return allowedKeys.some((allowedKey) =>
+        allowedKey === "returned_to_center_dq"
+          ? stageKey.startsWith("returned_to_center")
+          : stageKey === allowedKey
+      );
+    };
 
-  const callbackTransfers = useMemo(
-    () => stageFilteredData.filter((row) => row.source_type === 'callback').length,
-    [stageFilteredData]
+    return {
+      totalTransfers: rows.length,
+      newTransfers: rows.filter((row) => hasStageKey(row, TRANSFER_STATS_STAGE_KEYS.newTransfers)).length,
+      needsFollowUp: rows.filter((row) => hasStageKey(row, TRANSFER_STATS_STAGE_KEYS.needsFollowUp)).length,
+      returnedOrDq: rows.filter((row) => hasStageKey(row, TRANSFER_STATS_STAGE_KEYS.returnedOrDq)).length,
+    };
+  }, [filteredData]);
+
+  const stageLabelForKey = useMemo(() => {
+    const map = new Map<string, string>();
+    dbTransferStages.forEach((stage) => {
+      const key = (stage.key || "").trim();
+      const label = (stage.label || "").trim();
+      if (key && label) {
+        map.set(key, label);
+      }
+    });
+    return map;
+  }, [dbTransferStages]);
+
+  const transferStatInfo = useMemo(
+    () => ({
+      totalTransfers: {
+        description: "All leads that currently belong to the transfer pipeline after the active page filters are applied.",
+        details: [
+          { label: "Scope", value: "All transfer stages" },
+        ],
+      },
+      newTransfers: {
+        description: "Fresh inbound transfers that just landed in the first transfer stage and still need first action.",
+        details: [
+          { label: "Stage", value: stageLabelForKey.get("transfer_api") ?? "Transfer API" },
+        ],
+      },
+      needsFollowUp: {
+        description: "Leads still in the active transfer work queue. These are the cases that need follow-up or another action before they can move forward.",
+        details: [
+          { label: "Stage 1", value: stageLabelForKey.get("incomplete_transfer") ?? "Incomplete Transfer" },
+          { label: "Stage 2", value: stageLabelForKey.get("needs_bpo_callback") ?? "Needs BPO Callback" },
+          { label: "Stage 3", value: stageLabelForKey.get("pending_information") ?? "Internal Callback" },
+        ],
+      },
+      returnedOrDq: {
+        description: "Leads sent back or disqualified from the transfer process. These no longer belong in the active transfer working queue.",
+        details: [
+          { label: "Stage", value: stageLabelForKey.get("returned_to_center_dq") ?? "Returned To Center - DQ" },
+        ],
+      },
+    }),
+    [stageLabelForKey]
   );
 
   const handleOpenEdit = (row: TransferPortalRow) => {
@@ -961,38 +1020,53 @@ const TransferPortalPage = () => {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                   Total Transfers
+                  <ColumnInfoPopover info={transferStatInfo.totalTransfers} />
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex items-center justify-between">
-                <div className="text-3xl font-semibold">{allTimeTransfers}</div>
+                <div className="text-3xl font-semibold">{transferStats.totalTransfers}</div>
                 <ArrowLeftRight className="h-10 w-10 text-primary" />
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Zapier Transfers
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  New Transfers
+                  <ColumnInfoPopover info={transferStatInfo.newTransfers} />
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex items-center justify-between">
-                <div className="text-3xl font-semibold">{zapierTransfers}</div>
+                <div className="text-3xl font-semibold">{transferStats.newTransfers}</div>
                 <Users className="h-10 w-10 text-primary" />
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Callback Transfers
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  Needs Follow-Up
+                  <ColumnInfoPopover info={transferStatInfo.needsFollowUp} />
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex items-center justify-between">
-                <div className="text-3xl font-semibold">{callbackTransfers}</div>
-                <Users className="h-10 w-10 text-primary" />
+                <div className="text-3xl font-semibold">{transferStats.needsFollowUp}</div>
+                <UserPlus className="h-10 w-10 text-primary" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  Returned / DQ
+                  <ColumnInfoPopover info={transferStatInfo.returnedOrDq} />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between">
+                <div className="text-3xl font-semibold">{transferStats.returnedOrDq}</div>
+                <AlertTriangle className="h-10 w-10 text-primary" />
               </CardContent>
             </Card>
           </div>
@@ -1214,27 +1288,29 @@ const TransferPortalPage = () => {
                                       </div>
                                     </div>
                                     <div className="flex shrink-0 flex-col items-stretch gap-1">
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7 self-end"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void handleOpenLeadAction(row);
-                                        }}
-                                      >
-                                        <Eye className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7 self-end"
-                                        onClick={(e) => { e.stopPropagation(); handleOpenEdit(row); }}
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </Button>
+                                      <div className="flex items-center justify-end gap-1">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleOpenLeadAction(row);
+                                          }}
+                                        >
+                                          <Eye className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={(e) => { e.stopPropagation(); handleOpenEdit(row); }}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
                                       <Button
                                         type="button"
                                         variant="outline"
