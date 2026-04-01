@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Eye, Loader2, RefreshCw, Pencil, StickyNote, UserPlus } from "lucide-react";
+import { ClipboardList, Eye, FileText, Loader2, Pencil, RefreshCw, Scale, StickyNote, UserPlus, Wallet } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
@@ -90,6 +90,20 @@ interface ColumnInfo {
   description: string;
   details?: ColumnInfoDetail[];
 }
+
+const SUBMISSION_STATS_STAGE_KEYS = {
+  intakeQueue: ["retainer_signed", "qualified_missing_info"],
+  qualifiedAndReview: [
+    "qualified_tier_1",
+    "qualified_tier_2",
+    "qualified_tier_3",
+    "qualified_tier_4",
+    "attorney_review",
+    "attorney_rejected",
+    "attorney_approved",
+  ],
+  paymentQueue: ["qualified_payable", "paid_to_agency", "paid_to_bpo"],
+} as const;
 
 const getColumnInfo = (label: string): ColumnInfo => {
   const l = label.toLowerCase();
@@ -340,6 +354,58 @@ const SubmissionPortalPage = () => {
   const [claimLead, setClaimLead] = useState<any>(null);
   const [licensedAgents, setLicensedAgents] = useState<any[]>([]);
   const [fetchingAgents, setFetchingAgents] = useState(false);
+
+  const boardVisibleRows = useMemo(() => {
+    return filteredData.filter((row) => Boolean(deriveStageKey(row)));
+  }, [filteredData, kanbanStages]);
+
+  const submissionStats = useMemo(() => {
+    const rows = boardVisibleRows;
+    const hasStageKey = (row: SubmissionPortalRow, allowedKeys: readonly string[]) => {
+      const stageKey = deriveStageKey(row);
+      return allowedKeys.includes(stageKey);
+    };
+
+    return {
+      totalCases: rows.length,
+      intakeQueue: rows.filter((row) => hasStageKey(row, SUBMISSION_STATS_STAGE_KEYS.intakeQueue)).length,
+      qualifiedAndReview: rows.filter((row) => hasStageKey(row, SUBMISSION_STATS_STAGE_KEYS.qualifiedAndReview)).length,
+      paymentQueue: rows.filter((row) => hasStageKey(row, SUBMISSION_STATS_STAGE_KEYS.paymentQueue)).length,
+    };
+  }, [boardVisibleRows, kanbanStages, dbSubmissionStages]);
+
+  const submissionStatInfo = useMemo(
+    () => ({
+      totalCases: {
+        description: "All leads currently inside the submission pipeline after the active page filters are applied.",
+        details: [{ label: "Scope", value: "All submission stages" }],
+      },
+      intakeQueue: {
+        description: "Leads still in early submission handling. These need intake completion before they can be fully qualified or submitted forward.",
+        details: [
+          { label: "Stage 1", value: stageLabelByKey["retainer_signed"] ?? "Retainer Signed" },
+          { label: "Stage 2", value: stageLabelByKey["qualified_missing_info"] ?? "Signed: Missing Information" },
+        ],
+      },
+      qualifiedAndReview: {
+        description: "Cases that have been tiered or are in attorney-side review and decision stages.",
+        details: [
+          { label: "Tiering", value: "Tier 1 to Tier 4" },
+          { label: "Review", value: stageLabelByKey["attorney_review"] ?? "Attorney Review" },
+          { label: "Decision", value: `${stageLabelByKey["attorney_approved"] ?? "Attorney Approved"} / ${stageLabelByKey["attorney_rejected"] ?? "Attorney Rejected"}` },
+        ],
+      },
+      paymentQueue: {
+        description: "Cases that are already payable or in final payment stages after attorney-side approval is complete.",
+        details: [
+          { label: "Stage 1", value: stageLabelByKey["qualified_payable"] ?? "Qualified/Payable" },
+          { label: "Stage 2", value: stageLabelByKey["paid_to_agency"] ?? "Paid to Agency" },
+          { label: "Stage 3", value: stageLabelByKey["paid_to_bpo"] ?? "Paid to BPO" },
+        ],
+      },
+    }),
+    [stageLabelByKey]
+  );
 
   const { toast } = useToast();
   const { attorneys } = useAttorneys();
@@ -1129,6 +1195,60 @@ const SubmissionPortalPage = () => {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto space-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  Total Cases
+                  <ColumnInfoPopover info={submissionStatInfo.totalCases} />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between">
+                <div className="text-3xl font-semibold">{submissionStats.totalCases}</div>
+                <FileText className="h-10 w-10 text-primary" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  Intake Queue
+                  <ColumnInfoPopover info={submissionStatInfo.intakeQueue} />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between">
+                <div className="text-3xl font-semibold">{submissionStats.intakeQueue}</div>
+                <ClipboardList className="h-10 w-10 text-primary" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  Qualified & Review
+                  <ColumnInfoPopover info={submissionStatInfo.qualifiedAndReview} />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between">
+                <div className="text-3xl font-semibold">{submissionStats.qualifiedAndReview}</div>
+                <Scale className="h-10 w-10 text-primary" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  Payment Queue
+                  <ColumnInfoPopover info={submissionStatInfo.paymentQueue} />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between">
+                <div className="text-3xl font-semibold">{submissionStats.paymentQueue}</div>
+                <Wallet className="h-10 w-10 text-primary" />
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-1 flex-wrap items-center gap-3">
               <Input
@@ -1212,7 +1332,7 @@ const SubmissionPortalPage = () => {
 
             <div className="flex items-center gap-3">
               <Badge variant="secondary" className="px-3 py-1">
-                {filteredData.length} records
+                {boardVisibleRows.length} records
               </Badge>
               <Button onClick={handleRefresh} disabled={refreshing}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />

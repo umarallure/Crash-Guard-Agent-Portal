@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { BriefcaseBusiness, Building2, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,64 @@ type OrderRow = {
   quota_filled?: number;
 };
 
+type AttorneyAccountType = 'broker_lawyer' | 'internal_lawyer' | null;
+type AccountCategoryFilter = 'all' | 'broker_lawyer' | 'internal_lawyer';
+
+type MapPalette = {
+  none: string;
+  light: string;
+  moderate: string;
+  heavy: string;
+};
+
+const ACCOUNT_CATEGORY_META: Record<
+  AccountCategoryFilter,
+  {
+    label: string;
+    description: string;
+    palette: MapPalette;
+    activeClasses: string;
+    icon: typeof Building2;
+  }
+> = {
+  all: {
+    label: 'All Accounts',
+    description: 'Show orders from every attorney profile, regardless of account category.',
+    palette: {
+      none: '#e5e7eb',
+      light: '#22c55e',
+      moderate: '#eab308',
+      heavy: '#ef4444',
+    },
+    activeClasses: 'border-slate-300 bg-slate-50 text-slate-900',
+    icon: Building2,
+  },
+  broker_lawyer: {
+    label: 'Broker Lawyers',
+    description: 'Show only orders placed by broker-lawyer profiles.',
+    palette: {
+      none: '#e5e7eb',
+      light: '#38bdf8',
+      moderate: '#6366f1',
+      heavy: '#8b5cf6',
+    },
+    activeClasses: 'border-sky-300 bg-sky-50 text-sky-900',
+    icon: BriefcaseBusiness,
+  },
+  internal_lawyer: {
+    label: 'Internal Lawyers',
+    description: 'Show only orders placed by internal-lawyer profiles.',
+    palette: {
+      none: '#e5e7eb',
+      light: '#22c55e',
+      moderate: '#f59e0b',
+      heavy: '#ef4444',
+    },
+    activeClasses: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+    icon: Building2,
+  },
+};
+
 const MAP_PATH_SELECTOR = 'path[data-id], path[id]';
 
 const toCompetitionStatus = (sales: number): CompetitionStatus => {
@@ -47,11 +105,11 @@ const toCompetitionStatus = (sales: number): CompetitionStatus => {
   return 'heavy';
 };
 
-const getStatusColor = (status: CompetitionStatus) => {
-  if (status === 'none') return '#e5e7eb';
-  if (status === 'light') return '#22c55e';
-  if (status === 'moderate') return '#eab308';
-  return '#ef4444';
+const getStatusColor = (status: CompetitionStatus, palette: MapPalette) => {
+  if (status === 'none') return palette.none;
+  if (status === 'light') return palette.light;
+  if (status === 'moderate') return palette.moderate;
+  return palette.heavy;
 };
 
 const getStatusLabel = (status: CompetitionStatus) => {
@@ -94,6 +152,7 @@ const SalesMapPage = () => {
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
   const [selectedStateCode, setSelectedStateCode] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedAccountCategory, setSelectedAccountCategory] = useState<AccountCategoryFilter>('all');
 
   const mapRootRef = useRef<HTMLDivElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
@@ -103,6 +162,8 @@ const SalesMapPage = () => {
   const selectedStateCodeRef = useRef<string | null>(null);
 
   const navigate = useNavigate();
+  const selectedAccountMeta = ACCOUNT_CATEGORY_META[selectedAccountCategory];
+  const mapPalette = selectedAccountMeta.palette;
 
   const { attorneys } = useAttorneys();
   const attorneyLabelById = useMemo(() => {
@@ -233,7 +294,7 @@ const SalesMapPage = () => {
       if (!code) return;
 
       const state = stateByCodeRef.current.get(code);
-      const fill = state ? getStatusColor(state.status) : '#e5e7eb';
+      const fill = state ? getStatusColor(state.status, mapPalette) : mapPalette.none;
 
       const selected = selectedStateCodeRef.current;
       const isSelected = selected ? selected === code : false;
@@ -253,7 +314,7 @@ const SalesMapPage = () => {
     });
 
     applyStateLabels();
-  }, [applyStateLabels]);
+  }, [applyStateLabels, mapPalette]);
 
   const refreshCounts = useCallback(async () => {
     setLoading(true);
@@ -284,12 +345,36 @@ const SalesMapPage = () => {
         throw error instanceof Error ? error : new Error(String(error));
       }
 
+      const attorneyProfileResponse = await (supabase as any)
+        .from('attorney_profiles')
+        .select('user_id, account_type');
+
+      if (attorneyProfileResponse.error) {
+        throw attorneyProfileResponse.error instanceof Error
+          ? attorneyProfileResponse.error
+          : new Error(String(attorneyProfileResponse.error));
+      }
+
+      const accountTypeByUser = new Map<string, AttorneyAccountType>();
+      ((attorneyProfileResponse.data ?? []) as Array<{ user_id?: string; account_type?: AttorneyAccountType }>).forEach((profile) => {
+        const userId = String(profile.user_id || '').trim();
+        if (!userId) return;
+        accountTypeByUser.set(userId, profile.account_type ?? null);
+      });
+
       const rows = (data ?? []) as OrderRow[];
-      setAllOrders(rows);
-      setTotalOrders(rows.length);
+      const filteredRows = rows.filter((row) => {
+        if (selectedAccountCategory === 'all') return true;
+        const lawyerId = String(row.lawyer_id || '').trim();
+        if (!lawyerId) return false;
+        return accountTypeByUser.get(lawyerId) === selectedAccountCategory;
+      });
+
+      setAllOrders(filteredRows);
+      setTotalOrders(filteredRows.length);
 
       const counts = new Map<string, number>();
-      for (const row of rows) {
+      for (const row of filteredRows) {
         const targets = Array.isArray(row.target_states) ? row.target_states : [];
         for (const s of targets) {
           const code = String(s || '').trim().toUpperCase();
@@ -325,7 +410,7 @@ const SalesMapPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedAccountCategory]);
 
   useEffect(() => {
     const run = async () => {
@@ -338,6 +423,11 @@ const SalesMapPage = () => {
 
     void run();
   }, [mountSvg, refreshCounts]);
+
+  useEffect(() => {
+    if (!mountDoneRef.current) return;
+    void refreshCounts();
+  }, [selectedAccountCategory, refreshCounts]);
 
   useEffect(() => {
     if (states.length === 0) return;
@@ -441,19 +531,43 @@ const SalesMapPage = () => {
           <h2 className="text-xl font-semibold">Sales Map</h2>
           <p className="text-sm text-muted-foreground">Submitted orders by state</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            void (async () => {
-              await refreshCounts();
-              applyMapColors();
-            })();
-          }}
-          disabled={loading}
-        >
-          <RefreshCw className={loading ? 'mr-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4'} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-xl border border-border bg-card p-1">
+            {(['all', 'broker_lawyer', 'internal_lawyer'] as AccountCategoryFilter[]).map((category) => {
+              const meta = ACCOUNT_CATEGORY_META[category];
+              const Icon = meta.icon;
+              const isActive = selectedAccountCategory === category;
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setSelectedAccountCategory(category)}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    isActive
+                      ? meta.activeClasses
+                      : 'text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void (async () => {
+                await refreshCounts();
+                applyMapColors();
+              })();
+            }}
+            disabled={loading}
+          >
+            <RefreshCw className={loading ? 'mr-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4'} />
+            Refresh
+          </Button>
+        </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
@@ -463,7 +577,7 @@ const SalesMapPage = () => {
           <CardContent className="flex items-end justify-between">
             <div>
               <div className="text-3xl font-semibold">{totalOrders}</div>
-              <div className="mt-1 text-sm text-muted-foreground">All States</div>
+              <div className="mt-1 text-sm text-muted-foreground">{selectedAccountMeta.label}</div>
             </div>
           </CardContent>
         </Card>
@@ -472,32 +586,33 @@ const SalesMapPage = () => {
           <CardContent className="p-4">
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium">Legend</div>
+              <div className="text-xs text-muted-foreground">{selectedAccountMeta.description}</div>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex items-start gap-2">
-                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: '#e5e7eb' }} />
+                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: mapPalette.none }} />
                 <div className="leading-tight">
                   <div className="text-sm font-medium">No orders</div>
                   <div className="text-xs text-muted-foreground">0 submitted orders</div>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: '#22c55e' }} />
+                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: mapPalette.light }} />
                 <div className="leading-tight">
                   <div className="text-sm font-medium">Low volume</div>
                   <div className="text-xs text-muted-foreground">1–5 submitted orders</div>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: '#eab308' }} />
+                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: mapPalette.moderate }} />
                 <div className="leading-tight">
                   <div className="text-sm font-medium">Moderate volume</div>
                   <div className="text-xs text-muted-foreground">6–10 submitted orders</div>
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: '#ef4444' }} />
+                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: mapPalette.heavy }} />
                 <div className="leading-tight">
                   <div className="text-sm font-medium">High volume</div>
                   <div className="text-xs text-muted-foreground">11+ submitted orders</div>
@@ -542,17 +657,24 @@ const SalesMapPage = () => {
                     className={
                       tooltip.state.status === 'none'
                         ? 'bg-gray-100 text-gray-800'
-                        : tooltip.state.status === 'light'
-                        ? 'bg-green-100 text-green-800'
-                        : tooltip.state.status === 'moderate'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
+                        : selectedAccountCategory === 'broker_lawyer'
+                          ? tooltip.state.status === 'light'
+                            ? 'bg-sky-100 text-sky-800'
+                            : tooltip.state.status === 'moderate'
+                              ? 'bg-indigo-100 text-indigo-800'
+                              : 'bg-violet-100 text-violet-800'
+                          : tooltip.state.status === 'light'
+                            ? 'bg-green-100 text-green-800'
+                            : tooltip.state.status === 'moderate'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-red-100 text-red-800'
                     }
                   >
                     {getStatusLabel(tooltip.state.status)}
                   </Badge>
                 </div>
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  <div>Category: {selectedAccountMeta.label}</div>
                   <div>Orders: {tooltip.state.sales}</div>
                 </div>
               </div>
