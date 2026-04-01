@@ -378,7 +378,7 @@ const App = () => (
               path="/lawyer-requirements" 
               element={
                 <ProtectedRoute>
-                  <AppShell title="Lawyer Requirements">
+                  <AppShell title="Lawyers Criteria">
                     <LawyerRequirements />
                   </AppShell>
                 </ProtectedRoute>

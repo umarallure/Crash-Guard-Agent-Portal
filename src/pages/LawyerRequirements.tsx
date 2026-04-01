@@ -8,15 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Save, Plus, Trash2, ChevronDown, ChevronUp, Edit } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Save, Plus, Trash2, ChevronDown, ChevronUp, Edit, ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +29,7 @@ interface LawyerRequirement {
   id: string;
   attorney_id: string | null;
   attorney_name: string;
+  lawyer_type: string | null;
   doc_requirement: boolean;
   sol: string | null;
   states: string[];
@@ -48,7 +41,46 @@ interface LawyerRequirement {
   submission_link: string | null;
 }
 
-const generateId = () => Math.random().toString(36).substring(2, 11);
+const formatLawyerTypeLabel = (value: string | null | undefined) => {
+  if (value === "internal_lawyer") return "Internal Lawyer";
+  if (value === "broker_lawyer") return "Broker Lawyer";
+  return "Not Set";
+};
+
+const getLawyerTypeClasses = (value: string | null | undefined) => {
+  if (value === "internal_lawyer") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (value === "broker_lawyer") {
+    return "border-sky-200 bg-sky-50 text-sky-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+};
+
+const formatRequirementLabel = (value: string | boolean | null | undefined) => {
+  if (value === true) return "Yes";
+  if (value === false) return "No";
+  if (value === "yes") return "Yes";
+  if (value === "no") return "No";
+  if (!value) return "Not Set";
+  return String(value);
+};
+
+const getRequirementBadgeClasses = (value: string | boolean | null | undefined) => {
+  const normalized = typeof value === "string" ? value.toLowerCase() : value;
+
+  if (normalized === true || normalized === "yes") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (normalized === false || normalized === "no") {
+    return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-700";
+};
 
 export default function LawyerRequirements() {
   const [requirements, setRequirements] = useState<LawyerRequirement[]>([]);
@@ -63,6 +95,7 @@ export default function LawyerRequirements() {
   const [formData, setFormData] = useState({
     attorney_id: "",
     attorney_name: "",
+    lawyer_type: "" as string,
     doc_requirement: false,
     sol: "" as string,
     states: [] as string[],
@@ -99,6 +132,7 @@ export default function LawyerRequirements() {
     setFormData({
       attorney_id: "",
       attorney_name: "",
+      lawyer_type: "",
       doc_requirement: false,
       sol: "",
       states: [],
@@ -117,6 +151,7 @@ export default function LawyerRequirements() {
     setFormData({
       attorney_id: req.attorney_id || "",
       attorney_name: req.attorney_name,
+      lawyer_type: req.lawyer_type || "",
       doc_requirement: req.doc_requirement || false,
       sol: req.sol || "",
       states: req.states || [],
@@ -145,6 +180,11 @@ export default function LawyerRequirements() {
       return;
     }
 
+    if (!formData.lawyer_type) {
+      toast.error("Please select lawyer type");
+      return;
+    }
+
     if (formData.states.length === 0) {
       toast.error("Please select at least one state");
       return;
@@ -153,6 +193,7 @@ export default function LawyerRequirements() {
     const payload = {
       attorney_id: formData.attorney_id || null,
       attorney_name: formData.attorney_name,
+      lawyer_type: formData.lawyer_type,
       doc_requirement: formData.doc_requirement,
       sol: formData.sol || null,
       states: formData.states,
@@ -222,9 +263,9 @@ export default function LawyerRequirements() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold">Lawyer Requirements</h1>
+          <h1 className="text-2xl font-bold">Lawyers Criteria</h1>
           <p className="text-muted-foreground">
-            Manage attorney requirements and criteria
+            Manage lawyer criteria and requirements
           </p>
         </div>
         <Button onClick={openNewDialog}>
@@ -256,6 +297,9 @@ export default function LawyerRequirements() {
                     <ChevronDown className="h-5 w-5" />
                   )}
                   <CardTitle className="text-lg">{attorneyName}</CardTitle>
+                  <Badge variant="outline">
+                    {formatLawyerTypeLabel(reqs[0]?.lawyer_type)}
+                  </Badge>
                   <Badge variant="secondary">{reqs.length} configuration(s)</Badge>
                 </div>
                 <Button
@@ -272,87 +316,114 @@ export default function LawyerRequirements() {
               </CardHeader>
               {expandedAttorney === attorneyName && (
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>States</TableHead>
-                        <TableHead>Doc Req</TableHead>
-                        <TableHead>SOL</TableHead>
-                        <TableHead>Police Rpt</TableHead>
-                        <TableHead>Insurance Rpt</TableHead>
-                        <TableHead>Medical Rpt</TableHead>
-                        <TableHead>Driver ID</TableHead>
-                        <TableHead>DID #</TableHead>
-                        <TableHead>Submission Link</TableHead>
-                        <TableHead className="w-20">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {reqs.map((req) => (
-                        <TableRow key={req.id}>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {(req.states || []).map((state) => (
-                                <Badge key={state} variant="outline">
-                                  {state}
-                                </Badge>
-                              ))}
+                  <div className="space-y-4">
+                    {reqs.map((req) => (
+                      <div
+                        key={req.id}
+                        className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/80 p-5 shadow-sm"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className={getLawyerTypeClasses(req.lawyer_type)}>
+                            {formatLawyerTypeLabel(req.lawyer_type)}
+                          </Badge>
+                          <Badge className={getRequirementBadgeClasses(req.doc_requirement)}>
+                            Doc Requirement: {formatRequirementLabel(req.doc_requirement)}
+                          </Badge>
+                          <Badge variant="outline" className="bg-white">
+                            SOL: {req.sol || "Not Set"}
+                          </Badge>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="rounded-xl border bg-white p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              Coverage States
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={req.doc_requirement ? "default" : "secondary"}>
-                              {req.doc_requirement ? "Yes" : "No"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{req.sol || "-"}</TableCell>
-                          <TableCell>
-                            <Badge variant={req.police_report === "yes" ? "default" : "secondary"}>
-                              {req.police_report}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={req.insurance_report === "yes" ? "default" : "secondary"}>
-                              {req.insurance_report}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={req.medical_report === "yes" ? "default" : "secondary"}>
-                              {req.medical_report}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={req.driver_id === "yes" ? "default" : "secondary"}>
-                              {req.driver_id}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{req.did_number || "-"}</TableCell>
-                          <TableCell>
-                            {req.submission_link ? (
-                              <a
-                                href={req.submission_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:underline"
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {(req.states || []).length > 0 ? (
+                                (req.states || []).map((state) => (
+                                  <Badge key={state} variant="outline" className="bg-white">
+                                    {state}
+                                  </Badge>
+                                ))
+                              ) : (
+                                <span className="text-sm text-muted-foreground">No states selected</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border bg-white p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              Reports & Driver ID
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Badge className={getRequirementBadgeClasses(req.police_report)}>
+                                Police: {formatRequirementLabel(req.police_report)}
+                              </Badge>
+                              <Badge className={getRequirementBadgeClasses(req.insurance_report)}>
+                                Insurance: {formatRequirementLabel(req.insurance_report)}
+                              </Badge>
+                              <Badge className={getRequirementBadgeClasses(req.medical_report)}>
+                                Medical: {formatRequirementLabel(req.medical_report)}
+                              </Badge>
+                              <Badge className={getRequirementBadgeClasses(req.driver_id)}>
+                                Driver ID: {formatRequirementLabel(req.driver_id)}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border bg-white p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              Routing Details
+                            </div>
+                            <div className="mt-3 space-y-3">
+                              <div>
+                                <div className="text-xs text-muted-foreground">DID Number</div>
+                                <div className="text-sm font-medium text-foreground">
+                                  {req.did_number || "Not Set"}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-muted-foreground">Submission Link</div>
+                                {req.submission_link ? (
+                                  <a
+                                    href={req.submission_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
+                                  >
+                                    Open Link
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </a>
+                                ) : (
+                                  <div className="text-sm text-muted-foreground">Not Set</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border bg-white p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              Actions
+                            </div>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <div className="text-sm text-muted-foreground">
+                                Remove this configuration
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                                onClick={() => handleDelete(req.id)}
                               >
-                                Link
-                              </a>
-                            ) : (
-                              "-"
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(req.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               )}
             </Card>
@@ -364,10 +435,10 @@ export default function LawyerRequirements() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingRequirement ? "Edit Attorney Requirements" : "Add Attorney Requirements"}
+              {editingRequirement ? "Edit Lawyer Criteria" : "Add Lawyer Criteria"}
             </DialogTitle>
             <DialogDescription>
-              Configure requirements for an attorney
+              Configure criteria for a lawyer
             </DialogDescription>
           </DialogHeader>
 
@@ -383,6 +454,24 @@ export default function LawyerRequirements() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="lawyer_type">Lawyer Type</Label>
+                <Select
+                  value={formData.lawyer_type}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, lawyer_type: value }))}
+                >
+                  <SelectTrigger id="lawyer_type">
+                    <SelectValue placeholder="Select lawyer type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="internal_lawyer">Internal Lawyer</SelectItem>
+                    <SelectItem value="broker_lawyer">Broker Lawyer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label htmlFor="did_number">DID Number</Label>
                 <Input
                   id="did_number"
@@ -391,9 +480,6 @@ export default function LawyerRequirements() {
                   placeholder="e.g., 555-123-4567"
                 />
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Document Requirement</Label>
                 <div className="flex items-center space-x-2">
@@ -409,6 +495,9 @@ export default function LawyerRequirements() {
                   </Label>
                 </div>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="sol">SOL (Statute of Limitations)</Label>
                 <Select

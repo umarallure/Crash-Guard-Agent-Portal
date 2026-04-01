@@ -491,6 +491,7 @@ const LeadDetailsPage = () => {
                     { label: "Customer Name", value: displayValue(lead.customer_full_name) },
                     { label: "Phone", value: displayValue(lead.phone_number) },
                     { label: "Email", value: displayValue(lead.email) },
+                    { label: "State", value: displayValue(lead.state) },
                     {
                       label: "Address",
                       value:

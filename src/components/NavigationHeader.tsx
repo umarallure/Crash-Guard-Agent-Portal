@@ -173,7 +173,7 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigate('/lawyer-requirements')}>
                           <Scale className="mr-2 h-4 w-4" />
-                          Lawyer Requirements
+                          Lawyers Criteria
                         </DropdownMenuItem>
                       </>
                     )}
