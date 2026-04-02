@@ -957,6 +957,9 @@ const DailyDealFlowLeadDetailsPage = () => {
                       onAssigned={({ lawyerId }) => {
                         setAssignedAttorneyId(lawyerId)
                       }}
+                      onUnassigned={() => {
+                        setAssignedAttorneyId("__NONE__")
+                      }}
                     />
                   </div>
                 ) : null}

@@ -4,14 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
-import { Upload, CheckCircle2, XCircle, FileText, Image as ImageIcon, Loader2, RefreshCw, ExternalLink } from "lucide-react";
+import { Upload, CheckCircle2, XCircle, FileText, Image as ImageIcon, Loader2, RefreshCw, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { DocumentUploadModal } from "./DocumentUploadModal";
 
 interface DocumentUploadCardProps {
   submissionId: string;
   customerPhoneNumber?: string | null;
   embedded?: boolean;
+  onUploadedDocumentsToggle?: (open: boolean) => void;
 }
 
 type DocumentCategory = "police_report" | "insurance_document" | "medical_report";
@@ -90,13 +92,19 @@ const documentCategoryByFolder: Record<string, DocumentCategory> = {
   medical_reports: "medical_report",
 };
 
-export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded = false }: DocumentUploadCardProps) {
+export function DocumentUploadCard({
+  submissionId,
+  customerPhoneNumber,
+  embedded = false,
+  onUploadedDocumentsToggle,
+}: DocumentUploadCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [generatedPasscode, setGeneratedPasscode] = useState<string>("");
   const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [request, setRequest] = useState<LeadDocumentRequest | null>(null);
   const [documents, setDocuments] = useState<LeadDocument[]>([]);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [isUploadedDocumentsOpen, setIsUploadedDocumentsOpen] = useState(!embedded);
 
   const generatePasscode = () => {
     const digitsOnly = (customerPhoneNumber || "").replace(/\D/g, "");
@@ -435,12 +443,12 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded
           </CardTitle>
         </CardHeader>
       )}
-      <CardContent className="space-y-5">
-          <p className="text-sm text-muted-foreground mb-4">
+      <CardContent className={embedded ? "space-y-4 px-0 py-0" : "space-y-5"}>
+          <p className="mb-3 text-sm text-muted-foreground">
             Generate a secure upload link for the customer to submit their documents.
           </p>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={request ? "default" : "secondary"}>
                 {request ? `Request: ${request.status || "pending"}` : "No request yet"}
@@ -460,7 +468,7 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-2.5 md:grid-cols-3">
             {documentTypeConfig.map((documentType) => {
               const categoryDocuments = documentsByCategory[documentType.key] || [];
               const isRequired = request ? Boolean(request[documentType.requestFlag]) : false;
@@ -469,7 +477,7 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded
               return (
                 <div
                   key={documentType.key}
-                  className={`rounded-lg border p-3 ${
+                  className={`rounded-lg border p-2.5 ${
                     isUploaded
                       ? "border-emerald-200 bg-emerald-50"
                       : isRequired
@@ -490,7 +498,7 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded
                       <XCircle className={`h-5 w-5 shrink-0 ${isRequired ? "text-amber-600" : "text-muted-foreground"}`} />
                     )}
                   </div>
-                  <div className="mt-2 text-xs font-medium">
+                  <div className="mt-1.5 text-xs font-medium">
                     {isUploaded ? `${categoryDocuments.length} uploaded` : isRequired ? "Waiting for upload" : "Not uploaded"}
                   </div>
                 </div>
@@ -500,17 +508,31 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded
 
           <Separator />
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold">Uploaded Documents</h4>
-                <p className="text-xs text-muted-foreground">
-                  Live preview of customer uploads from Supabase Storage
-                </p>
+          <Collapsible
+            open={isUploadedDocumentsOpen}
+            onOpenChange={(open) => {
+              setIsUploadedDocumentsOpen(open);
+              onUploadedDocumentsToggle?.(open);
+            }}
+          >
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold">Uploaded Documents</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Live preview of customer uploads from Supabase Storage
+                  </p>
+                </div>
+                <CollapsibleTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="gap-2 rounded-md">
+                    {isUploadedDocumentsOpen ? "Hide uploads" : "Show uploads"}
+                    {isUploadedDocumentsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </Button>
+                </CollapsibleTrigger>
               </div>
-            </div>
 
-            {loadingDocuments ? (
+              <CollapsibleContent className="space-y-3">
+              {loadingDocuments ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading documents...
@@ -588,7 +610,9 @@ export function DocumentUploadCard({ submissionId, customerPhoneNumber, embedded
                 </div>
               </ScrollArea>
             )}
-          </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
       </CardContent>
     </>
   );

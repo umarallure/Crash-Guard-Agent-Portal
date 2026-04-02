@@ -718,10 +718,8 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
   }, []);
 
   useEffect(() => {
-    if (initialAssignedAttorneyId && !assignedAttorneyId) {
-      setAssignedAttorneyId(initialAssignedAttorneyId);
-    }
-  }, [initialAssignedAttorneyId, assignedAttorneyId]);
+    setAssignedAttorneyId(initialAssignedAttorneyId || "");
+  }, [initialAssignedAttorneyId]);
 
   // Load existing call result data
   useEffect(() => {
@@ -1777,127 +1775,676 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
     }
   };
 
+  const outcomeShellClass =
+    "space-y-4 rounded-[24px] border border-[#eed7c8] bg-white p-4 shadow-[0_18px_46px_-36px_rgba(163,86,42,0.42)]";
+  const outcomeIntroClass =
+    "space-y-1 rounded-[18px] border border-[#f1dac8] bg-[linear-gradient(90deg,rgba(234,117,38,0.22)_0%,rgba(234,117,38,0.1)_24%,rgba(255,255,255,0.96)_58%,rgba(255,255,255,0.98)_100%)] px-3.5 py-2.5";
+  const outcomeEyebrowClass = "text-[11px] font-semibold uppercase tracking-[0.16em] text-[#9b5f39]";
+  const outcomeFieldShellClass =
+    "space-y-3 rounded-[18px] border border-[#eddcd0] bg-white/92 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)]";
+
+  const qualificationControls = (
+    <div className="space-y-3 rounded-[18px] border border-[#eddccf] bg-white/92 p-3.5 shadow-[0_10px_26px_-24px_rgba(168,92,46,0.42)]">
+      <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1">
+          <div className={outcomeEyebrowClass}>Qualification Decision</div>
+          <Label className="text-base font-semibold text-slate-950">
+            Is lead qualified?
+          </Label>
+          <p className="text-sm text-slate-600">
+            Set the outcome first so the rest of the form opens in the correct path without extra steps.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {typeof verificationProgress === "number" ? (
+            <Badge className="rounded-full border border-[#f0c7a6] bg-[#fff5ec] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a2592b] shadow-sm hover:bg-[#fff5ec]">
+              {verificationProgress}% verified
+            </Badge>
+          ) : null}
+          {isRetentionCall && (
+            <Badge className="rounded-full border border-violet-300/60 bg-violet-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700 hover:bg-violet-500/10">
+              <Shield className="mr-1 h-3 w-3" />
+              Retention
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <Button
+          type="button"
+          variant={applicationSubmitted === true ? "default" : "outline"}
+          onClick={() => {
+            setApplicationSubmitted(true);
+          }}
+          className={`${applicationSubmitted === true ? "border-green-800 bg-green-800 text-white hover:bg-green-900" : "border-green-800 bg-white text-green-800 hover:border-green-800 hover:bg-green-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
+        >
+          <CheckCircle className="h-4 w-4" />
+          Yes
+        </Button>
+        <Button
+          type="button"
+          variant={applicationSubmitted === false ? "default" : "outline"}
+          onClick={() => {
+            setApplicationSubmitted(false);
+          }}
+          className={`${applicationSubmitted === false ? "border-red-800 bg-red-800 text-white hover:bg-red-900" : "border-red-800 bg-white text-red-800 hover:border-red-800 hover:bg-red-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
+        >
+          <XCircle className="h-4 w-4" />
+          No
+        </Button>
+        <Dialog open={returnDidOpen} onOpenChange={setReturnDidOpen}>
+          <DialogTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 rounded-md border-[#efcfb8] bg-[#fffaf5] text-[#8c5632] shadow-sm hover:bg-[#fff1e7]"
+            >
+              <Info className="h-4 w-4" />
+              Return DID
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Info className="h-4 w-4" />
+                Return this lead to the center
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-lg">
+              <p>Share the DID below to return this call to the originating center.</p>
+              <div className="flex items-center gap-2">
+                <div className="rounded-md bg-muted px-6 py-4 font-mono text-2xl font-bold">
+                  {centerDid || "No DID configured"}
+                </div>
+                {centerDid && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(centerDid);
+                        toast({ title: "Copied", description: "DID copied to clipboard" });
+                      } catch (e) {
+                        toast({ title: "Copy failed", description: "Unable to copy DID", variant: "destructive" });
+                      }
+                    }}
+                    aria-label="Copy DID"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+
+  const qualificationSection = (
+    <div className={outcomeShellClass}>
+      <div className={outcomeIntroClass}>
+        <div className={outcomeEyebrowClass}>Qualification</div>
+        <h3 className="text-lg font-semibold tracking-tight text-slate-950">Start with the lead outcome</h3>
+        <p className="text-sm text-slate-600">
+          Choose whether the lead qualified so the rest of the call result opens in the correct layout.
+        </p>
+      </div>
+      {qualificationControls}
+    </div>
+  );
+
+  const submittedCallInformationSection = showSubmittedFields ? (
+    <div className={outcomeFieldShellClass}>
+      <div className="space-y-1">
+        <div className={outcomeEyebrowClass}>Call Details</div>
+        <p className="text-sm text-slate-600">
+          Keep the source, closer, and stage details in the same working area as the submitted outcome.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="callSourceQualified">Call Source</Label>
+            <Select value={callSource || undefined} onValueChange={setCallSource}>
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectValue placeholder="Select call source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
+                <SelectItem value="Agent Callback">Agent Callback</SelectItem>
+                <SelectItem value="Internal Ads">Internal Ads</SelectItem>
+                <SelectItem value="Internal Data">Internal Data</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agentWhoTookCall">Agent who took the call</Label>
+            <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall}>
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectValue placeholder="Select agent" />
+              </SelectTrigger>
+              <SelectContent>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.key} value={agent.label}>
+                    {agent.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="pipelineName" className="text-base font-semibold">
+              Pipeline Name
+            </Label>
+            <Select
+              value={selectedPipeline}
+              onValueChange={(val: "transfer_portal" | "submission_portal") => {
+                setSelectedPipeline(val);
+                setQualifiedStage("");
+                setQualifiedStageReason("");
+              }}
+            >
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectValue placeholder="Select pipeline" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
+                <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qualifiedStage" className="text-base font-semibold">
+              Status / Stage
+            </Label>
+            <Select value={qualifiedStage} onValueChange={(val) => { setQualifiedStage(val); setQualifiedStageReason(""); }}>
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectValue placeholder="Select stage" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedPipelineStageOptions.map((stage) => (
+                  <SelectItem key={stage.key} value={stage.label}>
+                    {stage.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+        {submittedStageReasonOptions.length > 0 && (
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="qualifiedStageReason" className="text-base font-semibold">
+              Reason
+            </Label>
+            <Select value={qualifiedStageReason} onValueChange={setQualifiedStageReason}>
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectValue placeholder="Select reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {submittedStageReasonOptions.map((reason) => (
+                  <SelectItem key={reason} value={reason}>
+                    {reason}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
+  const submittedApplicationDetailsSection = showSubmittedFields ? (
+    <div className={outcomeShellClass}>
+      <div className={outcomeIntroClass}>
+        <div className={outcomeEyebrowClass}>Application Submitted</div>
+        <h3 className="text-lg font-semibold tracking-tight text-slate-950">Complete the submission and attorney handoff</h3>
+        <p className="text-sm text-slate-600">
+          Keep the vendor, submission status, attorney selection, and notes aligned in one clean column.
+        </p>
+      </div>
+
+      {submittedCallInformationSection}
+
+      <div className={outcomeFieldShellClass}>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="leadVendor">Lead Vendor</Label>
+            <Select value={leadVendor} onValueChange={setLeadVendor}>
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectValue placeholder="Select lead vendor" />
+              </SelectTrigger>
+              <SelectContent>
+                {leadVendors.map((vendor) => (
+                  <SelectItem key={vendor} value={vendor}>
+                    {vendor}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {selectedLawyerId && (
+            <div className="space-y-2">
+              <Label htmlFor="submissionStatus" className="text-base font-semibold">
+                Submission Status <span className="text-red-500">*</span>
+              </Label>
+              <Select value={submissionStatus} onValueChange={setSubmissionStatus} required>
+                <SelectTrigger className={`${!submissionStatus ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder="Select submission status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="submitted">Submitted</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="nocoverage">No Coverage</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <QualifiedLawyersCard
+        leadState={verifiedFieldValues?.state}
+        accidentDate={verifiedFieldValues?.accident_date ? new Date(verifiedFieldValues.accident_date) : undefined}
+        policeReport={verifiedFieldValues?.police_report}
+        insuranceDocuments={verifiedFieldValues?.insurance_documents}
+        medicalTreatmentProof={verifiedFieldValues?.medical_treatment_proof}
+        driverLicense={verifiedFieldValues?.driver_license}
+        selectedLawyerId={selectedLawyerId}
+        onLawyerSelect={(lawyer: SelectedLawyer | null) => {
+          setSelectedLawyerId(lawyer?.id || "");
+          setSelectedLawyerName(lawyer?.attorney_name || "");
+        }}
+        submissionStatus="submitted"
+      />
+
+      <div className={outcomeFieldShellClass}>
+        <div className="space-y-2">
+          <Label htmlFor="notesSubmitted">Agent Notes</Label>
+          <Textarea
+            id="notesSubmitted"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Enter any additional notes about this application..."
+            rows={4}
+            className="border-[#ead9ce] bg-white/95"
+          />
+          <p className="text-sm text-slate-500">
+            Application details will be auto-generated and combined with your notes when saved.
+          </p>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const notSubmittedDetailsSection = showNotSubmittedFields ? (
+    <div className={outcomeShellClass}>
+      <div className={outcomeIntroClass}>
+        <div className={outcomeEyebrowClass}>Application Not Submitted</div>
+        <h3 className="text-lg font-semibold tracking-tight text-slate-950">Capture the drop-off cleanly</h3>
+        <p className="text-sm text-slate-600">
+          Keep the call source, disposition, required reasoning, and notes together so the final outcome is easy to scan.
+        </p>
+      </div>
+
+      <div className="grid items-start gap-3 xl:grid-cols-2">
+        <div className={outcomeFieldShellClass}>
+          <div className="space-y-1">
+            <div className={outcomeEyebrowClass}>Call Context</div>
+            <p className="text-sm text-slate-600">Anchor the source and the closer before saving the outcome.</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="callSource" className="text-base font-semibold">
+                Call Source <span className="text-red-500">*</span>
+              </Label>
+              <Select value={callSource || undefined} onValueChange={setCallSource} required>
+                <SelectTrigger className={`${!callSource ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder="Select call source (required)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
+                  <SelectItem value="Agent Callback">Agent Callback</SelectItem>
+                  <SelectItem value="Internal Ads">Internal Ads</SelectItem>
+                  <SelectItem value="Internal Data">Internal Data</SelectItem>
+                </SelectContent>
+              </Select>
+              {!callSource && (
+                <p className="text-sm text-red-500">Call source is required</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="agentWhoTookCallNotSubmitted">
+                Agent who took the call <span className="text-red-500">*</span>
+              </Label>
+              <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall} required>
+                <SelectTrigger className={`${!agentWhoTookCall ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder={agentsLoading ? "Loading agents..." : "Select agent (required)"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.key} value={agent.label}>
+                      {agent.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!agentWhoTookCall && (
+                <p className="text-sm text-red-500">Agent who took the call is required</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className={outcomeFieldShellClass}>
+          <div className="space-y-1">
+            <div className={outcomeEyebrowClass}>Disposition</div>
+            <p className="text-sm text-slate-600">Save the exact pipeline and stage where this lead is ending up.</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="pipelineNameNotSubmitted" className="text-base font-semibold">
+                Pipeline Name
+              </Label>
+              <Select
+                value={selectedPipeline}
+                onValueChange={(val: "transfer_portal" | "submission_portal") => {
+                  setSelectedPipeline(val);
+                  setStatus("");
+                  setStatusReason("");
+                }}
+              >
+                <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                  <SelectValue placeholder="Select pipeline" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
+                  <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="statusPipelineStage">
+                Status / Stage <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={status}
+                onValueChange={(val) => {
+                  setStatus(val);
+                  setStatusReason("");
+                }}
+                required
+              >
+                <SelectTrigger className={`${!status ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder="Select stage (required)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedPipelineStageOptions.map((stage) => (
+                    <SelectItem key={stage.key} value={stage.label}>
+                      {stage.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!status && (
+                <p className="text-sm text-red-500">Status / Stage is required</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {(showStatusReasonDropdown || showNewDraftDateField) && (
+        <div className="grid items-start gap-3 xl:grid-cols-2">
+          {showStatusReasonDropdown && (
+            <div className={outcomeFieldShellClass}>
+              <div className="space-y-1">
+                <div className={outcomeEyebrowClass}>Reasoning</div>
+                <p className="text-sm text-slate-600">Attach the required reason so the saved note stays accurate.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="statusReason">
+                  {status === "DQ" || status === "⁠DQ" ? "Reason for DQ" :
+                   status === "Needs callback" ? "Callback Reason" :
+                   status === "Not Interested" ? "Reason Not Interested" :
+                   status === "Future Submission Date" ? "Future Submission Reason" :
+                   status === "Updated Banking/draft date" ? "Update Reason" :
+                   status === "Fulfilled carrier requirements" ? "Fulfillment Confirmation" :
+                   "Reason"}
+                </Label>
+                <Select value={statusReason} onValueChange={handleStatusReasonChange}>
+                  <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                    <SelectValue placeholder={`Select reason for ${status.toLowerCase()}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentReasonOptions.map((reason) => (
+                      <SelectItem key={reason} value={reason}>
+                        {reason}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {showNewDraftDateField && (
+            <div className={outcomeFieldShellClass}>
+              <div className="space-y-1">
+                <div className={outcomeEyebrowClass}>Follow-Up Timing</div>
+                <p className="text-sm text-slate-600">Set the updated banking or draft date before the lead is saved.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="newDraftDate">New Draft Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start border-[#ead9ce] bg-white/95 text-left font-normal",
+                        !newDraftDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {newDraftDate ? format(newDraftDate, "PPP") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={newDraftDate}
+                      onSelect={handleNewDraftDateChange}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showCarrierAttemptedFields && (
+        <div className="space-y-4 rounded-[20px] border border-[#efcdc5] bg-[linear-gradient(180deg,rgba(255,241,238,0.95)_0%,rgba(255,248,247,0.98)_100%)] p-4 shadow-[0_14px_30px_-24px_rgba(190,68,41,0.38)]">
+          <div className="space-y-1">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#b0543a]">GI - Currently DQ</div>
+            <h4 className="text-base font-semibold text-[#7f3020]">Carrier attempts</h4>
+            <p className="text-sm text-[#8d4a39]">
+              Document the carriers that were attempted before closing this lead out as GI-only.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="carrierAttempted1">
+                Attempted Carrier #1 <span className="text-red-500">*</span>
+              </Label>
+              <Select value={carrierAttempted1} onValueChange={setCarrierAttempted1} required>
+                <SelectTrigger className={`${!carrierAttempted1 ? 'border-red-300 focus:border-red-500' : 'border-[#e7c9c1]'} bg-white/95`}>
+                  <SelectValue placeholder="Select carrier (required)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {carrierOptions.map((carrier) => (
+                    <SelectItem key={carrier} value={carrier}>
+                      {carrier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!carrierAttempted1 && (
+                <p className="text-sm text-red-500">Carrier #1 is required</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="carrierAttempted2">Attempted Carrier #2</Label>
+              <Select value={carrierAttempted2} onValueChange={setCarrierAttempted2}>
+                <SelectTrigger className="border-[#e7c9c1] bg-white/95">
+                  <SelectValue placeholder="Select carrier (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {carrierOptions.map((carrier) => (
+                    <SelectItem key={carrier} value={carrier}>
+                      {carrier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="carrierAttempted3">Attempted Carrier #3</Label>
+              <Select value={carrierAttempted3} onValueChange={setCarrierAttempted3}>
+                <SelectTrigger className="border-[#e7c9c1] bg-white/95">
+                  <SelectValue placeholder="Select carrier (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {carrierOptions.map((carrier) => (
+                    <SelectItem key={carrier} value={carrier}>
+                      {carrier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className={outcomeFieldShellClass}>
+        <div className="space-y-1">
+          <div className={outcomeEyebrowClass}>Agent Notes</div>
+          <p className="text-sm text-slate-600">Leave a clean summary of why the call dropped or why the application was not submitted.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="notes">
+            Notes <span className="text-red-500">*</span>
+          </Label>
+          <Textarea
+            id="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder={showStatusReasonDropdown && statusReason && statusReason !== "Other"
+              ? "Note has been auto-populated. You can edit if needed."
+              : showStatusReasonDropdown && statusReason === "Other"
+              ? "Please enter a custom message."
+              : "Why the call got dropped or application not get submitted? Please provide the reason (required)"
+            }
+            className={`${!notes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
+            rows={4}
+            required
+          />
+          {showStatusReasonDropdown && statusReason && statusReason !== "Other" && (
+            <p className="text-sm text-slate-500">
+              Note has been auto-populated based on the selected reason. You can edit it if needed.
+            </p>
+          )}
+          {showStatusReasonDropdown && statusReason === "Other" && (
+            <p className="text-sm text-slate-500">
+              Please enter a custom message for this reason.
+            </p>
+          )}
+          {!notes.trim() && (
+            <p className="text-sm text-red-500">Notes are required</p>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <>
       {/* Full Screen Loading Overlay */}
       {isSubmitting && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-3">
-            <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-            <span className="text-lg font-medium">Saving call result...</span>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-background border border-border/60 p-5 rounded-xl shadow-lg flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span className="text-sm font-medium">Saving call result...</span>
           </div>
         </div>
       )}
-      
-      <Card>
+
+      <Card className="overflow-hidden rounded-xl border border-[#efd7c6] bg-[#fffaf6] shadow-[0_22px_58px_-42px_rgba(162,86,41,0.38)]">
         <Collapsible open={!isCollapsed} onOpenChange={(open) => setIsCollapsed(!open)}>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <CardTitle>Update Call Result</CardTitle>
-                {isRetentionCall && (
-                  <Badge className="bg-purple-600 hover:bg-purple-700 flex items-center gap-1">
-                    <Shield className="h-3 w-3" />
-                    Retention Call
-                  </Badge>
-                )}
-              </div>
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="gap-2">
-                  {isCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Primary Question */}
-          <div className="space-y-3">
-            <Label className="text-base font-semibold">
-              Is lead qualified?
-            </Label>
-            <div className="flex gap-4 items-center">
-              <Button
-                type="button"
-                variant={applicationSubmitted === true ? "default" : "outline"}
-                onClick={() => {
-                  setApplicationSubmitted(true);
-                }}
-                className="flex-1"
-              >
-                <CheckCircle className="h-4 w-4" />
-                Yes
-              </Button>
-              <Button
-                type="button"
-                variant={applicationSubmitted === false ? "default" : "outline"}
-                onClick={() => {
-                  setApplicationSubmitted(false);
-                }}
-                className="flex-1"
-              >
-                <XCircle className="h-4 w-4" />
-                No
-              </Button>
-              <Dialog open={returnDidOpen} onOpenChange={setReturnDidOpen}>
-                <DialogTrigger asChild>
-                  <Button type="button" variant="outline" className="flex items-center gap-2">
-                    <Info className="h-4 w-4" />
-                    Return DID
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                      <Info className="h-4 w-4" />
-                      Return this lead to the center
-                    </DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3 text-lg">
-                    <p>Share the DID below to return this call to the originating center.</p>
-                    <div className="flex items-center gap-2">
-                      <div className="rounded-md bg-muted px-6 py-4 font-mono text-2xl font-bold">
-                        {centerDid || "No DID configured"}
-                      </div>
-                      {centerDid && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9"
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(centerDid);
-                              toast({ title: "Copied", description: "DID copied to clipboard" });
-                            } catch (e) {
-                              toast({ title: "Copy failed", description: "Unable to copy DID", variant: "destructive" });
-                            }
-                          }}
-                          aria-label="Copy DID"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3.5 bg-[linear-gradient(90deg,rgba(234,117,38,0.18)_0%,rgba(234,117,38,0.08)_20%,rgba(255,255,255,0.98)_52%,rgba(255,255,255,1)_100%)] px-4 py-3.5 text-left transition-colors hover:bg-[linear-gradient(90deg,rgba(234,117,38,0.22)_0%,rgba(234,117,38,0.1)_22%,rgba(255,255,255,0.99)_58%,rgba(255,255,255,1)_100%)]"
+            >
+              <div className="flex min-w-0 items-start gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[18px] border border-[#f1c9ab] bg-[linear-gradient(180deg,rgba(255,244,235,0.98)_0%,rgba(255,233,217,0.96)_100%)] shadow-sm">
+                  <Wrench className="h-4 w-4 text-[#a75b2f]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold tracking-tight text-slate-950">Update Call Result</span>
+                      {isRetentionCall && (
+                        <Badge className="rounded-full border border-violet-300/60 bg-violet-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700 hover:bg-violet-500/10">
+                          <Shield className="mr-1 h-3 w-3" />
+                          Retention
+                        </Badge>
                       )}
                     </div>
+                    <p className="text-xs text-slate-600">
+                      Finalize the call outcome, submission details, and agent notes.
+                    </p>
                   </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
+                </div>
+              </div>
+              <div className="shrink-0 rounded-lg border border-[#f0d6c4] bg-white/90 p-1 shadow-sm">
+                {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+              </div>
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t border-[#efd7c6] bg-white px-4 pb-4 pt-3.5">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {qualificationSection}
+
+          {showSubmittedFields
+            ? submittedApplicationDetailsSection
+            : showNotSubmittedFields
+              ? notSubmittedDetailsSection
+              : null}
 
           {/* Call Source Dropdown - REQUIRED (for non-qualified leads layout stays the same) */}
-          {showNotSubmittedFields && (
+          {false && showNotSubmittedFields && (
             <div>
               <Label htmlFor="callSource" className="text-base font-semibold">
                 Call Source <span className="text-red-500">*</span>
@@ -1909,6 +2456,8 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                 <SelectContent>
                   <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
                   <SelectItem value="Agent Callback">Agent Callback</SelectItem>
+                  <SelectItem value="Internal Ads">Internal Ads</SelectItem>
+                  <SelectItem value="Internal Data">Internal Data</SelectItem>
                 </SelectContent>
               </Select>
               {!callSource && (
@@ -1916,182 +2465,9 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
               )}
             </div>
           )}
-          
-          {/* Fields for submitted applications */}
-          {showSubmittedFields && (
-            <>
-              {/* Call Information - Only shown when application is submitted */}
-              <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
-                <h3 className="font-semibold text-gray-800">Call Information</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="callSourceQualified">Call Source</Label>
-                    <Select value={callSource || undefined} onValueChange={setCallSource}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select call source" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
-                        <SelectItem value="Agent Callback">Agent Callback</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="agentWhoTookCall">Agent who took the call</Label>
-                    <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agents.map((agent) => (
-                          <SelectItem key={agent.key} value={agent.label}>
-                            {agent.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <Label htmlFor="pipelineName" className="text-base font-semibold">
-                      Pipeline Name
-                    </Label>
-                    <Select
-                      value={selectedPipeline}
-                      onValueChange={(val: "transfer_portal" | "submission_portal") => {
-                        setSelectedPipeline(val);
-                        setQualifiedStage("");
-                        setQualifiedStageReason("");
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select pipeline" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
-                        <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="qualifiedStage" className="text-base font-semibold">
-                      Status / Stage
-                    </Label>
-                    <Select value={qualifiedStage} onValueChange={(val) => { setQualifiedStage(val); setQualifiedStageReason(""); }}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select stage" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {selectedPipelineStageOptions.map((stage) => (
-                          <SelectItem key={stage.key} value={stage.label}>
-                            {stage.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {submittedStageReasonOptions.length > 0 && (
-                  <div>
-                    <Label htmlFor="qualifiedStageReason" className="text-base font-semibold">
-                      Reason
-                    </Label>
-                    <Select value={qualifiedStageReason} onValueChange={setQualifiedStageReason}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select reason" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {submittedStageReasonOptions.map((reason) => (
-                          <SelectItem key={reason} value={reason}>
-                            {reason}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-            <div className="space-y-4 p-4 border rounded-lg bg-green-50">
-              <h3 className="font-semibold text-green-800">Application Submitted Details</h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="leadVendor">Lead Vendor</Label>
-                  <Select value={leadVendor} onValueChange={setLeadVendor}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select lead vendor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {leadVendors.map((vendor) => (
-                        <SelectItem key={vendor} value={vendor}>
-                          {vendor}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <QualifiedLawyersCard
-                leadState={verifiedFieldValues?.state}
-                accidentDate={verifiedFieldValues?.accident_date ? new Date(verifiedFieldValues.accident_date) : undefined}
-                policeReport={verifiedFieldValues?.police_report}
-                insuranceDocuments={verifiedFieldValues?.insurance_documents}
-                medicalTreatmentProof={verifiedFieldValues?.medical_treatment_proof}
-                driverLicense={verifiedFieldValues?.driver_license}
-                selectedLawyerId={selectedLawyerId}
-                onLawyerSelect={(lawyer: SelectedLawyer | null) => {
-                  setSelectedLawyerId(lawyer?.id || "");
-                  setSelectedLawyerName(lawyer?.attorney_name || "");
-                }}
-                submissionStatus="submitted"
-              />
-
-              {/* Submission Status */}
-              {selectedLawyerId && (
-                <div className="mt-4">
-                  <Label htmlFor="submissionStatus" className="text-base font-semibold">
-                    Submission Status <span className="text-red-500">*</span>
-                  </Label>
-                  <Select value={submissionStatus} onValueChange={setSubmissionStatus} required>
-                    <SelectTrigger className={`mt-1 ${!submissionStatus ? 'border-red-300 focus:border-red-500' : ''}`}>
-                      <SelectValue placeholder="Select submission status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="submitted">Submitted</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="nocoverage">No Coverage</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Notes for Submitted Applications */}
-              <div>
-                <Label htmlFor="notesSubmitted">Agent Notes</Label>
-                <Textarea
-                  id="notesSubmitted"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Enter any additional notes about this application..."
-                  rows={4}
-                />
-                <p className="text-sm text-muted-foreground mt-1">
-                  Application details will be auto-generated and combined with your notes when saved.
-                </p>
-              </div>
-            </div>
-            </>
-          )}
 
           {/* Fields for not submitted applications */}
-	          {showNotSubmittedFields && (
+	          {false && showNotSubmittedFields && (
 	            <div className="space-y-4 p-4 border rounded-lg bg-orange-50">
 	              <h3 className="font-semibold text-orange-800">Application Not Submitted</h3>
 	              
@@ -2328,8 +2704,8 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
           {applicationSubmitted === false && (
             (!agentWhoTookCall || !status || !notes.trim() || (status === "GI - Currently DQ" && !carrierAttempted1))
           ) && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-600">
+            <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3">
+              <p className="text-sm text-red-700">
                 Please complete all required fields:
                 {!agentWhoTookCall && " Agent who took the call"}
                 {!status && " Status/Stage"}
@@ -2341,12 +2717,12 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
 
           {/* Validation Messages */}
           {applicationSubmitted === true && verificationProgress >= 80 && !selectedLawyerId && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+            <div className="rounded-[18px] border border-amber-200 bg-amber-50/90 p-3 text-sm text-amber-800">
               Please select a lawyer before saving the call result.
             </div>
           )}
           {applicationSubmitted === true && selectedLawyerId && !submissionStatus && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+            <div className="rounded-[18px] border border-amber-200 bg-amber-50/90 p-3 text-sm text-amber-800">
               Please select a submission status before saving the call result.
             </div>
           )}
@@ -2368,7 +2744,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
                     (status === "GI - Currently DQ" && !carrierAttempted1)
                   ))
                 }
-                className="min-w-32"
+                className="min-w-36 rounded-md bg-[#c25516] text-white shadow-sm hover:bg-[#a94812]"
               >
                 {isSubmitting ? (
                   <>
@@ -2381,7 +2757,7 @@ export const CallResultForm = ({ submissionId, customerName, onSuccess, initialA
               </Button>
             </div>
           </form>
-            </CardContent>
+            </div>
           </CollapsibleContent>
         </Collapsible>
       </Card>
