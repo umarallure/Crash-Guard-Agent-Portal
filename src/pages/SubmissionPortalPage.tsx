@@ -192,6 +192,7 @@ const SubmissionPortalPage = () => {
   // --- Dynamic pipeline stages from DB ---
   const { stages: dbSubmissionStages, loading: stagesLoading } = usePipelineStages("submission_portal");
   const { stages: dbTransferStages } = usePipelineStages("transfer_portal");
+  const { stages: dbCloserStages } = usePipelineStages("closer_portal");
 
   const stageLabelByKey = useMemo(() => {
     const map: Record<string, string> = {};
@@ -273,6 +274,20 @@ const SubmissionPortalPage = () => {
     return map;
   }, [parentStages]);
 
+  // ── Pipeline-agnostic helpers for the Edit dialog ──────────────────────────
+
+  const EDIT_PIPELINE_OPTIONS = [
+    { value: "submission_portal", label: "Submission Pipeline" },
+    { value: "transfer_portal",  label: "Transfer Pipeline"   },
+    { value: "closer_portal",    label: "Closer Pipeline"     },
+  ] as const;
+
+  const editPipelineStagesMap: Record<string, typeof dbSubmissionStages> = {
+    submission_portal: dbSubmissionStages,
+    transfer_portal:   dbTransferStages,
+    closer_portal:     dbCloserStages,
+  };
+
   const deriveStageKey = (row: SubmissionPortalRow): string => {
     const status = normalizeSubmissionStatusKey(row.status);
     if (!status) return '';
@@ -340,10 +355,10 @@ const SubmissionPortalPage = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editRow, setEditRow] = useState<SubmissionPortalRow | null>(null);
+  const [editPipeline, setEditPipeline] = useState("submission_portal");
   const [editStage, setEditStage] = useState("");
   const [editReason, setEditReason] = useState("");
   const [editNotes, setEditNotes] = useState("");
-  const [editStageOpen, setEditStageOpen] = useState(false);
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -936,17 +951,42 @@ const SubmissionPortalPage = () => {
     [parentStages]
   );
 
-  const editStageMatches = useMemo(() => {
-    const query = (editStage || '').trim().toLowerCase();
-    if (!query) return allParentStageLabels;
-    return allParentStageLabels.filter((label) => label.toLowerCase().includes(query));
-  }, [allParentStageLabels, editStage]);
+  // Stages for whichever pipeline is selected in the edit dialog
+  const editActivePipelineStages = useMemo(
+    () => editPipelineStagesMap[editPipeline] ?? dbSubmissionStages,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editPipeline, dbSubmissionStages, dbTransferStages, dbCloserStages]
+  );
+
+  const editActivePipelineParents = useMemo(
+    () => deriveParentStages(editActivePipelineStages),
+    [editActivePipelineStages]
+  );
+
+  const editActivePipelineReasonsByParent = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    editActivePipelineParents.forEach((s) => {
+      if (s.reasons.length > 0) map[s.label] = s.reasons;
+    });
+    return map;
+  }, [editActivePipelineParents]);
+
+  // label → key map for the active pipeline
+  const editActivePipelineKeyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    editActivePipelineStages.forEach((s) => {
+      const key   = (s?.key   ?? "").trim();
+      const label = (s?.label ?? "").trim();
+      if (key && label) map.set(label, key);
+    });
+    return map;
+  }, [editActivePipelineStages]);
 
   // Available reasons for the currently selected parent in the edit form
   const editAvailableReasons = useMemo(() => {
     const parentLabel = (editStage || '').trim();
-    return reasonsByParent[parentLabel] || [];
-  }, [editStage, reasonsByParent]);
+    return editActivePipelineReasonsByParent[parentLabel] || [];
+  }, [editStage, editActivePipelineReasonsByParent]);
 
   if (loading) {
     return (
@@ -1067,13 +1107,26 @@ const SubmissionPortalPage = () => {
 
   const handleOpenEdit = (row: SubmissionPortalRow) => {
     setEditRow(row);
+
+    // Detect which pipeline owns the current status key
+    const rawStatus = (row.status ?? '').trim();
+    const detectedPipeline = (() => {
+      if (dbTransferStages.some((s) => s.key === rawStatus || s.label === rawStatus)) {
+        return "transfer_portal";
+      }
+      if (dbCloserStages.some((s) => s.key === rawStatus || s.label === rawStatus)) {
+        return "closer_portal";
+      }
+      return "submission_portal";
+    })();
+    setEditPipeline(detectedPipeline);
+
     const normalizedStatus = normalizeSubmissionStatusKey(row.status);
     const statusLabel = toDispositionLabel(normalizedStatus) ?? normalizedStatus;
     const { parent, reason } = parseStageLabel(statusLabel);
     setEditStage(parent);
     setEditReason(reason || '');
     setEditNotes('');
-    setEditStageOpen(false);
     setEditOpen(true);
   };
 
@@ -1109,12 +1162,12 @@ const SubmissionPortalPage = () => {
     if (!parentLabel) return;
 
     // Build the full status: "Parent - Reason" or just "Parent"
-    const reasons = reasonsByParent[parentLabel];
+    const reasons = editActivePipelineReasonsByParent[parentLabel];
     const selectedReason = (editReason || '').trim();
     const nextStageLabel = reasons && reasons.length > 0 && selectedReason
       ? buildStatusLabel(parentLabel, selectedReason)
       : parentLabel;
-    const nextStage = submissionStageKeyByLabel.get(nextStageLabel) ?? nextStageLabel;
+    const nextStage = editActivePipelineKeyByLabel.get(nextStageLabel) ?? nextStageLabel;
 
     const previousStage = normalizeSubmissionStatusKey(editRow.status);
     const stageChanged = previousStage !== nextStage;
@@ -1468,9 +1521,6 @@ const SubmissionPortalPage = () => {
                                     <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
                                       {row.lead_vendor || '—'}
                                     </Badge>
-                                    <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
-                                      {statusText}
-                                    </Badge>
                                   </div>
                                 </CardContent>
                               </Card>
@@ -1533,47 +1583,50 @@ const SubmissionPortalPage = () => {
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* Pipeline selector */}
+            <div className="space-y-2">
+              <Label>Pipeline</Label>
+              <Select
+                value={editPipeline}
+                onValueChange={(value) => {
+                  setEditPipeline(value);
+                  setEditStage('');
+                  setEditReason('');
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select pipeline..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {EDIT_PIPELINE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Stage</Label>
-              <div className="relative">
-                <Input
-                  value={editStage}
-                  placeholder="Type stage..."
-                  onFocus={() => setEditStageOpen(true)}
-                  onChange={(e) => {
-                    setEditStage(e.target.value);
-                    setEditReason('');
-                    setEditStageOpen(true);
-                  }}
-                  onBlur={() => {
-                    window.setTimeout(() => setEditStageOpen(false), 150);
-                  }}
-                />
-
-                {editStageOpen && (
-                  <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                    {editStageMatches.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">No matching found.</div>
-                    ) : (
-                      editStageMatches.map((label) => (
-                        <button
-                          key={label}
-                          type="button"
-                          className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            setEditStage(label);
-                            setEditReason('');
-                            setEditStageOpen(false);
-                          }}
-                        >
-                          {label}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+              <Select
+                value={editStage}
+                onValueChange={(value) => {
+                  setEditStage(value);
+                  setEditReason('');
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select stage..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {editActivePipelineParents.map((stage) => (
+                    <SelectItem key={stage.key} value={stage.label}>
+                      {stage.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {editAvailableReasons.length > 0 && (
