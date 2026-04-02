@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MultiSelect } from "@/components/ui/multi-select";
 import {
   Dialog,
   DialogContent,
@@ -23,13 +24,14 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, ArrowLeftRight, Eye, Loader2, Pencil, RefreshCw, Users, StickyNote, UserPlus } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Eye, Loader2, Pencil, RefreshCw, Users, StickyNote, UserPlus, SlidersHorizontal, X } from "lucide-react";
 import { usePipelineStages, type PipelineStage } from "@/hooks/usePipelineStages";
 import { PresetDateRangeFilter } from "@/components/PresetDateRangeFilter";
 import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
+import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 
 export interface TransferPortalRow {
   id: string;
@@ -58,6 +60,7 @@ export interface TransferPortalRow {
   created_at?: string;
   updated_at?: string;
   source_type?: string;
+  state?: string;
 }
 
 const TRANSFER_HANDOFF_STAGE_KEY = "retainer_signed";
@@ -297,7 +300,7 @@ const TransferPortalPage = () => {
   const [customEndDate, setCustomEndDate] = useState("");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("__ALL__");
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
-  const [showDuplicates, setShowDuplicates] = useState(true);
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
@@ -310,6 +313,8 @@ const TransferPortalPage = () => {
   const kanbanPageSize = 25;
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
+
+  const [showFilters, setShowFilters] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -328,23 +333,7 @@ const TransferPortalPage = () => {
   const [licensedAgents, setLicensedAgents] = useState<any[]>([]);
   const [fetchingAgents, setFetchingAgents] = useState(false);
 
-  // Remove duplicates based on insured_name, client_phone_number, and lead_vendor
-  const removeDuplicates = (records: TransferPortalRow[]): TransferPortalRow[] => {
-    const seen = new Map<string, TransferPortalRow>();
-    
-    records.forEach(record => {
-      const key = `${record.insured_name || ''}|${record.client_phone_number || ''}|${record.lead_vendor || ''}`;
-      
-      // Keep the most recent record (first in our sorted array)
-      if (!seen.has(key)) {
-        seen.set(key, record);
-      }
-    });
-    
-    return Array.from(seen.values());
-  };
-
-  // Apply filters and duplicate removal
+  // Apply filters
   const applyFilters = (records: TransferPortalRow[]): TransferPortalRow[] => {
     let filtered = records;
 
@@ -363,6 +352,10 @@ const TransferPortalPage = () => {
       filtered = filtered.filter((record) => (record.lead_vendor || '') === leadVendorFilter);
     }
 
+    if (selectedStates.length > 0) {
+      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
+    }
+
     // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
@@ -378,11 +371,6 @@ const TransferPortalPage = () => {
       );
     }
 
-    // Remove duplicates if enabled
-    if (!showDuplicates) {
-      filtered = removeDuplicates(filtered);
-    }
-
     return filtered;
   };
 
@@ -394,6 +382,8 @@ const TransferPortalPage = () => {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
+
+  const stateOptions = useMemo(() => getStateFilterOptions(data), [data]);
 
   const { toast } = useToast();
 
@@ -446,6 +436,7 @@ const TransferPortalPage = () => {
           from_callback: isCallback,
           is_callback: isCallback,
           source_type: isCallback ? 'callback' : 'zapier',
+          state: lead.state || '',
         };
       });
 
@@ -490,7 +481,7 @@ const TransferPortalPage = () => {
   useEffect(() => {
     setFilteredData(applyFilters(data));
     setCurrentPage(1); // Reset to first page when filters change
-  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, leadVendorFilter, showDuplicates, searchTerm]);
+  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, leadVendorFilter, selectedStates, searchTerm]);
 
   // Pagination calculations
   const stageFilteredData = useMemo(() => {
@@ -1120,138 +1111,203 @@ const TransferPortalPage = () => {
             </Card>
           </div>
 
-          <div className="overflow-x-auto">
-            <div className="flex flex-nowrap items-center justify-between gap-3 min-w-[980px]">
+          {/* ── Toolbar ── */}
+          <div className="flex items-center gap-2">
+            {/* Search + Filter button */}
+            <div className="relative flex-1 max-w-sm">
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search transfers..."
-                className="w-56"
+                placeholder="Search by name, phone, vendor…"
+                className="pr-4"
               />
-
-              <Select value={leadVendorFilter} onValueChange={(value) => setLeadVendorFilter(value)}>
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="All Vendors" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__ALL__">All Vendors</SelectItem>
-                    {leadVendorOptions.map((vendor) => (
-                      <SelectItem key={vendor} value={vendor}>
-                        {vendor}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedStage} onValueChange={(value) => {
-                setSelectedStage(value);
-                setCurrentPage(1);
-              }}>
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="All Stages" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">All Stages</SelectItem>
-                    {kanbanStages.map((stage) => (
-                      <SelectItem key={stage.key} value={stage.key}>
-                        {stage.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <div className="inline-flex rounded-lg border border-muted bg-background p-0.5 shrink-0">
-                {["kanban", "list"].map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                      viewMode === mode
-                        ? "bg-primary text-white shadow"
-                        : "text-muted-foreground hover:bg-muted"
-                    }`}
-                    onClick={() => setViewMode(mode as "kanban" | "list")}
-                  >
-                    {mode === "kanban" ? "Kanban View" : "List View"}
-                  </button>
-                ))}
-              </div>
-              <Badge variant="secondary" className="px-2.5 py-1 shrink-0">
-                {allTimeTransfers} transfers
-              </Badge>
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                Export CSV
-              </Button>
-              <Button size="sm" onClick={handleRefresh} disabled={refreshing}>
-                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
             </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters((v) => !v)}
+              className={showFilters ? "border-primary text-primary bg-primary/5" : ""}
+            >
+              <SlidersHorizontal className="mr-2 h-4 w-4" />
+              Filters
+              {/* active-filter dot */}
+              {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || selectedStage !== "all") && (
+                <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
+              )}
+            </Button>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* View toggle */}
+            <div className="inline-flex rounded-lg border border-muted bg-background p-0.5 shrink-0">
+              {["kanban", "list"].map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    viewMode === mode
+                      ? "bg-primary text-white shadow"
+                      : "text-muted-foreground hover:bg-muted"
+                  }`}
+                  onClick={() => setViewMode(mode as "kanban" | "list")}
+                >
+                  {mode === "kanban" ? "Kanban View" : "List View"}
+                </button>
+              ))}
+            </div>
+
+            <Badge variant="secondary" className="px-2.5 py-1 shrink-0 tabular-nums">
+              {allTimeTransfers} transfers
+            </Badge>
+
+            <Button variant="outline" size="sm" onClick={handleExport}>
+              Export CSV
+            </Button>
+
+            <Button size="sm" onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-muted-foreground">
-                Track all daily lead transfers from Zapier and callbacks
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-muted-foreground">
-                    Date
-                  </label>
-                  <PresetDateRangeFilter
-                    preset={datePreset}
-                    onPresetChange={setDatePreset}
-                    customStartDate={customStartDate}
-                    customEndDate={customEndDate}
-                    onCustomStartDateChange={setCustomStartDate}
-                    onCustomEndDateChange={setCustomEndDate}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-muted-foreground">
-                    Source Type
-                  </label>
-                  <Select value={sourceTypeFilter} onValueChange={(value) => setSourceTypeFilter(value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Sources" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="__ALL__">All Sources</SelectItem>
-                        <SelectItem value="zapier">Zapier</SelectItem>
-                        <SelectItem value="callback">Callback</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-muted-foreground">
-                    Show Duplicates
-                  </label>
-                  <Select
-                    value={showDuplicates ? "true" : "false"}
-                    onValueChange={(value) => setShowDuplicates(value === "true")}
+          {/* ── Collapsible Filter Panel ── */}
+          {showFilters && (
+            <Card className="border-primary/20 bg-muted/30 shadow-none">
+              <CardContent className="pt-5 pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-semibold text-foreground">Filters</span>
+                    {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || selectedStage !== "all") && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDatePreset("all");
+                          setCustomStartDate("");
+                          setCustomEndDate("");
+                          setSourceTypeFilter("__ALL__");
+                          setSelectedStates([]);
+                          setLeadVendorFilter("__ALL__");
+                          setSelectedStage("all");
+                          setCurrentPage(1);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
+                      >
+                        <X className="h-3 w-3" />
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(false)}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted transition"
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="true">Show All Records</SelectItem>
-                        <SelectItem value="false">Remove Duplicates</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                  {/* Date range */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Date Range
+                    </label>
+                    <PresetDateRangeFilter
+                      preset={datePreset}
+                      onPresetChange={setDatePreset}
+                      customStartDate={customStartDate}
+                      customEndDate={customEndDate}
+                      onCustomStartDateChange={setCustomStartDate}
+                      onCustomEndDateChange={setCustomEndDate}
+                    />
+                  </div>
+
+                  {/* Lead Vendor */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Lead Vendor
+                    </label>
+                    <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Vendors" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="__ALL__">All Vendors</SelectItem>
+                          {leadVendorOptions.map((vendor) => (
+                            <SelectItem key={vendor} value={vendor}>
+                              {vendor}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Stage */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Stage
+                    </label>
+                    <Select value={selectedStage} onValueChange={(value) => { setSelectedStage(value); setCurrentPage(1); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Stages" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="all">All Stages</SelectItem>
+                          {kanbanStages.map((stage) => (
+                            <SelectItem key={stage.key} value={stage.key}>
+                              {stage.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Source Type */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Source Type
+                    </label>
+                    <Select value={sourceTypeFilter} onValueChange={setSourceTypeFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Sources" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="__ALL__">All Sources</SelectItem>
+                          <SelectItem value="zapier">Zapier</SelectItem>
+                          <SelectItem value="callback">Callback</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* State */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      State
+                    </label>
+                    <MultiSelect
+                      options={stateOptions}
+                      selected={selectedStates}
+                      onChange={setSelectedStates}
+                      placeholder="All States"
+                      className="w-full"
+                      maxVisibleBadges={null}
+                      selectedDisplayMode="scroll"
+                      highlightSelectedOptions={false}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {viewMode === "kanban" ? (
             <div className="mt-4 min-h-0 flex-1 overflow-auto" onDragOver={handleKanbanDragOver}>

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { MultiSelect } from "@/components/ui/multi-select";
 import {
   Select,
   SelectContent,
@@ -14,11 +15,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Eye, Loader2, RefreshCw, StickyNote, UserPlus } from "lucide-react";
+import { Eye, Loader2, RefreshCw, SlidersHorizontal, StickyNote, UserPlus, X } from "lucide-react";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
+import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 
 interface CloserPortalRow {
   id: string;
@@ -42,6 +44,7 @@ interface CloserPortalRow {
   from_callback?: boolean;
   is_callback?: boolean;
   source_type?: string;
+  state?: string;
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -87,11 +90,12 @@ const CloserPortalPage = () => {
   const [filteredData, setFilteredData] = useState<CloserPortalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const LAST_24H_MS = 24 * 60 * 60 * 1000;
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
-  const [showDuplicates, setShowDuplicates] = useState(true);
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [timeTick, setTimeTick] = useState(() => Date.now());
@@ -240,19 +244,6 @@ const CloserPortalPage = () => {
     return CLOSER_STAGE_KEYS.dispositioned;
   };
 
-  const removeDuplicates = (records: CloserPortalRow[]) => {
-    const seen = new Map<string, CloserPortalRow>();
-
-    records.forEach((record) => {
-      const key = `${record.insured_name || ""}|${record.client_phone_number || ""}|${record.lead_vendor || ""}`;
-      if (!seen.has(key)) {
-        seen.set(key, record);
-      }
-    });
-
-    return Array.from(seen.values());
-  };
-
   const applyFilters = (records: CloserPortalRow[]) => {
     let filtered = records;
 
@@ -270,6 +261,10 @@ const CloserPortalPage = () => {
       filtered = filtered.filter((record) => deriveCloserStageKey(record) === statusFilter);
     }
 
+    if (selectedStates.length > 0) {
+      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
+    }
+
     if (searchTerm) {
       const query = searchTerm.toLowerCase();
       filtered = filtered.filter((record) =>
@@ -284,10 +279,6 @@ const CloserPortalPage = () => {
       );
     }
 
-    if (!showDuplicates) {
-      filtered = removeDuplicates(filtered);
-    }
-
     return filtered;
   };
 
@@ -299,6 +290,8 @@ const CloserPortalPage = () => {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
+
+  const stateOptions = useMemo(() => getStateFilterOptions(data), [data]);
 
   const fetchNoteCounts = async (rows: CloserPortalRow[]) => {
     const leadIds = rows.map((row) => row.id).filter(Boolean);
@@ -389,6 +382,7 @@ const CloserPortalPage = () => {
           from_callback: isCallback,
           is_callback: isCallback,
           source_type: isCallback ? "callback" : "zapier",
+          state: lead.state || "",
         };
       });
 
@@ -427,7 +421,7 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, leadVendorFilter, statusFilter, searchTerm, showDuplicates, timeTick, activeSessionIds]);
+  }, [data, leadVendorFilter, statusFilter, selectedStates, searchTerm, timeTick, activeSessionIds]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
@@ -702,75 +696,125 @@ const CloserPortalPage = () => {
     <div className="min-h-screen bg-background">
       <div className="flex h-full flex-col">
         <div className="border-b bg-card">
-          <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4 px-4 py-4 lg:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-1 flex-col gap-3 md:flex-row">
+          <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-3 px-4 py-4 lg:px-6">
+            {/* ── Toolbar ── */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 max-w-sm">
                 <Input
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search by name, phone, vendor..."
-                  className="md:max-w-xl"
+                  placeholder="Search by name, phone, vendor…"
                 />
-                <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
-                  <SelectTrigger className="md:w-72">
-                    <SelectValue placeholder="All Vendors" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="__ALL__">All Vendors</SelectItem>
-                      {leadVendorOptions.map((vendor) => (
-                        <SelectItem key={vendor} value={vendor}>
-                          {vendor}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="md:w-72">
-                    <SelectValue placeholder="All Stages" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="__ALL__">All Stages</SelectItem>
-                      {kanbanStages.map((stage) => (
-                        <SelectItem key={stage.key} value={stage.key}>
-                          {stage.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
               </div>
 
-              <div className="flex items-center gap-3 self-end lg:self-auto">
-                <Badge variant="secondary" className="px-3 py-1">
-                  {filteredData.length} records
-                </Badge>
-                <Button onClick={handleRefresh} disabled={refreshing}>
-                  <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  Refresh
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 md:flex-row">
-              <Select
-                value={showDuplicates ? "true" : "false"}
-                onValueChange={(value) => setShowDuplicates(value === "true")}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilters((v) => !v)}
+                className={showFilters ? "border-primary text-primary bg-primary/5" : ""}
               >
-                <SelectTrigger className="md:w-72">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="true">Show All Records</SelectItem>
-                    <SelectItem value="false">Remove Duplicates</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Filters
+                {(statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+                  <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
+                )}
+              </Button>
 
+              <div className="flex-1" />
+
+              <Badge variant="secondary" className="px-3 py-1 tabular-nums shrink-0">
+                {filteredData.length} records
+              </Badge>
+              <Button onClick={handleRefresh} disabled={refreshing}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
             </div>
+
+            {/* ── Collapsible Filter Panel ── */}
+            {showFilters && (
+              <Card className="border-primary/20 bg-muted/30 shadow-none">
+                <CardContent className="pt-5 pb-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold text-foreground">Filters</span>
+                      {(statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStatusFilter("__ALL__");
+                            setSelectedStates([]);
+                            setLeadVendorFilter("__ALL__");
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
+                        >
+                          <X className="h-3 w-3" />
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilters(false)}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted transition"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Vendor</label>
+                      <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Vendors" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="__ALL__">All Vendors</SelectItem>
+                            {leadVendorOptions.map((vendor) => (
+                              <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stage</label>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Stages" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="__ALL__">All Stages</SelectItem>
+                            {kanbanStages.map((stage) => (
+                              <SelectItem key={stage.key} value={stage.key}>{stage.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">State</label>
+                      <MultiSelect
+                        options={stateOptions}
+                        selected={selectedStates}
+                        onChange={setSelectedStates}
+                        placeholder="All States"
+                        className="w-full"
+                        maxVisibleBadges={null}
+                        selectedDisplayMode="scroll"
+                        highlightSelectedOptions={false}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
 
