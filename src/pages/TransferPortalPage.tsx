@@ -113,6 +113,7 @@ const TransferPortalPage = () => {
   // --- Dynamic pipeline stages from DB ---
   const { stages: dbTransferStages, loading: transferStagesLoading } = usePipelineStages("transfer_portal");
   const { stages: dbSubmissionStages, loading: submissionStagesLoading } = usePipelineStages("submission_portal");
+  const { stages: dbCloserStages } = usePipelineStages("closer_portal");
 
   const stageLabelByKey = useMemo(() => {
     const map: Record<string, string> = {};
@@ -182,6 +183,20 @@ const TransferPortalPage = () => {
       )
     );
   }, [kanbanStages, submissionPortalStageLabels]);
+
+  // ── Pipeline-agnostic helpers for the Edit dialog ──────────────────────────
+
+  const EDIT_PIPELINE_OPTIONS = [
+    { value: "transfer_portal",   label: "Transfer Pipeline"    },
+    { value: "submission_portal", label: "Submission Pipeline"  },
+    { value: "closer_portal",     label: "Closer Pipeline"      },
+  ] as const;
+
+  const editPipelineStagesMap: Record<string, PipelineStage[]> = {
+    transfer_portal:   dbTransferStages,
+    submission_portal: dbSubmissionStages,
+    closer_portal:     dbCloserStages,
+  };
 
   const transferApiStage = useMemo(() => {
     return dbTransferStages.find((stage) => (stage.key || '').trim() === 'transfer_api') ?? dbTransferStages[0] ?? null;
@@ -299,9 +314,9 @@ const TransferPortalPage = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editRow, setEditRow] = useState<TransferPortalRow | null>(null);
+  const [editPipeline, setEditPipeline] = useState("transfer_portal");
   const [editStage, setEditStage] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
-  const [editStageOpen, setEditStageOpen] = useState(false);
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -553,6 +568,20 @@ const TransferPortalPage = () => {
 
   const handleOpenEdit = (row: TransferPortalRow) => {
     setEditRow(row);
+
+    // Detect which pipeline owns the current status key
+    const rawStatus = (row.status ?? '').trim();
+    const detectedPipeline = (() => {
+      if (dbSubmissionStages.some((s) => s.key === rawStatus || s.label === rawStatus)) {
+        return "submission_portal";
+      }
+      if (dbCloserStages.some((s) => s.key === rawStatus || s.label === rawStatus)) {
+        return "closer_portal";
+      }
+      return "transfer_portal";
+    })();
+    setEditPipeline(detectedPipeline);
+
     setEditStage(
       toDispositionLabel(row.status ?? null) ||
       transferApiStage?.label ||
@@ -560,7 +589,6 @@ const TransferPortalPage = () => {
       ""
     );
     setEditNotes('');
-    setEditStageOpen(false);
     setEditOpen(true);
   };
 
@@ -670,11 +698,28 @@ const TransferPortalPage = () => {
     finally { setClaimLoading(false); }
   };
 
-  const editStageMatches = useMemo(() => {
-    const query = (editStage || '').trim().toLowerCase();
-    if (!query) return allStageOptions;
-    return allStageOptions.filter((label) => label.toLowerCase().includes(query));
-  }, [allStageOptions, editStage]);
+  // Stages for whichever pipeline is selected in the edit dialog
+  const editActivePipelineStages = useMemo(
+    () => editPipelineStagesMap[editPipeline] ?? dbTransferStages,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editPipeline, dbTransferStages, dbSubmissionStages, dbCloserStages]
+  );
+
+  const editActivePipelineLabels = useMemo(
+    () => Array.from(new Set(editActivePipelineStages.map((s) => (s.label || '').trim()).filter(Boolean))),
+    [editActivePipelineStages]
+  );
+
+  // label → key map for the active pipeline
+  const editActivePipelineKeyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    editActivePipelineStages.forEach((s) => {
+      const key   = (s?.key   ?? '').trim();
+      const label = (s?.label ?? '').trim();
+      if (key && label) map.set(label, key);
+    });
+    return map;
+  }, [editActivePipelineStages]);
 
   const syncLatestDailyDealFlowRow = async (submissionId: string | undefined, updates: Record<string, unknown>) => {
     const normalizedSubmissionId = (submissionId || '').trim();
@@ -705,8 +750,12 @@ const TransferPortalPage = () => {
   const handleSaveEdit = async () => {
     if (!editRow) return;
 
-    const selectedStage = resolveStatusKey(editStage);
-    const nextStage = resolveStoredStatusKey(editStage);
+    // For transfer pipeline use the existing handoff-aware resolver;
+    // for other pipelines do a straight label→key lookup.
+    const nextStage = editPipeline === 'transfer_portal'
+      ? resolveStoredStatusKey(editStage)
+      : (editActivePipelineKeyByLabel.get((editStage || '').trim()) ?? (editStage || '').trim());
+
     if (!nextStage) return;
 
     const previousStage = (editRow.status || '').trim();
@@ -1328,9 +1377,6 @@ const TransferPortalPage = () => {
                                     <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
                                       {row.lead_vendor || "—"}
                                     </Badge>
-                                    <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
-                                      {statusText}
-                                    </Badge>
                                   </div>
                                 </CardContent>
                               </Card>
@@ -1487,45 +1533,43 @@ const TransferPortalPage = () => {
               </DialogHeader>
 
               <div className="space-y-4">
+                {/* Pipeline selector */}
+                <div className="space-y-2">
+                  <Label>Pipeline</Label>
+                  <Select
+                    value={editPipeline}
+                    onValueChange={(value) => {
+                      setEditPipeline(value);
+                      setEditStage('');
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select pipeline..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EDIT_PIPELINE_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Stage</Label>
-                  <div className="relative">
-                    <Input
-                      value={editStage}
-                      placeholder="Type stage..."
-                      onFocus={() => setEditStageOpen(true)}
-                      onChange={(e) => {
-                        setEditStage(e.target.value);
-                        setEditStageOpen(true);
-                      }}
-                      onBlur={() => {
-                        window.setTimeout(() => setEditStageOpen(false), 150);
-                      }}
-                    />
-
-                    {editStageOpen && (
-                      <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                        {editStageMatches.length === 0 ? (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">No matching found.</div>
-                        ) : (
-                          editStageMatches.map((label) => (
-                            <button
-                              key={label}
-                              type="button"
-                              className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                setEditStage(label);
-                                setEditStageOpen(false);
-                              }}
-                            >
-                              {label}
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <Select value={editStage} onValueChange={setEditStage}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select stage..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {editActivePipelineLabels.map((label) => (
+                        <SelectItem key={label} value={label}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
