@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -10,15 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAttorneys } from "@/hooks/useAttorneys";
 import { supabase } from "@/integrations/supabase/client";
-import { LeadInfoCard } from "@/components/LeadInfoCard";
 import { CallResultForm } from "@/components/CallResultForm";
 import { StartVerificationModal } from "@/components/StartVerificationModal";
 import { VerificationPanel } from "@/components/VerificationPanel";
 import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
 import { DocumentUploadCard } from "@/components/DocumentUploadCard";
-import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, ShieldAlert, FileText, ChevronDown, ChevronUp } from "lucide-react";
-import { TopVerificationProgress } from "@/components/TopVerificationProgress";
+import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp } from "lucide-react";
 import { DOCUSIGN_TEMPLATE_IDS } from "@/lib/docusignTemplates";
 
 interface Lead {
@@ -87,6 +86,13 @@ interface ScriptTabDefinition {
   icon: "flow" | "verify" | "docs" | "review";
   sections: ScriptSection[];
 }
+
+const scriptHeaderCheckpoints = [
+  { label: "Date", hint: "Verify twice" },
+  { label: "Police", hint: "Primary proof" },
+  { label: "Medical", hint: "Second checkpoint" },
+  { label: "Attorney", hint: "Check releases" },
+] as const;
 
 const normalizePhoneForLookup = (value: string | null | undefined) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -230,6 +236,31 @@ const callScriptTabs: ScriptTabDefinition[] = [
         ],
       },
       {
+        eyebrow: "3. Accident Date Verification",
+        title: "Critical fraud checkpoint",
+        script: [
+          "Initial question: Can you tell me when your accident happened?",
+          "Record their answer exactly, then make them confirm the same date more than once.",
+        ],
+        questions: [
+          "What day of the week was it?",
+          "Was it around any holiday or special event?",
+          "What was the weather like that day?",
+          "About what time of day did it happen?",
+          "So just to confirm, that was [REPEAT DATE]? And that was about [X] months ago, correct?",
+        ],
+        redFlags: [
+          "They claim the accident was 11 months ago but cannot remember the day of week or season.",
+          'They quickly say "within 12 months" but stay vague on the exact date.',
+          "The date changes when asked different ways.",
+          "They hesitate or sound coached when giving the date.",
+        ],
+        tips: [
+          "If the date seems coached, note: Caller claims accident was [DATE] - VERIFY WITH POLICE REPORT.",
+          "If their date is off by more than a few days once the police report is pulled, treat it as likely fraud.",
+        ],
+      },
+      {
         eyebrow: "4. Accident Location & Details",
         title: "Lock in the factual scene details",
         questions: [
@@ -270,31 +301,6 @@ const callScriptTabs: ScriptTabDefinition[] = [
     description: "Fraud checkpoints for date, police report, injuries, and prior counsel.",
     icon: "verify",
     sections: [
-      {
-        eyebrow: "3. Accident Date Verification",
-        title: "Critical fraud checkpoint",
-        script: [
-          "Initial question: Can you tell me when your accident happened?",
-          "Record their answer exactly, then make them confirm the same date more than once.",
-        ],
-        questions: [
-          "What day of the week was it?",
-          "Was it around any holiday or special event?",
-          "What was the weather like that day?",
-          "About what time of day did it happen?",
-          "So just to confirm, that was [REPEAT DATE]? And that was about [X] months ago, correct?",
-        ],
-        redFlags: [
-          "They claim the accident was 11 months ago but cannot remember the day of week or season.",
-          'They quickly say "within 12 months" but stay vague on the exact date.',
-          "The date changes when asked different ways.",
-          "They hesitate or sound coached when giving the date.",
-        ],
-        tips: [
-          "If the date seems coached, note: Caller claims accident was [DATE] - VERIFY WITH POLICE REPORT.",
-          "If their date is off by more than a few days once the police report is pulled, treat it as likely fraud.",
-        ],
-      },
       {
         eyebrow: "6. Police Report",
         title: "Primary verification tool",
@@ -518,6 +524,7 @@ const CallResultUpdate = () => {
   const [showVerificationPanel, setShowVerificationPanel] = useState(false);
   const [verifiedFieldValues, setVerifiedFieldValues] = useState<Record<string, string>>({});
   const [verificationProgress, setVerificationProgress] = useState(0);
+  const [currentAssignedAttorneyId, setCurrentAssignedAttorneyId] = useState<string | null>(assignedAttorneyId || null);
   const [contractRecipientEmail, setContractRecipientEmail] = useState("");
   const [sendingContract, setSendingContract] = useState(false);
   const [lastEnvelopeId, setLastEnvelopeId] = useState<string | null>(null);
@@ -529,7 +536,9 @@ const CallResultUpdate = () => {
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
   const [isContractCollapsed, setIsContractCollapsed] = useState(false);
   const [isDocumentUploadCollapsed, setIsDocumentUploadCollapsed] = useState(false);
+  const [isUploadedDocumentsExpanded, setIsUploadedDocumentsExpanded] = useState(false);
   const [openScriptSections, setOpenScriptSections] = useState<Record<string, boolean>>({});
+  const [linkedScriptSectionEyebrow, setLinkedScriptSectionEyebrow] = useState<string | null>(null);
 
   const [contractTemplates, setContractTemplates] = useState<{ id: string; name: string }[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -537,6 +546,7 @@ const CallResultUpdate = () => {
   const [contractRecipientName, setContractRecipientName] = useState("");
 
   const { toast } = useToast();
+  const { attorneys } = useAttorneys();
 
   const checkExistingVerificationSession = useCallback(async () => {
     try {
@@ -628,7 +638,11 @@ const CallResultUpdate = () => {
   }, [submissionId, toast]);
 
   const screeningPhone = normalizePhoneForLookup(verifiedFieldValues.phone_number || lead?.phone_number);
-  const callFlowSections = callScriptTabs.flatMap((tab) => tab.sections);
+  const callFlowSections = useMemo(() => callScriptTabs.flatMap((tab) => tab.sections), []);
+  const scriptSectionIndexByEyebrow = useMemo(
+    () => new Map(callFlowSections.map((section, index) => [section.eyebrow, index])),
+    [callFlowSections]
+  );
 
   const toggleScriptSection = (sectionKey: string, fallbackOpen: boolean) => {
     setOpenScriptSections((prev) => ({
@@ -727,114 +741,608 @@ const CallResultUpdate = () => {
     );
   })();
 
+  // --- Mapping: verification field groups → script section indices ---
+  // Used to auto-scroll the script panel when the agent focuses on verification fields.
+  const fieldToScriptSection: Record<string, number> = {
+    // 2. Basic Information → section index 1
+    lead_vendor: 1, customer_full_name: 1, date_of_birth: 1, age: 1,
+    birth_state: 1, social_security: 1, driver_license: 1,
+    street_address: 1, city: 1, state: 1, zip_code: 1,
+    phone_number: 1, email: 1,
+    // 3. Accident Date Verification → section index 2
+    accident_date: 2,
+    // 4. Accident Location & Details → section index 3
+    accident_location: 3, accident_scenario: 3,
+    // 5. Fault & Liability → section index 4
+    other_party_admit_fault: 4,
+    // 6. Police Report → section index 5
+    police_attended: 5,
+    // 7. Injury Verification → section index 6
+    injuries: 6, medical_attention: 6,
+    // 8. Prior Attorney → section index 7
+    prior_attorney_involved: 7, prior_attorney_details: 7,
+    // 9-10. Vehicle / Insurance → section index 9
+    insured: 9, vehicle_registration: 9, insurance_company: 9,
+    third_party_vehicle_registration: 9, passengers_count: 9,
+    // Witness info → section index 1 (basic)
+    contact_name: 1, contact_number: 1, contact_address: 1,
+    // 11. Documents → section index 10
+    additional_notes: 10, medical_treatment_proof: 10,
+    insurance_documents: 10, police_report: 10,
+  };
+
+  const fieldToScriptSectionEyebrow: Record<string, string> = {
+    lead_vendor: "2. Basic Information",
+    customer_full_name: "2. Basic Information",
+    date_of_birth: "2. Basic Information",
+    age: "2. Basic Information",
+    birth_state: "2. Basic Information",
+    social_security: "2. Basic Information",
+    driver_license: "10. Driver & Vehicle Information",
+    street_address: "2. Basic Information",
+    city: "2. Basic Information",
+    state: "2. Basic Information",
+    zip_code: "2. Basic Information",
+    phone_number: "2. Basic Information",
+    email: "2. Basic Information",
+    accident_date: "3. Accident Date Verification",
+    accident_location: "4. Accident Location & Details",
+    accident_scenario: "5. Fault & Liability",
+    other_party_admit_fault: "5. Fault & Liability",
+    police_attended: "5. Fault & Liability",
+    injuries: "7. Injury Verification",
+    medical_attention: "7. Injury Verification",
+    prior_attorney_involved: "8. Prior Attorney Representation",
+    prior_attorney_details: "8. Prior Attorney Representation",
+    insured: "10. Driver & Vehicle Information",
+    vehicle_registration: "10. Driver & Vehicle Information",
+    insurance_company: "10. Driver & Vehicle Information",
+    third_party_vehicle_registration: "10. Driver & Vehicle Information",
+    passengers_count: "10. Driver & Vehicle Information",
+    contact_name: "4. Accident Location & Details",
+    contact_number: "4. Accident Location & Details",
+    contact_address: "4. Accident Location & Details",
+    additional_notes: "11. Document Collection Requirements",
+    medical_treatment_proof: "7. Injury Verification",
+    insurance_documents: "11. Document Collection Requirements",
+    police_report: "6. Police Report",
+  };
+
+  const scriptCardRef = useRef<HTMLDivElement>(null);
+  const scriptScrollRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  const updateLinkedScriptSection = useCallback(() => {
+    const container = scriptScrollRef.current;
+    if (!container || !callFlowSections.length) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const anchor = container.scrollTop + container.clientHeight * 0.24;
+    let nextEyebrow = callFlowSections[0]?.eyebrow ?? null;
+
+    sectionRefs.current.forEach((sectionRef, sectionIndex) => {
+      if (!sectionRef) return;
+
+      const sectionTop =
+        sectionRef.getBoundingClientRect().top - containerRect.top + container.scrollTop;
+
+      if (sectionTop <= anchor) {
+        nextEyebrow = callFlowSections[sectionIndex]?.eyebrow ?? nextEyebrow;
+      }
+    });
+
+    setLinkedScriptSectionEyebrow((current) =>
+      current === nextEyebrow ? current : nextEyebrow
+    );
+  }, [callFlowSections]);
+
+  useEffect(() => {
+    if (!showVerificationPanel) return;
+    requestAnimationFrame(() => updateLinkedScriptSection());
+  }, [showVerificationPanel, openScriptSections, updateLinkedScriptSection]);
+
+  useEffect(() => {
+    if (!showVerificationPanel) return;
+
+    const card = scriptCardRef.current;
+    const container = scriptScrollRef.current;
+    if (!card || !container) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      if (maxScrollTop <= 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const nextScrollTop = Math.max(0, Math.min(maxScrollTop, container.scrollTop + event.deltaY));
+      container.scrollTop = nextScrollTop;
+      event.preventDefault();
+    };
+
+    card.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+
+    return () => {
+      card.removeEventListener("wheel", handleWheel, true);
+    };
+  }, [showVerificationPanel]);
+
+  // When a verification field is checked/edited, open + scroll the corresponding script section
+  const handleFieldVerifiedWithSync = (fieldName: string, value: string, checked: boolean) => {
+    handleFieldVerified(fieldName, value, checked);
+
+    const targetEyebrow = fieldToScriptSectionEyebrow[fieldName];
+    const targetIdx = targetEyebrow ? scriptSectionIndexByEyebrow.get(targetEyebrow) : undefined;
+    if (targetIdx == null) return;
+
+    setLinkedScriptSectionEyebrow(targetEyebrow);
+
+    // Open the matching script section
+    const section = callFlowSections[targetIdx];
+    if (section) {
+      const sectionKey = `${section.eyebrow}-${section.title}-${targetIdx}`;
+      setOpenScriptSections((prev) => ({ ...prev, [sectionKey]: true }));
+    }
+
+    // Scroll the script panel to the target section
+    requestAnimationFrame(() => {
+      const el = sectionRefs.current[targetIdx];
+      if (el && scriptScrollRef.current) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  };
+
+  // ---- Pre-call cards (DNC + Disclaimer) ----
+  const preCallCards = (
+    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+      <Card className="border-amber-200/80 bg-amber-50/30 shadow-sm">
+        <Collapsible open={!isDncLookupCollapsed} onOpenChange={(open) => setIsDncLookupCollapsed(!open)}>
+          <CollapsibleTrigger asChild>
+            <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/60">
+              <div className="flex items-center gap-2.5">
+                <ShieldAlert className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-semibold text-amber-900">DNC Lookup</span>
+                <span className="hidden text-xs text-amber-700/70 sm:inline">TCPA / DNC screening</span>
+              </div>
+              <div className="shrink-0 rounded-md border border-amber-200 bg-white/70 p-1">
+                {isDncLookupCollapsed ? <ChevronDown className="h-3.5 w-3.5 text-amber-800" /> : <ChevronUp className="h-3.5 w-3.5 text-amber-800" />}
+              </div>
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t border-amber-200/60 px-5 pb-4 pt-3">{dncLookupCardContent}</div>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
+      <Card className="border-amber-200/80 bg-amber-50/30 shadow-sm">
+        <Collapsible open={!isDisclaimerCollapsed} onOpenChange={(open) => setIsDisclaimerCollapsed(!open)}>
+          <CollapsibleTrigger asChild>
+            <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/60">
+              <div className="flex items-center gap-2.5">
+                <ShieldAlert className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-semibold text-amber-900">Disclaimer</span>
+                <span className="hidden text-xs text-amber-700/70 sm:inline">Verbal consent required</span>
+              </div>
+              <div className="shrink-0 rounded-md border border-amber-200 bg-white/70 p-1">
+                {isDisclaimerCollapsed ? <ChevronDown className="h-3.5 w-3.5 text-amber-800" /> : <ChevronUp className="h-3.5 w-3.5 text-amber-800" />}
+              </div>
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="space-y-2.5 border-t border-amber-200/60 px-5 pb-4 pt-3">
+              <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
+                Is your phone number{" "}
+                <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
+                  {lead?.phone_number || "on file"}
+                </span>{" "}
+                on the Federal, National or State Do Not Call List?
+              </div>
+
+              <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                <p className="text-[11px] leading-4 text-amber-800">
+                  If a customer says <strong>no</strong> and we see it's on the DNC list, we still have to take verbal consent.
+                </p>
+              </div>
+
+              <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
+                Sir/Ma'am, even if your phone number is on the Federal National or State Do Not Call List, do we still
+                have your permission to call you and submit your application to Accident Payments via your
+                phone number{" "}
+                <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
+                  {lead?.phone_number || "on file"}
+                </span>
+                ? And do we have your permission to call you on the same phone number in the future if needed?
+              </div>
+
+              <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+                <p className="text-[13px] font-semibold text-amber-900">Make sure you get a clear YES on it.</p>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+    </div>
+  );
+
+  // ---- Script card (standalone, used side-by-side with verification) ----
+  const scriptCard = (
+    <Card
+      ref={scriptCardRef}
+      className="flex min-h-[30rem] flex-col overflow-hidden border-border/60 shadow-sm lg:h-[calc(100dvh-8rem)]"
+    >
+      <div className="flex-shrink-0 border-b border-orange-950/40 bg-[linear-gradient(90deg,#724020_0%,#6f3b1d_42%,#65331b_74%,#542918_100%)] text-orange-50">
+        <div className="flex items-center justify-between gap-2 px-5 py-3">
+          <div className="flex items-center gap-2.5">
+            <FileText className="h-4 w-4 text-orange-100" />
+            <span className="text-sm font-bold tracking-tight text-white">Script</span>
+            <span className="hidden text-xs text-orange-50/85 sm:inline">MVA Intake Call Flow</span>
+          </div>
+          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-orange-50/65">
+            Live Reference
+          </div>
+        </div>
+        <div className="min-h-[2.75rem] px-5 pb-3">
+          <div className="flex h-full flex-col justify-center gap-1 pt-2">
+            <div className="overflow-x-auto whitespace-nowrap text-[10px] leading-4 text-orange-50/80 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {scriptHeaderCheckpoints.map(({ label, hint }, index) => (
+                <span key={label}>
+                  {index > 0 ? <span className="px-2 text-orange-50/35">|</span> : null}
+                  <span className="font-semibold text-white">{label}:</span>{" "}
+                  <span>{hint}</span>
+                </span>
+              ))}
+            </div>
+            <div className="overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex items-center gap-1.5">
+                {[scriptHighlights[0], scriptHighlights[1], scriptHighlights[4]].map((highlight) => (
+                  <Badge
+                    key={highlight}
+                    variant="secondary"
+                    className="rounded-full border border-white/15 bg-white/10 px-2.5 py-0 text-[9px] font-medium text-orange-50 shadow-none"
+                  >
+                    {highlight}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <CardContent
+        className="pt-3 flex-1 min-h-0 overflow-y-auto overscroll-y-none"
+        ref={scriptScrollRef}
+        onScroll={updateLinkedScriptSection}
+      >
+        <div className="space-y-3">
+          {callFlowSections.map((section, sectionIndex) => {
+            const sectionKey = `${section.eyebrow}-${section.title}-${sectionIndex}`;
+            const defaultOpen = sectionIndex === 0;
+            const isSectionOpen = openScriptSections[sectionKey] ?? defaultOpen;
+            const isLinkedSection = linkedScriptSectionEyebrow === section.eyebrow;
+
+            return (
+              <div key={sectionKey} ref={(el) => { sectionRefs.current[sectionIndex] = el; }}>
+                <Collapsible open={isSectionOpen} onOpenChange={() => toggleScriptSection(sectionKey, defaultOpen)}>
+                  <div
+                    className={`rounded-lg border transition-all ${
+                      isLinkedSection
+                        ? "border-[#8a4b23]/55 bg-[linear-gradient(180deg,rgba(240,170,116,0.18)_0%,rgba(244,226,211,0.58)_100%)] shadow-[0_14px_32px_-22px_rgba(94,47,24,0.5)]"
+                        : "border-border/60 bg-card"
+                    }`}
+                  >
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors ${
+                          isLinkedSection ? "hover:bg-[#f4d7bf]/35" : "hover:bg-muted/20"
+                        }`}
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                              {section.eyebrow}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                              {sectionIndex + 1}/{callFlowSections.length}
+                            </span>
+                            {isLinkedSection ? (
+                              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                            ) : null}
+                          </div>
+                          <h3 className="text-[13px] font-semibold text-foreground leading-snug">{section.title}</h3>
+                          {section.summary && !isSectionOpen ? (
+                            <p className="text-xs leading-5 text-muted-foreground line-clamp-1">{section.summary}</p>
+                          ) : null}
+                        </div>
+                        <div className="mt-0.5 shrink-0 text-muted-foreground">
+                          {isSectionOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        </div>
+                      </button>
+                    </CollapsibleTrigger>
+
+                    <CollapsibleContent>
+                      <div
+                        className={`space-y-2.5 border-t px-4 pb-3.5 pt-3 ${
+                          isLinkedSection ? "border-[#8a4b23]/20 bg-[#fff8f2]/35" : "border-border/40"
+                        }`}
+                      >
+                        {section.summary ? (
+                          <p className="text-[13px] leading-6 text-muted-foreground">{section.summary}</p>
+                        ) : null}
+
+                        {section.script?.length ? (
+                          <div className="rounded-md border border-primary/10 bg-primary/[0.03] px-3.5 py-2.5">
+                            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary/70">
+                              Read to Caller
+                            </div>
+                            <div className="space-y-1.5 text-[13px] leading-6 text-foreground">
+                              {section.script.map((line) => (
+                                <p key={line}>{line}</p>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {section.questions?.length ? (
+                          <div>
+                            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                              Ask
+                            </div>
+                            <ul className="space-y-1.5 text-[13px] leading-6 text-foreground">
+                              {section.questions.map((item) => (
+                                <li key={item} className="flex gap-2">
+                                  <span className="mt-[0.5rem] h-1 w-1 shrink-0 rounded-full bg-primary/60" />
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {section.checklist?.length ? (
+                          <div>
+                            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                              Checklist
+                            </div>
+                            <ul className="space-y-1 text-[13px] leading-6 text-foreground">
+                              {section.checklist.map((item) => (
+                                <li key={item} className="flex gap-2">
+                                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {section.tips?.length ? (
+                          <div className="rounded-md bg-sky-50/70 px-3.5 py-2.5">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                              Tips
+                            </div>
+                            <ul className="space-y-1 text-[12px] leading-5 text-sky-900">
+                              {section.tips.map((item) => (
+                                <li key={item} className="flex gap-1.5">
+                                  <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-sky-500" />
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {section.redFlags?.length ? (
+                          <div className="rounded-md bg-rose-50/70 px-3.5 py-2.5">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-700">
+                              Red Flags
+                            </div>
+                            <ul className="space-y-1 text-[12px] leading-5 text-rose-900">
+                              {section.redFlags.map((item) => (
+                                <li key={item} className="flex gap-1.5">
+                                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-rose-500" />
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {section.notes?.length ? (
+                          <div className="rounded-md bg-amber-50/70 px-3.5 py-2.5">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                              Notes
+                            </div>
+                            <ul className="space-y-1 text-[12px] leading-5 text-amber-900">
+                              {section.notes.map((item) => (
+                                <li key={item} className="flex gap-1.5">
+                                  <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const assignedAttorneyProfile = currentAssignedAttorneyId
+    ? attorneys.find((attorney) => attorney.user_id === currentAssignedAttorneyId)
+    : null;
+  const selectedAssignedAttorneyLabel =
+    assignedAttorneyProfile?.full_name?.trim() ||
+    assignedAttorneyProfile?.primary_email?.trim() ||
+    currentAssignedAttorneyId ||
+    "";
+  const handoffCardClass = "h-full overflow-hidden border-[#f2d5c1] shadow-sm";
+  const handoffHeaderClass =
+    "flex w-full items-center justify-between gap-3 border-b border-[#efbb93] bg-[linear-gradient(90deg,rgba(234,117,38,0.48)_0%,rgba(234,117,38,0.30)_18%,rgba(234,117,38,0.18)_34%,rgba(234,117,38,0.09)_50%,rgba(234,117,38,0)_68%)] px-5 py-3.5 text-left transition-colors hover:bg-[#ffe7d5]";
+  const handoffIconClass =
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#efbb93]/70 bg-[#fff2e8] text-[#b85a20]";
+  const handoffChevronClass = "shrink-0 rounded-md border border-[#efbb93]/70 bg-white/80 p-1";
+  const shouldStretchHandoffCards = isDocumentUploadCollapsed || !isUploadedDocumentsExpanded;
+
+  // ---- Contract / DocuSign card ----
+  const contractCard = (
+    <Card className={handoffCardClass}>
+      <Collapsible open={!isContractCollapsed} onOpenChange={(open) => setIsContractCollapsed(!open)}>
+        <CollapsibleTrigger asChild>
+          <button type="button" className={handoffHeaderClass}>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={handoffIconClass}>
+                <FileText className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 text-left">
+                <div className="text-sm font-semibold">Send Contract</div>
+                <div className="text-xs text-muted-foreground">
+                  {selectedAssignedAttorneyLabel
+                    ? `Auto-filled for ${selectedAssignedAttorneyLabel}`
+                    : "Select an attorney above to auto-populate this step"}
+                </div>
+              </div>
+            </div>
+            <div className={handoffChevronClass}>
+              {isContractCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-5 pb-4 pt-3">
+            <div className="space-y-3">
+              {selectedAssignedAttorneyLabel ? (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <span className="text-emerald-800 font-medium">{selectedAssignedAttorneyLabel}</span>
+                  <span className="text-emerald-700/70 text-xs">selected</span>
+                </div>
+              ) : (
+                <div className="rounded-xl border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  Select an attorney from the recommendations above to auto-populate.
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Template</Label>
+                {loadingTemplates ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading...
+                  </div>
+                ) : (
+                  <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                    <SelectTrigger className="h-8.5 text-sm">
+                      <SelectValue placeholder="Select a template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {contractTemplates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Name</Label>
+                  <Input
+                    id="contractRecipientName"
+                    type="text"
+                    value={contractRecipientName}
+                    onChange={(e) => setContractRecipientName(e.target.value)}
+                    placeholder="Full name"
+                    className="h-8.5 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Email</Label>
+                  <Input
+                    id="contractRecipientEmail"
+                    type="email"
+                    value={contractRecipientEmail}
+                    onChange={(e) => setContractRecipientEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="h-8.5 text-sm"
+                  />
+                </div>
+              </div>
+
+              {lastEnvelopeId ? (
+                <div className="text-[11px] text-muted-foreground font-mono">Envelope: {lastEnvelopeId}</div>
+              ) : null}
+
+              <Button onClick={handleSendContract} disabled={sendingContract || loadingTemplates || !selectedTemplateId} size="sm" className="w-full">
+                {sendingContract ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Sending...
+                  </span>
+                ) : (
+                  "Send Contract"
+                )}
+              </Button>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+
+  const documentUploadCard = (
+    <Card className={handoffCardClass}>
+      <Collapsible open={!isDocumentUploadCollapsed} onOpenChange={(open) => setIsDocumentUploadCollapsed(!open)}>
+        <CollapsibleTrigger asChild>
+          <button type="button" className={handoffHeaderClass}>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={handoffIconClass}>
+                <FileText className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 text-left">
+                <div className="text-sm font-semibold">Document Upload</div>
+                <div className="text-xs text-muted-foreground">
+                  Collect police, insurance, and medical documents for the handoff package.
+                </div>
+              </div>
+            </div>
+            <div className={handoffChevronClass}>
+              {isDocumentUploadCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-5 pb-4 pt-3">
+            <DocumentUploadCard
+              submissionId={submissionId!}
+              customerPhoneNumber={lead?.phone_number}
+              embedded
+              onUploadedDocumentsToggle={setIsUploadedDocumentsExpanded}
+            />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+
+  // ---- Backwards-compatible combined cards (for non-verification layout) ----
   const callSupportCards = (
     <div className="space-y-4">
-      <Card>
-        <Collapsible open={!isDncLookupCollapsed} onOpenChange={(open) => setIsDncLookupCollapsed(!open)}>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <ShieldAlert className="h-4 w-4" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">DNC Lookup</CardTitle>
-                  <p className="text-xs text-muted-foreground">TCPA / DNC screening status for the current lead phone number.</p>
-                </div>
-              </div>
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="gap-2">
-                  {isDncLookupCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="pt-0">{dncLookupCardContent}</CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
-
-      <Card className="border-amber-200 bg-amber-50/40">
-        <Collapsible open={!isDisclaimerCollapsed} onOpenChange={(open) => setIsDisclaimerCollapsed(!open)}>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
-                  <ShieldAlert className="h-4 w-4 text-amber-600" />
-                </div>
-                <div>
-                  <CardTitle className="text-base text-amber-900">Disclaimer</CardTitle>
-                  <p className="text-xs text-amber-700/70">DNC verbal consent — read to the customer before proceeding.</p>
-                </div>
-              </div>
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="gap-2 border-amber-200 bg-white/70 text-amber-900 hover:bg-white">
-                  {isDisclaimerCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="space-y-3 pt-0">
-          {/* Question 1 */}
-          <div className="rounded-lg border border-amber-200 bg-white px-4 py-3 text-sm leading-6 text-foreground">
-            Is your phone number{" "}
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">
-              {lead?.phone_number || "on file"}
-            </span>{" "}
-            on the Federal, National or State Do Not Call List?
-          </div>
-
-          {/* Internal note */}
-          <div className="flex items-start gap-2 rounded-lg border border-amber-200/60 bg-amber-100/50 px-4 py-2.5">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-            <p className="text-xs leading-5 text-amber-800">
-              If a customer says <strong>no</strong> and we see it's on the DNC list, we still have to take the verbal consent.
-            </p>
-          </div>
-
-          {/* Question 2 */}
-          <div className="rounded-lg border border-amber-200 bg-white px-4 py-3 text-sm leading-6 text-foreground">
-            Sir/Ma'am, even if your phone number is on the Federal National or State Do Not Call List, do we still
-            have your permission to call you and submit your application to Accident Payments via your
-            phone number{" "}
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">
-              {lead?.phone_number || "on file"}
-            </span>
-            ? And do we have your permission to call you on the same phone number in the future if needed?
-          </div>
-
-          {/* Action required */}
-          <div className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-400/15 px-4 py-2.5">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-amber-700" />
-            <p className="text-sm font-semibold text-amber-900">Make sure you get a clear YES on it.</p>
-          </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
-
+      {preCallCards}
       <Card>
         <Collapsible open={!isScriptCollapsed} onOpenChange={(open) => setIsScriptCollapsed(!open)}>
           <CardHeader className="pb-4">
@@ -909,278 +1417,132 @@ const CallResultUpdate = () => {
 
               <ScrollArea className="h-[36rem] rounded-xl border bg-background">
                 <div className="space-y-4 p-4">
-                  {callFlowSections.map((section, sectionIndex) => (
-                    (() => {
-                      const sectionKey = `${section.eyebrow}-${section.title}-${sectionIndex}`;
-                      const defaultOpen = sectionIndex === 0;
-                      const isSectionOpen = openScriptSections[sectionKey] ?? defaultOpen;
+                  {callFlowSections.map((section, sectionIndex) => {
+                    const sectionKey = `${section.eyebrow}-${section.title}-${sectionIndex}`;
+                    const defaultOpen = sectionIndex === 0;
+                    const isSectionOpen = openScriptSections[sectionKey] ?? defaultOpen;
 
-                      return (
-                        <Collapsible key={sectionKey} open={isSectionOpen} onOpenChange={() => toggleScriptSection(sectionKey, defaultOpen)}>
-                          <div className="rounded-xl border bg-card shadow-sm">
-                            <CollapsibleTrigger asChild>
-                              <button
-                                type="button"
-                                className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/20"
-                              >
-                                <div className="space-y-1">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                                      {section.eyebrow}
-                                    </div>
-                                    <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px] font-medium">
-                                      Step {sectionIndex + 1} of {callFlowSections.length}
-                                    </Badge>
+                    return (
+                      <Collapsible key={sectionKey} open={isSectionOpen} onOpenChange={() => toggleScriptSection(sectionKey, defaultOpen)}>
+                        <div className="rounded-xl border bg-card shadow-sm">
+                          <CollapsibleTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/20"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                    {section.eyebrow}
                                   </div>
-                                  <h3 className="text-sm font-semibold text-foreground">{section.title}</h3>
-                                  {section.summary ? (
-                                    <p className="text-sm leading-6 text-muted-foreground">{section.summary}</p>
-                                  ) : null}
+                                  <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px] font-medium">
+                                    Step {sectionIndex + 1} of {callFlowSections.length}
+                                  </Badge>
                                 </div>
-                                <div className="mt-0.5 shrink-0 rounded-full border bg-background p-1.5">
-                                  {isSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                </div>
-                              </button>
-                            </CollapsibleTrigger>
-
-                            <CollapsibleContent>
-                              <div className="space-y-3 border-t px-4 pb-4 pt-3">
-                                {section.script?.length ? (
-                                  <div className="rounded-lg border border-primary/10 bg-primary/5 px-4 py-3">
-                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">
-                                      Agent Script
-                                    </div>
-                                    <div className="space-y-2 text-sm leading-6 text-foreground">
-                                      {section.script.map((line) => (
-                                        <p key={line}>{line}</p>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : null}
-
-                                {section.questions?.length ? (
-                                  <div>
-                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                                      Questions To Ask
-                                    </div>
-                                    <ul className="space-y-2 text-sm leading-6 text-foreground">
-                                      {section.questions.map((item) => (
-                                        <li key={item} className="flex gap-2">
-                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
-                                          <span>{item}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                ) : null}
-
-                                {section.checklist?.length ? (
-                                  <div>
-                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                                      Checklist
-                                    </div>
-                                    <ul className="space-y-2 text-sm leading-6 text-foreground">
-                                      {section.checklist.map((item) => (
-                                        <li key={item} className="flex gap-2">
-                                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                                          <span>{item}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                ) : null}
-
-                                {section.tips?.length ? (
-                                  <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-4 py-3">
-                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-800">
-                                      Verification Tips
-                                    </div>
-                                    <ul className="space-y-2 text-sm leading-6 text-sky-950">
-                                      {section.tips.map((item) => (
-                                        <li key={item} className="flex gap-2">
-                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
-                                          <span>{item}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                ) : null}
-
-                                {section.redFlags?.length ? (
-                                  <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-4 py-3">
-                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800">
-                                      Red Flags
-                                    </div>
-                                    <ul className="space-y-2 text-sm leading-6 text-rose-950">
-                                      {section.redFlags.map((item) => (
-                                        <li key={item} className="flex gap-2">
-                                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-                                          <span>{item}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                ) : null}
-
-                                {section.notes?.length ? (
-                                  <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3">
-                                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">
-                                      Internal Notes
-                                    </div>
-                                    <ul className="space-y-2 text-sm leading-6 text-amber-950">
-                                      {section.notes.map((item) => (
-                                        <li key={item} className="flex gap-2">
-                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                                          <span>{item}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
+                                <h3 className="text-sm font-semibold text-foreground">{section.title}</h3>
+                                {section.summary ? (
+                                  <p className="text-sm leading-6 text-muted-foreground">{section.summary}</p>
                                 ) : null}
                               </div>
-                            </CollapsibleContent>
-                          </div>
-                        </Collapsible>
-                      );
-                    })()
-                  ))}
+                              <div className="mt-0.5 shrink-0 rounded-full border bg-background p-1.5">
+                                {isSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                              </div>
+                            </button>
+                          </CollapsibleTrigger>
+
+                          <CollapsibleContent>
+                            <div className="space-y-3 border-t px-4 pb-4 pt-3">
+                              {section.script?.length ? (
+                                <div className="rounded-lg border border-primary/10 bg-primary/5 px-4 py-3">
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">
+                                    Agent Script
+                                  </div>
+                                  <div className="space-y-2 text-sm leading-6 text-foreground">
+                                    {section.script.map((line) => (
+                                      <p key={line}>{line}</p>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+                              {section.questions?.length ? (
+                                <div>
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Questions To Ask</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-foreground">
+                                    {section.questions.map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                              {section.checklist?.length ? (
+                                <div>
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Checklist</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-foreground">
+                                    {section.checklist.map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                              {section.tips?.length ? (
+                                <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-4 py-3">
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-800">Verification Tips</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-sky-950">
+                                    {section.tips.map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                              {section.redFlags?.length ? (
+                                <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-4 py-3">
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800">Red Flags</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-rose-950">
+                                    {section.redFlags.map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                              {section.notes?.length ? (
+                                <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3">
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">Internal Notes</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-amber-950">
+                                    {section.notes.map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                            </div>
+                          </CollapsibleContent>
+                        </div>
+                      </Collapsible>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </CardContent>
           </CollapsibleContent>
         </Collapsible>
       </Card>
-
-      <Card className="mb-2">
-        <Collapsible open={!isContractCollapsed} onOpenChange={(open) => setIsContractCollapsed(!open)}>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Send Contract</CardTitle>
-                <p className="text-xs text-muted-foreground">Send the retainer/contract packet to the recipient email on file.</p>
-              </div>
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="gap-2">
-                  {isContractCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="pt-0">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Contract Template</Label>
-                  {loadingTemplates ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Loading templates...
-                    </div>
-                  ) : (
-                    <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a template" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {contractTemplates.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            {t.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="contractRecipientName">Recipient Name</Label>
-                    <Input
-                      id="contractRecipientName"
-                      type="text"
-                      value={contractRecipientName}
-                      onChange={(e) => setContractRecipientName(e.target.value)}
-                      placeholder="Full name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="contractRecipientEmail">Recipient Email</Label>
-                    <Input
-                      id="contractRecipientEmail"
-                      type="email"
-                      value={contractRecipientEmail}
-                      onChange={(e) => setContractRecipientEmail(e.target.value)}
-                      placeholder="name@example.com"
-                    />
-                  </div>
-                </div>
-
-                {lastEnvelopeId ? (
-                  <div className="text-sm text-muted-foreground">Last envelope: {lastEnvelopeId}</div>
-                ) : null}
-
-                <Button onClick={handleSendContract} disabled={sendingContract || loadingTemplates || !selectedTemplateId}>
-                  {sendingContract ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Sending...
-                    </span>
-                  ) : (
-                    "Send Contract"
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
-
-      <Card className="mt-2 mb-2">
-        <Collapsible open={!isDocumentUploadCollapsed} onOpenChange={(open) => setIsDocumentUploadCollapsed(!open)}>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Document Upload</CardTitle>
-                <p className="text-xs text-muted-foreground">Generate and review document uploads for this lead.</p>
-              </div>
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="gap-2">
-                  {isDocumentUploadCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="pt-0">
-              <DocumentUploadCard
-                submissionId={submissionId!}
-                customerPhoneNumber={lead?.phone_number}
-                embedded
-              />
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
+      {contractCard}
+      {documentUploadCard}
     </div>
   );
 
@@ -1198,6 +1560,47 @@ const CallResultUpdate = () => {
     fetchLead();
     checkExistingVerificationSession();
   }, [submissionId, fetchLead, checkExistingVerificationSession, toast]);
+
+  useEffect(() => {
+    if (!submissionId) {
+      setCurrentAssignedAttorneyId(assignedAttorneyId || null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadAssignedAttorney = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("daily_deal_flow")
+          .select("assigned_attorney_id")
+          .eq("submission_id", submissionId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (error) {
+          setCurrentAssignedAttorneyId(assignedAttorneyId || null);
+          return;
+        }
+
+        const row = data as { assigned_attorney_id?: string | null } | null;
+        setCurrentAssignedAttorneyId(row?.assigned_attorney_id ? String(row.assigned_attorney_id) : (assignedAttorneyId || null));
+      } catch {
+        if (!cancelled) {
+          setCurrentAssignedAttorneyId(assignedAttorneyId || null);
+        }
+      }
+    };
+
+    void loadAssignedAttorney();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [submissionId, assignedAttorneyId]);
 
   useEffect(() => {
     if (!screeningPhone) {
@@ -1449,7 +1852,7 @@ const CallResultUpdate = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-full flex items-center justify-center bg-background">
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>Loading lead information...</span>
@@ -1460,7 +1863,7 @@ const CallResultUpdate = () => {
 
   if (!lead) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-full flex items-center justify-center bg-background">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="text-center">Lead Not Found</CardTitle>
@@ -1476,104 +1879,103 @@ const CallResultUpdate = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center gap-4 w-full">
-          <Button 
-            variant="outline" 
-            onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-4xl font-extrabold tracking-tight whitespace-nowrap">
-              {fromCallback ? "Update Callback Result" : "Update Call Result"}
-            </h1>
-            <p className="text-lg text-muted-foreground mt-1 truncate">
-              {fromCallback 
-                ? "Update the status and details for this callback" 
-                : "Update the status and details for this lead"
-              }
-            </p>
-          </div>
-          {/* Top right: show StartVerificationModal if no session, else show progress bar */}
-          {!showVerificationPanel || !verificationSessionId ? (
-            <div className="flex-shrink-0">
-              <StartVerificationModal 
-                submissionId={submissionId!}
-                onVerificationStarted={handleVerificationStarted}
-              />
-            </div>
-          ) : (
-            <div className="w-[420px] max-w-[50vw]">
-              <TopVerificationProgress submissionId={submissionId!} verificationSessionId={verificationSessionId} />
-            </div>
-          )}
-        </div>
+    <div className="min-h-full bg-muted/30">
+      <div className="w-full px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
+        <div className="space-y-8">
+        {/* ── Header ── */}
+        <Card className="overflow-hidden border-0 bg-transparent shadow-none">
+          <div className="px-1 py-1 sm:px-2">
+            <div className="space-y-5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/transfer-portal")}
+                className="group -ml-2 w-fit gap-1.5 rounded-full border border-orange-200/70 bg-orange-100/60 px-4 text-orange-900 shadow-sm backdrop-blur-sm transition-colors hover:border-orange-300 hover:bg-orange-200/80 hover:text-orange-950"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
+                Back
+              </Button>
 
+              <div className="flex flex-col items-center gap-4 text-center">
+                <div className="min-w-0 space-y-4">
+                  <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-black sm:text-3xl">
+                      {fromCallback ? "Update Callback Result" : "Update Call Result"}
+                    </h1>
+                  </div>
+
+                  <div className="flex flex-wrap justify-center gap-2.5 text-xs text-muted-foreground">
+                    {lead?.customer_full_name ? (
+                      <div className="flex items-center gap-2 rounded-full border border-orange-300/55 bg-[linear-gradient(90deg,#cb6a2a_0%,#a85221_52%,#724020_100%)] px-2.5 py-1.5 text-white shadow-[0_14px_30px_-20px_rgba(168,82,33,0.65)]">
+                        <span className="rounded-full border border-black/10 bg-white px-2.5 py-0.5 font-semibold text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
+                          Lead
+                        </span>
+                        <span className="font-semibold text-white">{lead.customer_full_name}</span>
+                      </div>
+                    ) : null}
+                    {lead?.state ? (
+                      <div className="flex items-center gap-2 rounded-full border border-orange-950/40 bg-[linear-gradient(90deg,#9a4f23_0%,#7a3e1d_52%,#552714_100%)] px-2.5 py-1.5 text-white shadow-[0_14px_30px_-20px_rgba(85,39,20,0.72)]">
+                        <span className="rounded-full border border-black/10 bg-white px-2.5 py-0.5 font-semibold text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
+                          State
+                        </span>
+                        <span className="font-semibold text-white">{lead.state}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {!showVerificationPanel || !verificationSessionId ? (
+                  <div className="pt-1">
+                    <StartVerificationModal
+                      submissionId={submissionId!}
+                      onVerificationStarted={handleVerificationStarted}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+        {/* ── Main content ── */}
+        </Card>
         {showVerificationPanel && verificationSessionId ? (
-          <>
-            {/* Main Content - 50/50 Split */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              {/* Verification Panel - Left Half */}
-              <div className="lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
-                <VerificationPanel 
-                  sessionId={verificationSessionId}
-                  onTransferReady={handleTransferReady}
-                  onFieldVerified={handleFieldVerified}
-                />
+          <div className="space-y-8">
+            <section className="space-y-3">
+              <div className="space-y-1 text-center">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Pre-Call Safeguards
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Confirm compliance before the live intake</h2>
               </div>
-              
-              {/* Call Result Form - Right Half */}
-              <div>
-                {callSupportCards}
-                <CallResultForm 
-                  submissionId={submissionId!} 
-                  customerName={lead.customer_full_name}
-                  initialAssignedAttorneyId={assignedAttorneyId || undefined}
-                  verificationSessionId={verificationSessionId || undefined}
-                  verifiedFieldValues={verifiedFieldValues}
-                  verificationProgress={verificationProgress}
-                  onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
-                />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 items-start lg:grid-cols-2 gap-6">
-              <div className="self-start">
-                <OrderRecommendationsCard
-                  submissionId={submissionId!}
-                  leadId={lead.id}
-                  leadOverrides={{
-                    state: lead.state,
-                    insured: lead.insured ?? null,
-                    prior_attorney_involved: lead.prior_attorney_involved ?? null,
-                  }}
-                  currentAssignedAttorneyId={assignedAttorneyId || null}
-                />
-              </div>
-            </div>
-          </>
-        ) : (
-          /* Original layout when no verification panel */
-          <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
-            {/* Lead Details */}
-            <div className="grid grid-cols-1 gap-6">
-              <div className="grid grid-cols-1 items-start xl:grid-cols-2 gap-6">
-                <div className="self-start">
-                  <OrderRecommendationsCard
-                    submissionId={submissionId!}
-                    leadId={lead.id}
-                    leadOverrides={{
-                      state: lead.state,
-                      insured: lead.insured ?? null,
-                      prior_attorney_involved: lead.prior_attorney_involved ?? null,
-                    }}
-                    currentAssignedAttorneyId={assignedAttorneyId || null}
+              {preCallCards}
+            </section>
+
+            <section className="space-y-4">
+              <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+                <div className="lg:sticky lg:top-4">
+                  <VerificationPanel
+                    sessionId={verificationSessionId}
+                    onTransferReady={handleTransferReady}
+                    onFieldVerified={handleFieldVerifiedWithSync}
+                    linkedSectionEyebrow={linkedScriptSectionEyebrow || undefined}
                   />
                 </div>
+
+                <div className="lg:sticky lg:top-4">
+                  {scriptCard}
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Attorney Match
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Choose the best-fit attorney for the lead</h2>
+                <p className="text-sm text-muted-foreground">
+                  Keep selection fast and obvious so the next step can auto-populate the contract without rework.
+                </p>
               </div>
               <OrderRecommendationsCard
                 submissionId={submissionId!}
@@ -1583,24 +1985,95 @@ const CallResultUpdate = () => {
                   insured: lead.insured ?? null,
                   prior_attorney_involved: lead.prior_attorney_involved ?? null,
                 }}
-              currentAssignedAttorneyId={assignedAttorneyId || null}
-            />
-            </div>
-            
-            {/* Call Result Form */}
-            <div>
-              {callSupportCards}
-              <CallResultForm 
-                submissionId={submissionId!} 
+                currentAssignedAttorneyId={currentAssignedAttorneyId}
+                onAssigned={({ lawyerId }) => setCurrentAssignedAttorneyId(lawyerId)}
+                onUnassigned={() => setCurrentAssignedAttorneyId(null)}
+                layout="horizontal"
+              />
+            </section>
+
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Handoff Preparation
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Prepare the contract and intake package</h2>
+                <p className="text-sm text-muted-foreground">
+                  The chosen attorney should flow directly into DocuSign, followed by document collection for a clean handoff.
+                </p>
+              </div>
+              <div className={`grid grid-cols-1 gap-5 lg:grid-cols-2 ${shouldStretchHandoffCards ? "items-stretch" : "items-start"}`}>
+                <div className={shouldStretchHandoffCards ? "h-full" : "self-start"}>{contractCard}</div>
+                <div className={shouldStretchHandoffCards ? "h-full" : "self-start"}>{documentUploadCard}</div>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Final Call Outcome
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Finish the update with a cleaner result form</h2>
+                <p className="text-sm text-muted-foreground">
+                  Keep the final decision, submission details, and notes structured so agents can close out the call quickly.
+                </p>
+              </div>
+              <CallResultForm
+                submissionId={submissionId!}
                 customerName={lead.customer_full_name}
-                initialAssignedAttorneyId={assignedAttorneyId || undefined}
+                initialAssignedAttorneyId={currentAssignedAttorneyId || undefined}
                 verificationSessionId={verificationSessionId || undefined}
+                verifiedFieldValues={verifiedFieldValues}
                 verificationProgress={verificationProgress}
                 onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
               />
-            </div>
+            </section>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Call Result Workspace
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Review support modules, recommendations, and the final result</h2>
+                <p className="text-sm text-muted-foreground">
+                  When verification has not been started, keep the support context and the final call result flow readable and compact.
+                </p>
+              </div>
+
+              <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+                <div className="self-start">
+                  <OrderRecommendationsCard
+                    submissionId={submissionId!}
+                    leadId={lead.id}
+                    leadOverrides={{
+                      state: lead.state,
+                      insured: lead.insured ?? null,
+                      prior_attorney_involved: lead.prior_attorney_involved ?? null,
+                    }}
+                    currentAssignedAttorneyId={currentAssignedAttorneyId}
+                    onAssigned={({ lawyerId }) => setCurrentAssignedAttorneyId(lawyerId)}
+                    onUnassigned={() => setCurrentAssignedAttorneyId(null)}
+                  />
+                </div>
+
+                <div className="space-y-6">
+                  {callSupportCards}
+                  <CallResultForm
+                    submissionId={submissionId!}
+                    customerName={lead.customer_full_name}
+                    initialAssignedAttorneyId={currentAssignedAttorneyId || undefined}
+                    verificationSessionId={verificationSessionId || undefined}
+                    verificationProgress={verificationProgress}
+                    onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
+                  />
+                </div>
+              </div>
+            </section>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
