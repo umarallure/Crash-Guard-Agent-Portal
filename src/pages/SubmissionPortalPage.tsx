@@ -20,9 +20,10 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { ClipboardList, Eye, FileText, Loader2, Pencil, RefreshCw, Scale, StickyNote, UserPlus, Wallet } from "lucide-react";
+import { ClipboardList, Eye, FileText, Loader2, Pencil, RefreshCw, Scale, SlidersHorizontal, StickyNote, UserPlus, Wallet, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
@@ -36,6 +37,7 @@ import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
+import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 
 export interface SubmissionPortalRow {
   id: string;
@@ -73,6 +75,7 @@ export interface SubmissionPortalRow {
   verification_logs?: string;
   has_submission_data?: boolean;
   source_type?: string;
+  state?: string;
 }
 
 interface CallLog {
@@ -339,14 +342,14 @@ const SubmissionPortalPage = () => {
   const [filteredData, setFilteredData] = useState<SubmissionPortalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [searchTerm, setSearchTerm] = useState<string>("");
-  const [showDuplicates, setShowDuplicates] = useState(true);
-  const [dataCompletenessFilter, setDataCompletenessFilter] = useState("__ALL__");
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
@@ -436,23 +439,7 @@ const SubmissionPortalPage = () => {
     return map;
   }, [attorneys]);
 
-  // Remove duplicates based on insured_name, client_phone_number, and lead_vendor
-  const removeDuplicates = (records: SubmissionPortalRow[]): SubmissionPortalRow[] => {
-    const seen = new Map<string, SubmissionPortalRow>();
-    
-    records.forEach(record => {
-      const key = `${record.insured_name || ''}|${record.client_phone_number || ''}|${record.lead_vendor || ''}`;
-      
-      // Keep the most recent record (first in our sorted array)
-      if (!seen.has(key)) {
-        seen.set(key, record);
-      }
-    });
-    
-    return Array.from(seen.values());
-  };
-
-  // Apply filters and duplicate removal
+  // Apply filters
   const applyFilters = (records: SubmissionPortalRow[]): SubmissionPortalRow[] => {
     let filtered = records;
 
@@ -471,6 +458,10 @@ const SubmissionPortalPage = () => {
       filtered = filtered.filter((record) => (record.lead_vendor || '') === leadVendorFilter);
     }
 
+    if (selectedStates.length > 0) {
+      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
+    }
+
     // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
@@ -486,23 +477,6 @@ const SubmissionPortalPage = () => {
       );
     }
 
-    // Remove duplicates if enabled
-    if (!showDuplicates) {
-      filtered = removeDuplicates(filtered);
-    }
-
-    // Apply data completeness filter
-    if (dataCompletenessFilter === "active_only") {
-      filtered = filtered.filter(record => 
-        record.has_submission_data && 
-        record.status !== "Submitted"
-      );
-    } else if (dataCompletenessFilter === "missing_logs_only") {
-      filtered = filtered.filter(record => 
-        !record.has_submission_data
-      );
-    }
-
     return filtered;
   };
 
@@ -514,6 +488,8 @@ const SubmissionPortalPage = () => {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
+
+  const stateOptions = useMemo(() => getStateFilterOptions(data), [data]);
 
   const generateVerificationLogSummary = (logs: CallLog[], submission?: any): string => {
     if (!logs || logs.length === 0) {
@@ -731,6 +707,7 @@ const SubmissionPortalPage = () => {
           verification_logs: submission ? '' : "Update log missing - No submission data found",
           has_submission_data: Boolean(submission),
           source_type: isCallback ? 'callback' : 'zapier',
+          state: lead.state || submission?.state || '',
         };
       });
 
@@ -820,7 +797,7 @@ const SubmissionPortalPage = () => {
   // Update filtered data whenever data or filters change
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, datePreset, customStartDate, customEndDate, statusFilter, leadVendorFilter, showDuplicates, searchTerm, dataCompletenessFilter]);
+  }, [data, datePreset, customStartDate, customEndDate, statusFilter, leadVendorFilter, selectedStates, searchTerm]);
 
   useEffect(() => {
     if (stagesLoading) return;
@@ -1302,97 +1279,142 @@ const SubmissionPortalPage = () => {
             </Card>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-1 flex-wrap items-center gap-3">
+          {/* ── Toolbar ── */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 max-w-sm">
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by name, phone, vendor..."
-                className="max-w-md"
+                placeholder="Search by name, phone, vendor…"
               />
-
-              <Select value={leadVendorFilter} onValueChange={(v) => setLeadVendorFilter(v)}>
-                <SelectTrigger className="w-56">
-                  <SelectValue placeholder="All Vendors" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__ALL__">All Vendors</SelectItem>
-                    {leadVendorOptions.map((vendor) => (
-                      <SelectItem key={vendor} value={vendor}>
-                        {vendor}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__ALL__">All Statuses</SelectItem>
-                    {dbSubmissionStages.map((s) => (
-                      <SelectItem key={s.key} value={s.key}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              <Select value={dataCompletenessFilter} onValueChange={(v) => setDataCompletenessFilter(v)}>
-                <SelectTrigger className="w-56">
-                  <SelectValue placeholder="All Records" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__ALL__">All Records</SelectItem>
-                    <SelectItem value="active_only">Active Only (Hide Missing Logs & Completed)</SelectItem>
-                    <SelectItem value="missing_logs_only">Missing Update Log Only</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              <div className="w-full md:w-56 md:shrink-0">
-                <PresetDateRangeFilter
-                  preset={datePreset}
-                  onPresetChange={setDatePreset}
-                  customStartDate={customStartDate}
-                  customEndDate={customEndDate}
-                  onCustomStartDateChange={setCustomStartDate}
-                  onCustomEndDateChange={setCustomEndDate}
-                  selectClassName="w-full"
-                  containerClassName="relative"
-                  customFieldsClassName="absolute left-0 top-full z-20 mt-2 grid w-56 grid-cols-1 gap-2 rounded-md border bg-background p-2 shadow-md"
-                />
-              </div>
-
-              <Select value={showDuplicates ? "true" : "false"} onValueChange={(v) => setShowDuplicates(v === "true")}>
-                <SelectTrigger className="w-56">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="true">Show All Records</SelectItem>
-                    <SelectItem value="false">Remove Duplicates</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Badge variant="secondary" className="px-3 py-1">
-                {boardVisibleRows.length} records
-              </Badge>
-              <Button onClick={handleRefresh} disabled={refreshing}>
-                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters((v) => !v)}
+              className={showFilters ? "border-primary text-primary bg-primary/5" : ""}
+            >
+              <SlidersHorizontal className="mr-2 h-4 w-4" />
+              Filters
+              {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+                <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
+              )}
+            </Button>
+
+            <div className="flex-1" />
+
+            <Badge variant="secondary" className="px-3 py-1 tabular-nums shrink-0">
+              {boardVisibleRows.length} records
+            </Badge>
+            <Button onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
           </div>
+
+          {/* ── Collapsible Filter Panel ── */}
+          {showFilters && (
+            <Card className="border-primary/20 bg-muted/30 shadow-none">
+              <CardContent className="pt-5 pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-semibold text-foreground">Filters</span>
+                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDatePreset("all");
+                          setCustomStartDate("");
+                          setCustomEndDate("");
+                          setStatusFilter("__ALL__");
+                          setSelectedStates([]);
+                          setLeadVendorFilter("__ALL__");
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
+                      >
+                        <X className="h-3 w-3" />
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(false)}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Range</label>
+                    <PresetDateRangeFilter
+                      preset={datePreset}
+                      onPresetChange={setDatePreset}
+                      customStartDate={customStartDate}
+                      customEndDate={customEndDate}
+                      onCustomStartDateChange={setCustomStartDate}
+                      onCustomEndDateChange={setCustomEndDate}
+                      selectClassName="w-full"
+                      containerClassName="relative"
+                      customFieldsClassName="absolute left-0 top-full z-20 mt-2 grid w-56 grid-cols-1 gap-2 rounded-md border bg-background p-2 shadow-md"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Vendor</label>
+                    <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Vendors" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="__ALL__">All Vendors</SelectItem>
+                          {leadVendorOptions.map((vendor) => (
+                            <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</label>
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Statuses" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="__ALL__">All Statuses</SelectItem>
+                          {dbSubmissionStages.map((s) => (
+                            <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">State</label>
+                    <MultiSelect
+                      options={stateOptions}
+                      selected={selectedStates}
+                      onChange={setSelectedStates}
+                      placeholder="All States"
+                      className="w-full"
+                      maxVisibleBadges={null}
+                      selectedDisplayMode="scroll"
+                      highlightSelectedOptions={false}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="mt-4 min-h-0 flex-1 overflow-auto" onDragOver={handleKanbanDragOver}>
             <div className="p-4">

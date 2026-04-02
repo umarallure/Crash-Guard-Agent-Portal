@@ -15,6 +15,9 @@ interface MultiSelectProps {
   onChange: (selected: string[]) => void;
   placeholder?: string;
   className?: string;
+  maxVisibleBadges?: number | null;
+  selectedDisplayMode?: 'wrap' | 'scroll';
+  highlightSelectedOptions?: boolean;
 }
 
 export function MultiSelect({
@@ -23,6 +26,9 @@ export function MultiSelect({
   onChange,
   placeholder = 'Select items...',
   className,
+  maxVisibleBadges = 3,
+  selectedDisplayMode = 'wrap',
+  highlightSelectedOptions = true,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -30,6 +36,7 @@ export function MultiSelect({
   // Safety check for options and selected - ensure they're always arrays
   const safeOptions = React.useMemo(() => Array.isArray(options) ? options : [], [options]);
   const safeSelected = React.useMemo(() => Array.isArray(selected) ? selected : [], [selected]);
+  const shouldCollapseSelection = maxVisibleBadges !== null && safeSelected.length > maxVisibleBadges;
 
   // Filter options based on search term
   const filteredOptions = React.useMemo(() => {
@@ -71,16 +78,26 @@ export function MultiSelect({
           aria-expanded={open}
           className={cn('w-full justify-between min-h-10 h-auto', className)}
         >
-          <div className="flex gap-1 flex-wrap flex-1">
+          <div
+            className={cn(
+              'flex flex-1 gap-1',
+              selectedDisplayMode === 'scroll'
+                ? 'overflow-x-auto whitespace-nowrap pr-1'
+                : 'flex-wrap'
+            )}
+          >
             {safeSelected.length === 0 && (
               <span className="text-muted-foreground">{placeholder}</span>
             )}
-            {safeSelected.length > 0 && safeSelected.length <= 3 ? (
+            {safeSelected.length > 0 && !shouldCollapseSelection ? (
               safeSelected.map((item) => (
                 <Badge
                   variant="secondary"
                   key={item}
-                  className="mr-1 mb-1 text-xs"
+                  className={cn(
+                    'text-xs',
+                    selectedDisplayMode === 'scroll' ? 'shrink-0' : 'mr-1 mb-1'
+                  )}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleUnselect(item);
@@ -108,7 +125,7 @@ export function MultiSelect({
                   </button>
                 </Badge>
               ))
-            ) : safeSelected.length > 3 ? (
+            ) : safeSelected.length > 0 ? (
               <Badge variant="secondary" className="mr-1 mb-1 text-xs">
                 {safeSelected.length} selected
               </Badge>
@@ -148,7 +165,7 @@ export function MultiSelect({
                   onClick={() => handleSelect(option)}
                   className={cn(
                     'w-full text-left px-3 py-2 text-sm rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center',
-                    safeSelected.includes(option) && 'bg-accent text-accent-foreground'
+                    highlightSelectedOptions && safeSelected.includes(option) && 'bg-accent text-accent-foreground'
                   )}
                 >
                   <div
