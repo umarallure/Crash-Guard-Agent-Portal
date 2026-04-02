@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,8 +18,11 @@ import { StartVerificationModal } from "@/components/StartVerificationModal";
 import { VerificationPanel } from "@/components/VerificationPanel";
 import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
 import { DocumentUploadCard } from "@/components/DocumentUploadCard";
-import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp } from "lucide-react";
+import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale } from "lucide-react";
 import { DOCUSIGN_TEMPLATE_IDS } from "@/lib/docusignTemplates";
+import { US_STATES } from "@/lib/us-states";
 
 interface Lead {
   id: string;
@@ -78,6 +82,21 @@ interface ScriptSection {
   redFlags?: string[];
   notes?: string[];
 }
+
+type ContractTemplateOption = {
+  id: string;
+  name: string;
+  states: string[];
+};
+
+const extractTemplateStates = (templateName: string) => {
+  const upperTemplateName = templateName.toUpperCase();
+
+  return US_STATES.filter(({ code, name }) => {
+    const codePattern = new RegExp(`(^|[^A-Z])${code}([^A-Z]|$)`);
+    return codePattern.test(upperTemplateName) || upperTemplateName.includes(name.toUpperCase());
+  }).map((state) => state.code);
+};
 
 interface ScriptTabDefinition {
   value: string;
@@ -528,19 +547,24 @@ const CallResultUpdate = () => {
   const [contractRecipientEmail, setContractRecipientEmail] = useState("");
   const [sendingContract, setSendingContract] = useState(false);
   const [lastEnvelopeId, setLastEnvelopeId] = useState<string | null>(null);
+  const [selectedRetainerState, setSelectedRetainerState] = useState("");
+  const [refreshingRetainerStatus, setRefreshingRetainerStatus] = useState(false);
+  const [retainerStatusLastCheckedAt, setRetainerStatusLastCheckedAt] = useState<string | null>(null);
   const [dncLookupLoading, setDncLookupLoading] = useState(false);
   const [dncLookupError, setDncLookupError] = useState<string | null>(null);
   const [dncLookupSummary, setDncLookupSummary] = useState<DncLookupSummary | null>(null);
   const [isDncLookupCollapsed, setIsDncLookupCollapsed] = useState(false);
   const [isDisclaimerCollapsed, setIsDisclaimerCollapsed] = useState(false);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
+  const [isAttorneyRecommendationCollapsed, setIsAttorneyRecommendationCollapsed] = useState(false);
   const [isContractCollapsed, setIsContractCollapsed] = useState(false);
   const [isDocumentUploadCollapsed, setIsDocumentUploadCollapsed] = useState(false);
-  const [isUploadedDocumentsExpanded, setIsUploadedDocumentsExpanded] = useState(false);
   const [openScriptSections, setOpenScriptSections] = useState<Record<string, boolean>>({});
   const [linkedScriptSectionEyebrow, setLinkedScriptSectionEyebrow] = useState<string | null>(null);
+  const [attorneyFulfillmentMode, setAttorneyFulfillmentMode] = useState<"internal" | "broker">("internal");
+  const [selectedSubmittedLawyer, setSelectedSubmittedLawyer] = useState<SelectedLawyer | null>(null);
 
-  const [contractTemplates, setContractTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [contractTemplates, setContractTemplates] = useState<ContractTemplateOption[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [contractRecipientName, setContractRecipientName] = useState("");
@@ -664,13 +688,17 @@ const CallResultUpdate = () => {
 
     if (dncLookupLoading) {
       return (
-        <Alert>
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <AlertTitle>TCPA / DNC screening in progress</AlertTitle>
-          <AlertDescription>
-            We are screening {screeningPhone || lead?.phone_number || "this number"} before call-result handling continues.
-          </AlertDescription>
-        </Alert>
+        <div className="space-y-3 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
+            <span className="text-sm text-muted-foreground">Screening {screeningPhone || lead?.phone_number || "this number"}...</span>
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        </div>
       );
     }
 
@@ -686,17 +714,17 @@ const CallResultUpdate = () => {
 
     if (!dncLookupSummary) {
       return (
-        <Alert>
-          <ShieldAlert className="h-4 w-4" />
-          <AlertTitle>Awaiting DNC result</AlertTitle>
-          <AlertDescription>The screening result will appear here as soon as the lookup completes.</AlertDescription>
-        </Alert>
+        <div className="space-y-2 animate-fade-in">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-4 w-3/5" />
+        </div>
       );
     }
 
     if (dncLookupSummary.isTcpaLitigator) {
       return (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="animate-scale-in">
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>TCPA litigator flagged</AlertTitle>
           <AlertDescription>
@@ -708,7 +736,7 @@ const CallResultUpdate = () => {
 
     if (dncLookupSummary.isInvalid) {
       return (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="animate-scale-in">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Invalid phone number</AlertTitle>
           <AlertDescription>
@@ -720,7 +748,7 @@ const CallResultUpdate = () => {
 
     if (dncLookupSummary.isOnDnc === true) {
       return (
-        <Alert variant="destructive" className="border-amber-500/50 text-amber-700 [&>svg]:text-amber-700 dark:text-amber-400">
+        <Alert variant="destructive" className="animate-scale-in border-amber-500/50 text-amber-700 [&>svg]:text-amber-700 dark:text-amber-400">
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>Phone number is on a DNC list</AlertTitle>
           <AlertDescription>
@@ -731,7 +759,7 @@ const CallResultUpdate = () => {
     }
 
     return (
-      <Alert className="border-emerald-500/40 text-emerald-700 [&>svg]:text-emerald-700 dark:text-emerald-400">
+      <Alert className="animate-scale-in border-emerald-500/40 text-emerald-700 [&>svg]:text-emerald-700 dark:text-emerald-400">
         <CheckCircle2 className="h-4 w-4" />
         <AlertTitle>Phone number is not on a DNC list</AlertTitle>
         <AlertDescription>
@@ -811,6 +839,91 @@ const CallResultUpdate = () => {
   const scriptCardRef = useRef<HTMLDivElement>(null);
   const scriptScrollRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Section refs for breadcrumb scroll-to navigation
+  const sectionNavRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  const breadcrumbSections = useMemo(() => {
+    if (showVerificationPanel && verificationSessionId) {
+      return [
+        { id: "safeguards", label: "Safeguards" },
+        { id: "verification", label: "Verification" },
+        { id: "attorney", label: "Attorney" },
+        { id: "handoff", label: "Handoff" },
+        { id: "result", label: "Call Result" },
+      ];
+    }
+    return [
+      { id: "workspace", label: "Workspace" },
+    ];
+  }, [showVerificationPanel, verificationSessionId]);
+
+  const scrollToSection = useCallback((sectionId: string) => {
+    const el = sectionNavRefs.current[sectionId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
+
+  // ── Scroll-triggered reveal system ──
+  const [revealedSections, setRevealedSections] = useState<Set<string>>(new Set());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  const getRevealObserver = useCallback(() => {
+    if (!observerRef.current) {
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          const revealed: string[] = [];
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const id = (entry.target as HTMLElement).dataset.reveal;
+              if (id) {
+                revealed.push(id);
+                observerRef.current?.unobserve(entry.target);
+              }
+            }
+          });
+          if (revealed.length) {
+            setRevealedSections((prev) => {
+              const next = new Set(prev);
+              revealed.forEach((id) => next.add(id));
+              return next;
+            });
+          }
+        },
+        { threshold: 0.06, rootMargin: "0px 0px -30px 0px" }
+      );
+    }
+    return observerRef.current;
+  }, []);
+
+  useEffect(() => {
+    return () => observerRef.current?.disconnect();
+  }, []);
+
+  const revealRef = useCallback(
+    (id: string, navId?: string) => (el: HTMLElement | null) => {
+      if (el) {
+        el.dataset.reveal = id;
+        getRevealObserver().observe(el);
+        if (navId) sectionNavRefs.current[navId] = el;
+      }
+    },
+    [getRevealObserver]
+  );
+
+  const revealClass = (id: string, hiddenTransform = "translate-y-5") =>
+    revealedSections.has(id)
+      ? "opacity-100 translate-y-0 blur-0"
+      : `opacity-0 ${hiddenTransform} blur-[6px]`;
+
+  const revealTransition = (delay = 0, duration = 700) =>
+    ({
+      transition: `opacity ${duration}ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms, transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms, filter ${duration}ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms`,
+    }) as const;
+
+  const revealMotionClass =
+    "will-change-[opacity,transform,filter] motion-reduce:transform-none motion-reduce:opacity-100 motion-reduce:blur-0 motion-reduce:transition-none";
 
   const updateLinkedScriptSection = useCallback(() => {
     const container = scriptScrollRef.current;
@@ -896,8 +1009,13 @@ const CallResultUpdate = () => {
   };
 
   // ---- Pre-call cards (DNC + Disclaimer) ----
+  // Show disclaimer only when the DNC result flags the number
+  const showDisclaimer = Boolean(
+    dncLookupSummary && (dncLookupSummary.isOnDnc || dncLookupSummary.isTcpaLitigator || dncLookupSummary.isInvalid)
+  );
+
   const preCallCards = (
-    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+    <div className={`grid grid-cols-1 items-start gap-4${showDisclaimer ? " xl:grid-cols-2" : ""}`}>
       <Card className="border-amber-200/80 bg-amber-50/30 shadow-sm">
         <Collapsible open={!isDncLookupCollapsed} onOpenChange={(open) => setIsDncLookupCollapsed(!open)}>
           <CollapsibleTrigger asChild>
@@ -907,9 +1025,7 @@ const CallResultUpdate = () => {
                 <span className="text-sm font-semibold text-amber-900">DNC Lookup</span>
                 <span className="hidden text-xs text-amber-700/70 sm:inline">TCPA / DNC screening</span>
               </div>
-              <div className="shrink-0 rounded-md border border-amber-200 bg-white/70 p-1">
-                {isDncLookupCollapsed ? <ChevronDown className="h-3.5 w-3.5 text-amber-800" /> : <ChevronUp className="h-3.5 w-3.5 text-amber-800" />}
-              </div>
+              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform ${!isDncLookupCollapsed ? "rotate-180" : ""}`} />
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -918,55 +1034,55 @@ const CallResultUpdate = () => {
         </Collapsible>
       </Card>
 
-      <Card className="border-amber-200/80 bg-amber-50/30 shadow-sm">
-        <Collapsible open={!isDisclaimerCollapsed} onOpenChange={(open) => setIsDisclaimerCollapsed(!open)}>
-          <CollapsibleTrigger asChild>
-            <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/60">
-              <div className="flex items-center gap-2.5">
-                <ShieldAlert className="h-4 w-4 text-amber-600" />
-                <span className="text-sm font-semibold text-amber-900">Disclaimer</span>
-                <span className="hidden text-xs text-amber-700/70 sm:inline">Verbal consent required</span>
-              </div>
-              <div className="shrink-0 rounded-md border border-amber-200 bg-white/70 p-1">
-                {isDisclaimerCollapsed ? <ChevronDown className="h-3.5 w-3.5 text-amber-800" /> : <ChevronUp className="h-3.5 w-3.5 text-amber-800" />}
-              </div>
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="space-y-2.5 border-t border-amber-200/60 px-5 pb-4 pt-3">
-              <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
-                Is your phone number{" "}
-                <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
-                  {lead?.phone_number || "on file"}
-                </span>{" "}
-                on the Federal, National or State Do Not Call List?
-              </div>
+      {showDisclaimer && (
+        <Card className="border-amber-200/60 bg-amber-50/20 shadow-sm">
+          <Collapsible open={!isDisclaimerCollapsed} onOpenChange={(open) => setIsDisclaimerCollapsed(!open)}>
+            <CollapsibleTrigger asChild>
+              <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/40">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm font-semibold text-amber-900">Disclaimer Required</span>
+                  <span className="hidden text-xs text-amber-700/70 sm:inline">Verbal consent needed</span>
+                </div>
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform ${!isDisclaimerCollapsed ? "rotate-180" : ""}`} />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="space-y-2.5 border-t border-amber-200/40 px-5 pb-4 pt-3">
+                <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
+                  Is your phone number{" "}
+                  <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
+                    {lead?.phone_number || "on file"}
+                  </span>{" "}
+                  on the Federal, National or State Do Not Call List?
+                </div>
 
-              <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-                <p className="text-[11px] leading-4 text-amber-800">
-                  If a customer says <strong>no</strong> and we see it's on the DNC list, we still have to take verbal consent.
-                </p>
-              </div>
+                <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                  <p className="text-[11px] leading-4 text-amber-800">
+                    If a customer says <strong>no</strong> and we see it's on the DNC list, we still have to take verbal consent.
+                  </p>
+                </div>
 
-              <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
-                Sir/Ma'am, even if your phone number is on the Federal National or State Do Not Call List, do we still
-                have your permission to call you and submit your application to Accident Payments via your
-                phone number{" "}
-                <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
-                  {lead?.phone_number || "on file"}
-                </span>
-                ? And do we have your permission to call you on the same phone number in the future if needed?
-              </div>
+                <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
+                  Sir/Ma'am, even if your phone number is on the Federal National or State Do Not Call List, do we still
+                  have your permission to call you and submit your application to Accident Payments via your
+                  phone number{" "}
+                  <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
+                    {lead?.phone_number || "on file"}
+                  </span>
+                  ? And do we have your permission to call you on the same phone number in the future if needed?
+                </div>
 
-              <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2">
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700" />
-                <p className="text-[13px] font-semibold text-amber-900">Make sure you get a clear YES on it.</p>
+                <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+                  <p className="text-[13px] font-semibold text-amber-900">Make sure you get a clear YES on it.</p>
+                </div>
               </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
+            </CollapsibleContent>
+          </Collapsible>
+        </Card>
+      )}
     </div>
   );
 
@@ -974,25 +1090,25 @@ const CallResultUpdate = () => {
   const scriptCard = (
     <Card
       ref={scriptCardRef}
-      className="flex min-h-[30rem] flex-col overflow-hidden border-border/60 shadow-sm lg:h-[calc(100dvh-8rem)]"
+      className="flex min-h-[30rem] flex-col overflow-hidden border-[#2b333f]/80 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.8)] lg:h-[calc(100dvh-8rem)]"
     >
-      <div className="flex-shrink-0 border-b border-orange-950/40 bg-[linear-gradient(90deg,#724020_0%,#6f3b1d_42%,#65331b_74%,#542918_100%)] text-orange-50">
+      <div className="flex-shrink-0 border-b border-[#384252]/95 bg-[linear-gradient(90deg,#161c24_0%,#1d2530_34%,#28313d_66%,#333d4a_100%)] text-slate-100">
         <div className="flex items-center justify-between gap-2 px-5 py-3">
           <div className="flex items-center gap-2.5">
-            <FileText className="h-4 w-4 text-orange-100" />
+            <FileText className="h-4 w-4 text-slate-200" />
             <span className="text-sm font-bold tracking-tight text-white">Script</span>
-            <span className="hidden text-xs text-orange-50/85 sm:inline">MVA Intake Call Flow</span>
+            <span className="hidden text-xs text-slate-200/85 sm:inline">MVA Intake Call Flow</span>
           </div>
-          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-orange-50/65">
+          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-300/75">
             Live Reference
           </div>
         </div>
         <div className="min-h-[2.75rem] px-5 pb-3">
           <div className="flex h-full flex-col justify-center gap-1 pt-2">
-            <div className="overflow-x-auto whitespace-nowrap text-[10px] leading-4 text-orange-50/80 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="overflow-x-auto whitespace-nowrap text-[10px] leading-4 text-slate-200/80 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {scriptHeaderCheckpoints.map(({ label, hint }, index) => (
                 <span key={label}>
-                  {index > 0 ? <span className="px-2 text-orange-50/35">|</span> : null}
+                  {index > 0 ? <span className="px-2 text-slate-300/35">|</span> : null}
                   <span className="font-semibold text-white">{label}:</span>{" "}
                   <span>{hint}</span>
                 </span>
@@ -1004,7 +1120,7 @@ const CallResultUpdate = () => {
                   <Badge
                     key={highlight}
                     variant="secondary"
-                    className="rounded-full border border-white/15 bg-white/10 px-2.5 py-0 text-[9px] font-medium text-orange-50 shadow-none"
+                    className="rounded-full border border-white/12 bg-white/8 px-2.5 py-0 text-[9px] font-medium text-slate-100 shadow-none"
                   >
                     {highlight}
                   </Badge>
@@ -1032,7 +1148,7 @@ const CallResultUpdate = () => {
                   <div
                     className={`rounded-lg border transition-all ${
                       isLinkedSection
-                        ? "border-[#8a4b23]/55 bg-[linear-gradient(180deg,rgba(240,170,116,0.18)_0%,rgba(244,226,211,0.58)_100%)] shadow-[0_14px_32px_-22px_rgba(94,47,24,0.5)]"
+                        ? "border-[#4b5666]/45 bg-[linear-gradient(180deg,rgba(96,111,131,0.14)_0%,rgba(240,244,248,0.96)_100%)] shadow-[0_16px_34px_-24px_rgba(30,41,59,0.5)]"
                         : "border-border/60 bg-card"
                     }`}
                   >
@@ -1040,7 +1156,7 @@ const CallResultUpdate = () => {
                       <button
                         type="button"
                         className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors ${
-                          isLinkedSection ? "hover:bg-[#f4d7bf]/35" : "hover:bg-muted/20"
+                          isLinkedSection ? "hover:bg-[#e6ebf2]/55" : "hover:bg-muted/20"
                         }`}
                       >
                         <div className="space-y-0.5 min-w-0">
@@ -1052,7 +1168,7 @@ const CallResultUpdate = () => {
                               {sectionIndex + 1}/{callFlowSections.length}
                             </span>
                             {isLinkedSection ? (
-                              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-[#45505f] animate-pulse" />
                             ) : null}
                           </div>
                           <h3 className="text-[13px] font-semibold text-foreground leading-snug">{section.title}</h3>
@@ -1061,7 +1177,11 @@ const CallResultUpdate = () => {
                           ) : null}
                         </div>
                         <div className="mt-0.5 shrink-0 text-muted-foreground">
-                          {isSectionOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                              isSectionOpen ? "rotate-180" : ""
+                            }`}
+                          />
                         </div>
                       </button>
                     </CollapsibleTrigger>
@@ -1069,7 +1189,7 @@ const CallResultUpdate = () => {
                     <CollapsibleContent>
                       <div
                         className={`space-y-2.5 border-t px-4 pb-3.5 pt-3 ${
-                          isLinkedSection ? "border-[#8a4b23]/20 bg-[#fff8f2]/35" : "border-border/40"
+                          isLinkedSection ? "border-[#4b5666]/16 bg-[#f6f8fb]/82" : "border-border/40"
                         }`}
                       >
                         {section.summary ? (
@@ -1188,117 +1308,307 @@ const CallResultUpdate = () => {
     assignedAttorneyProfile?.primary_email?.trim() ||
     currentAssignedAttorneyId ||
     "";
-  const handoffCardClass = "h-full overflow-hidden border-[#f2d5c1] shadow-sm";
-  const handoffHeaderClass =
-    "flex w-full items-center justify-between gap-3 border-b border-[#efbb93] bg-[linear-gradient(90deg,rgba(234,117,38,0.48)_0%,rgba(234,117,38,0.30)_18%,rgba(234,117,38,0.18)_34%,rgba(234,117,38,0.09)_50%,rgba(234,117,38,0)_68%)] px-5 py-3.5 text-left transition-colors hover:bg-[#ffe7d5]";
+  const selectedHandoffAttorneyLabel =
+    attorneyFulfillmentMode === "broker"
+      ? selectedSubmittedLawyer?.attorney_name || ""
+      : selectedAssignedAttorneyLabel;
+  const defaultRetainerState = useMemo(
+    () => String(verifiedFieldValues?.state || lead?.state || "").trim().toUpperCase(),
+    [verifiedFieldValues?.state, lead?.state],
+  );
+  const selectedRetainerStateName =
+    US_STATES.find((state) => state.code === selectedRetainerState)?.name || selectedRetainerState;
+  const filteredContractTemplates = useMemo(() => {
+    if (!selectedRetainerState) return contractTemplates;
+    return contractTemplates.filter(
+      (template) => template.states.length === 0 || template.states.includes(selectedRetainerState),
+    );
+  }, [contractTemplates, selectedRetainerState]);
+  const retainerProgress = useMemo(() => {
+    const hasBeenSent = Boolean(lastEnvelopeId);
+    const hasBeenViewed = false;
+    const hasBeenSigned = false;
+    const currentStepIndex = hasBeenSigned ? 3 : hasBeenViewed ? 2 : hasBeenSent ? 1 : 0;
+    const steps = [
+      {
+        label: "Not Sent",
+        helper: "Waiting to send",
+      },
+      {
+        label: "Sent",
+        helper: "Envelope delivered",
+      },
+      {
+        label: "Viewed",
+        helper: "Client opened it",
+      },
+      {
+        label: "Signed",
+        helper: "Retainer complete",
+      },
+    ];
+
+    return {
+      currentStepIndex,
+      currentStepLabel: steps[currentStepIndex]?.label ?? steps[0].label,
+      steps: steps.map((step, index) => ({
+        ...step,
+        isComplete: index < currentStepIndex,
+        isCurrent: index === currentStepIndex,
+      })),
+    };
+  }, [lastEnvelopeId]);
+  const handoffCardClass = "overflow-hidden border-[#f2d5c1] shadow-sm";
+  const contractHeaderSurfaceClass = "bg-[linear-gradient(90deg,rgba(234,117,38,0.52)_0%,rgba(234,117,38,0.52)_100%)]";
+  const contractHeaderClass = `border-b border-[#efbb93] ${contractHeaderSurfaceClass} px-5 py-3.5`;
+  const uploadHeaderClass = "border-b border-[#e1893b] bg-[linear-gradient(90deg,rgba(225,137,59,0.84)_0%,rgba(225,137,59,0.84)_100%)] px-5 py-3.5";
+  const handoffHeaderContentClass = "flex items-center justify-between gap-3";
   const handoffIconClass =
     "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#efbb93]/70 bg-[#fff2e8] text-[#b85a20]";
+  const uploadIconClass =
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#e1893b]/75 bg-[#ffead2] text-[#984617]";
   const handoffChevronClass = "shrink-0 rounded-md border border-[#efbb93]/70 bg-white/80 p-1";
-  const shouldStretchHandoffCards = isDocumentUploadCollapsed || !isUploadedDocumentsExpanded;
+  const uploadChevronClass =
+    "shrink-0 rounded-md border border-white/85 bg-white/95 p-1 text-[#984617] shadow-sm transition-colors hover:bg-white";
+  const handoffInfoButtonClass =
+    "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]";
+  const uploadInfoButtonClass =
+    "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]";
 
   // ---- Contract / DocuSign card ----
   const contractCard = (
     <Card className={handoffCardClass}>
       <Collapsible open={!isContractCollapsed} onOpenChange={(open) => setIsContractCollapsed(!open)}>
-        <CollapsibleTrigger asChild>
-          <button type="button" className={handoffHeaderClass}>
-            <div className="flex items-center gap-3 min-w-0">
+        <CardHeader className={contractHeaderClass}>
+          <div className={handoffHeaderContentClass}>
+            <div className="flex min-w-0 items-center gap-3">
               <div className={handoffIconClass}>
                 <FileText className="h-4 w-4" />
               </div>
-              <div className="min-w-0 text-left">
-                <div className="text-sm font-semibold">Send Contract</div>
-                <div className="text-xs text-muted-foreground">
-                  {selectedAssignedAttorneyLabel
-                    ? `Auto-filled for ${selectedAssignedAttorneyLabel}`
-                    : "Select an attorney above to auto-populate this step"}
-                </div>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="text-sm font-semibold text-foreground">DocuSign Retainer Agreement</div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button type="button" className={handoffInfoButtonClass} aria-label="DocuSign retainer agreement info">
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 text-sm">
+                    <div className="space-y-2">
+                      <div className="font-semibold text-foreground">DocuSign Retainer Agreement</div>
+                      <p className="text-muted-foreground">
+                        Choose the lead state to narrow retainer templates, confirm client details, send the agreement,
+                        and use the status panel as the current frontend preview for send, viewed, and signed states.
+                      </p>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
-            <div className={handoffChevronClass}>
-              {isContractCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-            </div>
-          </button>
-        </CollapsibleTrigger>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className={handoffChevronClass}
+                aria-label={isContractCollapsed ? "Expand retainer agreement" : "Collapse retainer agreement"}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                    !isContractCollapsed ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </div>
+        </CardHeader>
         <CollapsibleContent>
-          <div className="px-5 pb-4 pt-3">
-            <div className="space-y-3">
-              {selectedAssignedAttorneyLabel ? (
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                  <span className="text-emerald-800 font-medium">{selectedAssignedAttorneyLabel}</span>
-                  <span className="text-emerald-700/70 text-xs">selected</span>
-                </div>
-              ) : (
-                <div className="rounded-xl border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                  Select an attorney from the recommendations above to auto-populate.
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <Label className="text-xs font-medium">Template</Label>
-                {loadingTemplates ? (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Loading...
+          <CardContent className="px-5 pb-5 pt-4">
+            <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
+              <div className="flex h-full flex-col">
+                <div className="space-y-4">
+                {selectedHandoffAttorneyLabel ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                    <span className="font-medium text-emerald-800">{selectedHandoffAttorneyLabel}</span>
+                    <span className="text-xs text-emerald-700/70">selected above</span>
                   </div>
                 ) : (
-                  <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                    <SelectTrigger className="h-8.5 text-sm">
-                      <SelectValue placeholder="Select a template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {contractTemplates.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="rounded-xl border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    Select an attorney above to keep this retainer step aligned with the current recommendation.
+                  </div>
                 )}
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">State</Label>
+                    <Select value={selectedRetainerState} onValueChange={setSelectedRetainerState}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Select a state" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {US_STATES.map((state) => (
+                          <SelectItem key={state.code} value={state.code}>
+                            {state.code} - {state.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">Template</Label>
+                    {loadingTemplates ? (
+                      <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Loading templates...
+                      </div>
+                    ) : (
+                      <Select
+                        value={selectedTemplateId}
+                        onValueChange={setSelectedTemplateId}
+                        disabled={filteredContractTemplates.length === 0}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue placeholder="Select a template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredContractTemplates.map((template) => (
+                            <SelectItem key={template.id} value={template.id}>
+                              {template.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </div>
+
+                {!loadingTemplates && selectedRetainerState && filteredContractTemplates.length === 0 ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    No templates are currently available for {selectedRetainerStateName}. Choose a different state to continue.
+                  </div>
+                ) : null}
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">Name</Label>
+                    <Input
+                      id="contractRecipientName"
+                      type="text"
+                      value={contractRecipientName}
+                      onChange={(e) => setContractRecipientName(e.target.value)}
+                      placeholder="Full name"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">Email</Label>
+                    <Input
+                      id="contractRecipientEmail"
+                      type="email"
+                      value={contractRecipientEmail}
+                      onChange={(e) => setContractRecipientEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {lastEnvelopeId ? (
+                  <div className="rounded-xl border border-[#f2d5c1] bg-[#fff8f2] px-3 py-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Envelope ID
+                    </div>
+                    <div className="mt-1 font-mono text-sm text-foreground">{lastEnvelopeId}</div>
+                  </div>
+                ) : null}
+                </div>
+
+                <div className="mt-auto pt-4">
+                  <Button
+                    onClick={handleSendContract}
+                    disabled={sendingContract || loadingTemplates || !selectedTemplateId}
+                    size="sm"
+                    className={`w-full rounded-md border border-[#efbb93] !bg-transparent ${contractHeaderSurfaceClass} text-white shadow-[0_16px_28px_-18px_rgba(185,83,23,0.22)] hover:bg-[linear-gradient(90deg,rgba(234,117,38,0.66)_0%,rgba(234,117,38,0.66)_100%)]`}
+                  >
+                    {sendingContract ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Sending...
+                      </span>
+                    ) : (
+                      "Send Retainer Agreement"
+                    )}
+                  </Button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium">Name</Label>
-                  <Input
-                    id="contractRecipientName"
-                    type="text"
-                    value={contractRecipientName}
-                    onChange={(e) => setContractRecipientName(e.target.value)}
-                    placeholder="Full name"
-                    className="h-8.5 text-sm"
-                  />
+              <div className="flex h-full flex-col rounded-[20px] border border-[#f2d5c1] bg-[linear-gradient(180deg,rgba(255,245,236,0.92)_0%,rgba(255,255,255,0.98)_100%)] p-4 shadow-[0_18px_36px_-30px_rgba(234,117,38,0.22)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-sm font-semibold text-foreground">Agreement Status</div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void refreshRetainerStatusView()}
+                    disabled={refreshingRetainerStatus}
+                    className="gap-2 rounded-md border-[#e6b086] bg-[#fff4ea] text-[#7a3718] shadow-sm hover:bg-[#ffe9d8] hover:text-[#6a2d13]"
+                  >
+                    <RefreshCw className={refreshingRetainerStatus ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
+                    Refresh
+                  </Button>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium">Email</Label>
-                  <Input
-                    id="contractRecipientEmail"
-                    type="email"
-                    value={contractRecipientEmail}
-                    onChange={(e) => setContractRecipientEmail(e.target.value)}
-                    placeholder="name@example.com"
-                    className="h-8.5 text-sm"
-                  />
+
+                <div className="mt-4 rounded-xl border border-[#f2d5c1] bg-white/78 px-3.5 py-3 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.28)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      Retainer Progress
+                    </div>
+                    <div className="text-xs font-medium text-[#8b4a1f]">{retainerProgress.currentStepLabel}</div>
+                  </div>
+
+                  <div className="mt-3 flex items-start">
+                    {retainerProgress.steps.map((step, index) => {
+                      const markerClass = step.isComplete
+                        ? "border-emerald-500 bg-emerald-500 text-white shadow-[0_8px_16px_-12px_rgba(34,197,94,0.9)]"
+                        : step.isCurrent
+                          ? "border-[#ea7526] bg-[#fff2e8] text-[#b85a20] shadow-[0_10px_18px_-14px_rgba(234,117,38,0.85)]"
+                          : "border-slate-200 bg-white text-muted-foreground";
+                      const connectorClass = index < retainerProgress.currentStepIndex ? "bg-emerald-400/90" : "bg-slate-200";
+
+                      return (
+                        <div key={step.label} className="flex min-w-0 flex-1 items-start">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center">
+                              <div
+                                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${markerClass}`}
+                              >
+                                {step.isComplete ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                              </div>
+                              {index < retainerProgress.steps.length - 1 ? (
+                                <div className={`mx-2 h-[3px] flex-1 rounded-full ${connectorClass}`} />
+                              ) : null}
+                            </div>
+                            <div className="mt-2 pr-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground">
+                                {step.label}
+                              </div>
+                              <div className="mt-0.5 text-[10px] leading-4 text-muted-foreground">{step.helper}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-auto pt-3 text-[11px] text-muted-foreground">
+                  {retainerStatusLastCheckedAt
+                    ? `Last refreshed ${new Date(retainerStatusLastCheckedAt).toLocaleString()}`
+                    : "Refresh this panel after sending to keep the retainer progress current."}
                 </div>
               </div>
-
-              {lastEnvelopeId ? (
-                <div className="text-[11px] text-muted-foreground font-mono">Envelope: {lastEnvelopeId}</div>
-              ) : null}
-
-              <Button onClick={handleSendContract} disabled={sendingContract || loadingTemplates || !selectedTemplateId} size="sm" className="w-full">
-                {sendingContract ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Sending...
-                  </span>
-                ) : (
-                  "Send Contract"
-                )}
-              </Button>
             </div>
-          </div>
+          </CardContent>
         </CollapsibleContent>
       </Collapsible>
     </Card>
@@ -1307,37 +1617,175 @@ const CallResultUpdate = () => {
   const documentUploadCard = (
     <Card className={handoffCardClass}>
       <Collapsible open={!isDocumentUploadCollapsed} onOpenChange={(open) => setIsDocumentUploadCollapsed(!open)}>
-        <CollapsibleTrigger asChild>
-          <button type="button" className={handoffHeaderClass}>
-            <div className="flex items-center gap-3 min-w-0">
-              <div className={handoffIconClass}>
+        <CardHeader className={uploadHeaderClass}>
+          <div className={handoffHeaderContentClass}>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className={uploadIconClass}>
                 <FileText className="h-4 w-4" />
               </div>
-              <div className="min-w-0 text-left">
-                <div className="text-sm font-semibold">Document Upload</div>
-                <div className="text-xs text-muted-foreground">
-                  Collect police, insurance, and medical documents for the handoff package.
-                </div>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="text-sm font-semibold text-foreground">Document Upload</div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button type="button" className={uploadInfoButtonClass} aria-label="Document upload info">
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 text-sm">
+                    <div className="space-y-2">
+                      <div className="font-semibold text-foreground">Document Upload</div>
+                      <p className="text-muted-foreground">
+                        Create a secure upload link for the client, monitor requested police, insurance, and medical
+                        documents, and expand the live upload preview only when you need to review the files.
+                      </p>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
-            <div className={handoffChevronClass}>
-              {isDocumentUploadCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-            </div>
-          </button>
-        </CollapsibleTrigger>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className={uploadChevronClass}
+                aria-label={isDocumentUploadCollapsed ? "Expand document upload" : "Collapse document upload"}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                    !isDocumentUploadCollapsed ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </div>
+        </CardHeader>
         <CollapsibleContent>
-          <div className="px-5 pb-4 pt-3">
+          <div className="px-5 pb-5 pt-4">
             <DocumentUploadCard
               submissionId={submissionId!}
               customerPhoneNumber={lead?.phone_number}
               embedded
-              onUploadedDocumentsToggle={setIsUploadedDocumentsExpanded}
             />
           </div>
         </CollapsibleContent>
       </Collapsible>
     </Card>
   );
+
+  const brokerAccidentDate = useMemo(() => {
+    const rawDate = verifiedFieldValues?.accident_date || lead?.accident_date || "";
+    if (!rawDate) return undefined;
+
+    const parsed = new Date(rawDate);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }, [verifiedFieldValues?.accident_date, lead?.accident_date]);
+
+  const attorneyRecommendationCard = lead ? (
+    <Card className="overflow-hidden border-[#f2d5c1] shadow-sm">
+      <Collapsible
+        open={!isAttorneyRecommendationCollapsed}
+        onOpenChange={(open) => setIsAttorneyRecommendationCollapsed(!open)}
+      >
+        <CardHeader className="border-b border-[#f2d5c1] bg-[#fff2e8] px-5 py-3.5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white text-[#b85a20] shadow-[0_8px_20px_-16px_rgba(184,90,32,0.35)]">
+                  <Scale className="h-4 w-4" />
+                </div>
+                <CardTitle className="text-sm font-bold tracking-tight text-foreground">
+                  Attorney Recommendations
+                </CardTitle>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#f0c9af] bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]"
+                      aria-label="Attorney recommendation info"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 text-sm">
+                    <div className="space-y-2">
+                      <div className="font-semibold text-foreground">Selection paths</div>
+                      <p className="text-muted-foreground">
+                        Use <strong>Internal Lawyer Orders</strong> to assign the lead through open internal inventory.
+                        Switch to <strong>Broker Fulfillment</strong> to choose a broker-side lawyer for submission.
+                      </p>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select
+                value={attorneyFulfillmentMode}
+                onValueChange={(value) => setAttorneyFulfillmentMode(value as "internal" | "broker")}
+              >
+                <SelectTrigger className="h-8.5 min-w-[220px] bg-white/90 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="internal">Internal Lawyer Orders</SelectItem>
+                  <SelectItem value="broker">Broker Fulfillment</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className={handoffChevronClass}
+                  aria-label={isAttorneyRecommendationCollapsed ? "Expand attorney recommendations" : "Collapse attorney recommendations"}
+                >
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                      !isAttorneyRecommendationCollapsed ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+              </CollapsibleTrigger>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CollapsibleContent>
+          <CardContent className="space-y-4 pt-4">
+            <div key={attorneyFulfillmentMode} className="animate-fade-in-up motion-reduce:animate-none">
+              {attorneyFulfillmentMode === "internal" ? (
+                <OrderRecommendationsCard
+                  submissionId={submissionId!}
+                  leadId={lead.id}
+                  leadOverrides={{
+                    state: lead.state,
+                    insured: lead.insured ?? null,
+                    prior_attorney_involved: lead.prior_attorney_involved ?? null,
+                  }}
+                  currentAssignedAttorneyId={currentAssignedAttorneyId}
+                  onAssigned={({ lawyerId }) => setCurrentAssignedAttorneyId(lawyerId)}
+                  onUnassigned={() => setCurrentAssignedAttorneyId(null)}
+                  layout="horizontal"
+                  hideHeader
+                />
+              ) : (
+                <QualifiedLawyersCard
+                  leadState={verifiedFieldValues?.state || lead.state}
+                  accidentDate={brokerAccidentDate}
+                  policeReport={verifiedFieldValues?.police_report}
+                  insuranceDocuments={verifiedFieldValues?.insurance_documents}
+                  medicalTreatmentProof={verifiedFieldValues?.medical_treatment_proof}
+                  driverLicense={verifiedFieldValues?.driver_license}
+                  selectedLawyerId={selectedSubmittedLawyer?.id}
+                  onLawyerSelect={setSelectedSubmittedLawyer}
+                  hideHeader
+                />
+              )}
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  ) : null;
 
   // ---- Backwards-compatible combined cards (for non-verification layout) ----
   const callSupportCards = (
@@ -1391,17 +1839,12 @@ const CallResultUpdate = () => {
 
               <CollapsibleTrigger asChild>
                 <Button type="button" variant="outline" size="sm" className="gap-2">
-                  {isScriptCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
-                  )}
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform duration-300 ease-out ${
+                      !isScriptCollapsed ? "rotate-180" : ""
+                    }`}
+                  />
+                  {isScriptCollapsed ? "Expand" : "Collapse"}
                 </Button>
               </CollapsibleTrigger>
             </div>
@@ -1445,7 +1888,11 @@ const CallResultUpdate = () => {
                                 ) : null}
                               </div>
                               <div className="mt-0.5 shrink-0 rounded-full border bg-background p-1.5">
-                                {isSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                <ChevronDown
+                                  className={`h-4 w-4 transition-transform duration-300 ease-out ${
+                                    isSectionOpen ? "rotate-180" : ""
+                                  }`}
+                                />
                               </div>
                             </button>
                           </CollapsibleTrigger>
@@ -1543,6 +1990,20 @@ const CallResultUpdate = () => {
       </Card>
       {contractCard}
       {documentUploadCard}
+    </div>
+  );
+
+  const flowConnector = (id: string, label: string, delay = 0) => (
+    <div
+      ref={revealRef(id)}
+      className={`flex flex-col items-center py-1 ${revealMotionClass} ${revealClass(id, "translate-y-4")}`}
+      style={revealTransition(delay, 620)}
+    >
+      <div className="h-5 w-px bg-border/60" />
+      <div className="rounded-full border border-border/60 bg-muted/40 px-3.5 py-1 text-center">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
+      </div>
+      <div className="h-5 w-px bg-border/60" />
     </div>
   );
 
@@ -1684,22 +2145,45 @@ const CallResultUpdate = () => {
           const res = await supabase.functions.invoke<{ name?: string }>("docusign-send-contract", {
             body: { templateId: id, recipientEmail: "noop@example.com", debug: true },
           });
-          return { id, name: res.data?.name || id };
+          return { id, name: res.data?.name || id, states: extractTemplateStates(res.data?.name || id) };
         } catch {
-          return { id, name: id };
+          return { id, name: id, states: extractTemplateStates(id) };
         }
       })
     ).then((templates) => {
-      setContractTemplates(templates);
-      setSelectedTemplateId(templates[0]?.id ?? "");
+      const uniqueTemplates = Array.from(
+        new Map(templates.map((template) => [template.id, template])).values(),
+      );
+      setContractTemplates(uniqueTemplates);
     }).finally(() => setLoadingTemplates(false));
   }, []);
+
+  useEffect(() => {
+    if (defaultRetainerState && !selectedRetainerState) {
+      setSelectedRetainerState(defaultRetainerState);
+    }
+  }, [defaultRetainerState, selectedRetainerState]);
+
+  useEffect(() => {
+    setSelectedTemplateId((currentTemplateId) =>
+      filteredContractTemplates.some((template) => template.id === currentTemplateId)
+        ? currentTemplateId
+        : filteredContractTemplates[0]?.id ?? "",
+    );
+  }, [filteredContractTemplates]);
 
   useEffect(() => {
     if (lead?.customer_full_name && !contractRecipientName) {
       setContractRecipientName(lead.customer_full_name);
     }
   }, [lead?.customer_full_name]);
+
+  const refreshRetainerStatusView = useCallback(async () => {
+    setRefreshingRetainerStatus(true);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    setRetainerStatusLastCheckedAt(new Date().toISOString());
+    setRefreshingRetainerStatus(false);
+  }, []);
 
   async function handleSendContract() {
     type SendContractResponse = { envelopeId?: string };
@@ -1748,6 +2232,7 @@ const CallResultUpdate = () => {
 
       const envelopeId = response.data?.envelopeId ?? null;
       setLastEnvelopeId(envelopeId);
+      setRetainerStatusLastCheckedAt(new Date().toISOString());
 
       toast({
         title: "Contract sent",
@@ -1852,10 +2337,40 @@ const CallResultUpdate = () => {
 
   if (loading) {
     return (
-      <div className="min-h-full flex items-center justify-center bg-background">
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Loading lead information...</span>
+      <div className="min-h-full bg-muted/30">
+        <div className="w-full px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
+          <div className="space-y-8 animate-fade-in">
+            {/* Breadcrumb skeleton */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-3" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-3" />
+                <Skeleton className="h-4 w-16" />
+              </div>
+              {/* Name skeleton */}
+              <div className="space-y-2">
+                <Skeleton className="h-9 w-64" />
+                <Skeleton className="h-4 w-48" />
+              </div>
+            </div>
+
+            {/* DNC card skeleton */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-6 w-80" />
+              </div>
+              <Skeleton className="h-24 w-full rounded-lg" />
+            </div>
+
+            {/* Two-column skeleton */}
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <Skeleton className="h-80 w-full rounded-lg" />
+              <Skeleton className="h-80 w-full rounded-lg" />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1883,65 +2398,63 @@ const CallResultUpdate = () => {
       <div className="w-full px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
         <div className="space-y-8">
         {/* ── Header ── */}
-        <Card className="overflow-hidden border-0 bg-transparent shadow-none">
-          <div className="px-1 py-1 sm:px-2">
-            <div className="space-y-5">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/transfer-portal")}
-                className="group -ml-2 w-fit gap-1.5 rounded-full border border-orange-200/70 bg-orange-100/60 px-4 text-orange-900 shadow-sm backdrop-blur-sm transition-colors hover:border-orange-300 hover:bg-orange-200/80 hover:text-orange-950"
-              >
-                <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
-                Back
-              </Button>
+        <div className="space-y-4 animate-fade-in-up">
+          {/* Breadcrumb navigation */}
+          <nav className="flex items-center gap-1.5 text-[13px]">
+            <button
+              type="button"
+              onClick={() => navigate("/transfer-portal")}
+              className="font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Transfer Portal
+            </button>
+            {breadcrumbSections.map((section) => (
+              <div key={section.id} className="flex items-center gap-1.5">
+                <span className="text-muted-foreground/40 select-none">&gt;</span>
+                <button
+                  type="button"
+                  onClick={() => scrollToSection(section.id)}
+                  className="font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {section.label}
+                </button>
+              </div>
+            ))}
+          </nav>
 
-              <div className="flex flex-col items-center gap-4 text-center">
-                <div className="min-w-0 space-y-4">
-                  <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-black sm:text-3xl">
-                      {fromCallback ? "Update Callback Result" : "Update Call Result"}
-                    </h1>
-                  </div>
-
-                  <div className="flex flex-wrap justify-center gap-2.5 text-xs text-muted-foreground">
-                    {lead?.customer_full_name ? (
-                      <div className="flex items-center gap-2 rounded-full border border-orange-300/55 bg-[linear-gradient(90deg,#cb6a2a_0%,#a85221_52%,#724020_100%)] px-2.5 py-1.5 text-white shadow-[0_14px_30px_-20px_rgba(168,82,33,0.65)]">
-                        <span className="rounded-full border border-black/10 bg-white px-2.5 py-0.5 font-semibold text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
-                          Lead
-                        </span>
-                        <span className="font-semibold text-white">{lead.customer_full_name}</span>
-                      </div>
-                    ) : null}
-                    {lead?.state ? (
-                      <div className="flex items-center gap-2 rounded-full border border-orange-950/40 bg-[linear-gradient(90deg,#9a4f23_0%,#7a3e1d_52%,#552714_100%)] px-2.5 py-1.5 text-white shadow-[0_14px_30px_-20px_rgba(85,39,20,0.72)]">
-                        <span className="rounded-full border border-black/10 bg-white px-2.5 py-0.5 font-semibold text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
-                          State
-                        </span>
-                        <span className="font-semibold text-white">{lead.state}</span>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                {!showVerificationPanel || !verificationSessionId ? (
-                  <div className="pt-1">
-                    <StartVerificationModal
-                      submissionId={submissionId!}
-                      onVerificationStarted={handleVerificationStarted}
-                    />
-                  </div>
+          {/* Lead name + meta */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-1">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                {lead?.customer_full_name || "Unknown Lead"}
+              </h1>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {submissionId ? <span>Submission ID: <span className="font-mono text-xs">{submissionId}</span></span> : null}
+                {fromCallback ? (
+                  <>
+                    <span className="text-border">|</span>
+                    <Badge variant="outline" className="text-[10px] font-semibold uppercase tracking-wide">Callback</Badge>
+                  </>
                 ) : null}
               </div>
             </div>
-          </div>
 
-        {/* ── Main content ── */}
-        </Card>
+            {!showVerificationPanel || !verificationSessionId ? (
+              <StartVerificationModal
+                submissionId={submissionId!}
+                onVerificationStarted={handleVerificationStarted}
+              />
+            ) : null}
+          </div>
+        </div>
         {showVerificationPanel && verificationSessionId ? (
           <div className="space-y-8">
-            <section className="space-y-3">
-              <div className="space-y-1 text-center">
+            <section
+              ref={revealRef("safeguards", "safeguards")}
+              className={`space-y-3 scroll-mt-6 ${revealMotionClass} ${revealClass("safeguards")}`}
+              style={revealTransition(40)}
+            >
+              <div className="space-y-0.5">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   Pre-Call Safeguards
                 </div>
@@ -1950,9 +2463,16 @@ const CallResultUpdate = () => {
               {preCallCards}
             </section>
 
-            <section className="space-y-4">
+            <section
+              ref={(el) => { sectionNavRefs.current["verification"] = el; }}
+              className="space-y-4 scroll-mt-6"
+            >
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
-                <div className="lg:sticky lg:top-4">
+                <div
+                  ref={revealRef("verification-panel")}
+                  className={`lg:sticky lg:top-4 ${revealMotionClass} ${revealClass("verification-panel")}`}
+                  style={revealTransition(70)}
+                >
                   <VerificationPanel
                     sessionId={verificationSessionId}
                     onTransferReady={handleTransferReady}
@@ -1961,101 +2481,81 @@ const CallResultUpdate = () => {
                   />
                 </div>
 
-                <div className="lg:sticky lg:top-4">
+                <div
+                  ref={revealRef("script-panel")}
+                  className={`lg:sticky lg:top-4 ${revealMotionClass} ${revealClass("script-panel", "translate-y-6")}`}
+                  style={revealTransition(190)}
+                >
                   {scriptCard}
                 </div>
               </div>
             </section>
 
-            <section className="space-y-4">
-              <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Attorney Match
-                </div>
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">Choose the best-fit attorney for the lead</h2>
-                <p className="text-sm text-muted-foreground">
-                  Keep selection fast and obvious so the next step can auto-populate the contract without rework.
-                </p>
-              </div>
-              <OrderRecommendationsCard
-                submissionId={submissionId!}
-                leadId={lead.id}
-                leadOverrides={{
-                  state: lead.state,
-                  insured: lead.insured ?? null,
-                  prior_attorney_involved: lead.prior_attorney_involved ?? null,
-                }}
-                currentAssignedAttorneyId={currentAssignedAttorneyId}
-                onAssigned={({ lawyerId }) => setCurrentAssignedAttorneyId(lawyerId)}
-                onUnassigned={() => setCurrentAssignedAttorneyId(null)}
-                layout="horizontal"
-              />
+            {flowConnector("connector-attorney", "Attorney Match", 60)}
+            <section
+              ref={revealRef("attorney-section", "attorney")}
+              className={`scroll-mt-6 ${revealMotionClass} ${revealClass("attorney-section")}`}
+              style={revealTransition(100)}
+            >
+              {attorneyRecommendationCard}
             </section>
 
-            <section className="space-y-4">
-              <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Handoff Preparation
-                </div>
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">Prepare the contract and intake package</h2>
-                <p className="text-sm text-muted-foreground">
-                  The chosen attorney should flow directly into DocuSign, followed by document collection for a clean handoff.
-                </p>
+            {flowConnector("connector-handoff", "Handoff", 60)}
+            <section
+              ref={(el) => { sectionNavRefs.current["handoff"] = el; }}
+              className="space-y-5 scroll-mt-6"
+            >
+              <div
+                ref={revealRef("contract-card")}
+                className={`${revealMotionClass} ${revealClass("contract-card")}`}
+                style={revealTransition(90)}
+              >
+                {contractCard}
               </div>
-              <div className={`grid grid-cols-1 gap-5 lg:grid-cols-2 ${shouldStretchHandoffCards ? "items-stretch" : "items-start"}`}>
-                <div className={shouldStretchHandoffCards ? "h-full" : "self-start"}>{contractCard}</div>
-                <div className={shouldStretchHandoffCards ? "h-full" : "self-start"}>{documentUploadCard}</div>
+              <div
+                ref={revealRef("document-upload-card")}
+                className={`${revealMotionClass} ${revealClass("document-upload-card", "translate-y-4")}`}
+                style={revealTransition(170)}
+              >
+                {documentUploadCard}
               </div>
             </section>
 
-            <section className="space-y-4">
-              <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Final Call Outcome
-                </div>
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">Finish the update with a cleaner result form</h2>
-                <p className="text-sm text-muted-foreground">
-                  Keep the final decision, submission details, and notes structured so agents can close out the call quickly.
-                </p>
+            {flowConnector("connector-result", "Call Result", 60)}
+            <section
+              ref={(el) => { sectionNavRefs.current["result"] = el; }}
+              className="space-y-4 scroll-mt-6"
+            >
+              <div
+                ref={revealRef("result-card")}
+                className={`mx-auto w-full xl:max-w-[44rem] ${revealMotionClass} ${revealClass("result-card")}`}
+                style={revealTransition(95)}
+              >
+                <CallResultForm
+                  submissionId={submissionId!}
+                  customerName={lead.customer_full_name}
+                  initialAssignedAttorneyId={currentAssignedAttorneyId || undefined}
+                  verificationSessionId={verificationSessionId || undefined}
+                  verifiedFieldValues={verifiedFieldValues}
+                  verificationProgress={verificationProgress}
+                  selectedSubmittedLawyer={selectedSubmittedLawyer}
+                  attorneyFulfillmentMode={attorneyFulfillmentMode}
+                  onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
+                />
               </div>
-              <CallResultForm
-                submissionId={submissionId!}
-                customerName={lead.customer_full_name}
-                initialAssignedAttorneyId={currentAssignedAttorneyId || undefined}
-                verificationSessionId={verificationSessionId || undefined}
-                verifiedFieldValues={verifiedFieldValues}
-                verificationProgress={verificationProgress}
-                onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
-              />
             </section>
           </div>
         ) : (
           <div className="space-y-8">
-            <section className="space-y-4">
-              <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Call Result Workspace
-                </div>
-                <h2 className="text-lg font-semibold tracking-tight text-foreground">Review support modules, recommendations, and the final result</h2>
-                <p className="text-sm text-muted-foreground">
-                  When verification has not been started, keep the support context and the final call result flow readable and compact.
-                </p>
-              </div>
+            <section
+              ref={revealRef("workspace", "workspace")}
+              className={`space-y-4 scroll-mt-6 ${revealMotionClass} ${revealClass("workspace")}`}
+              style={revealTransition(50)}
+            >
 
               <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
                 <div className="self-start">
-                  <OrderRecommendationsCard
-                    submissionId={submissionId!}
-                    leadId={lead.id}
-                    leadOverrides={{
-                      state: lead.state,
-                      insured: lead.insured ?? null,
-                      prior_attorney_involved: lead.prior_attorney_involved ?? null,
-                    }}
-                    currentAssignedAttorneyId={currentAssignedAttorneyId}
-                    onAssigned={({ lawyerId }) => setCurrentAssignedAttorneyId(lawyerId)}
-                    onUnassigned={() => setCurrentAssignedAttorneyId(null)}
-                  />
+                  {attorneyRecommendationCard}
                 </div>
 
                 <div className="space-y-6">
@@ -2066,6 +2566,8 @@ const CallResultUpdate = () => {
                     initialAssignedAttorneyId={currentAssignedAttorneyId || undefined}
                     verificationSessionId={verificationSessionId || undefined}
                     verificationProgress={verificationProgress}
+                    selectedSubmittedLawyer={selectedSubmittedLawyer}
+                    attorneyFulfillmentMode={attorneyFulfillmentMode}
                     onSuccess={() => navigate(`/call-result-journey?submissionId=${submissionId}`)}
                   />
                 </div>
