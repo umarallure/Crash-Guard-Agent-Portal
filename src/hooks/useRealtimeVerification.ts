@@ -29,7 +29,7 @@ export function useRealtimeVerification(sessionId: string) {
         throw sessionError;
       }
 
-      setSession(sessionData);
+      let nextSessionData = sessionData;
 
       // Fetch verification items
       const { data: itemsData, error: itemsError } = await supabase
@@ -42,7 +42,7 @@ export function useRealtimeVerification(sessionId: string) {
         throw itemsError;
       }
 
-      setVerificationItems(itemsData || []);
+      let nextVerificationItems = itemsData || [];
 
       // Fetch lead data if we have a submission_id
       if (sessionData?.submission_id) {
@@ -56,9 +56,64 @@ export function useRealtimeVerification(sessionId: string) {
           console.warn('Could not fetch lead data:', leadError);
         } else {
           setLeadData(leadDataResult);
+
+          const emailValue = String(leadDataResult?.email || '').trim();
+          const hasEmailVerificationItem = nextVerificationItems.some(
+            (item) => item.field_name === 'email'
+          );
+
+          if (emailValue && !hasEmailVerificationItem) {
+            const emailInsertPayload: Database['public']['Tables']['verification_items']['Insert'] = {
+              session_id: sessionId,
+              field_name: 'email',
+              field_category: 'contact',
+              original_value: emailValue,
+              verified_value: emailValue,
+              is_verified: false,
+              is_modified: false,
+            };
+
+            const { data: insertedEmailItem, error: emailInsertError } = await supabase
+              .from('verification_items')
+              .insert(emailInsertPayload)
+              .select()
+              .single();
+
+            if (emailInsertError) {
+              console.warn('Could not seed email verification item:', emailInsertError);
+            } else if (insertedEmailItem) {
+              nextVerificationItems = [...nextVerificationItems, insertedEmailItem];
+
+              const nextTotalFields = nextVerificationItems.length;
+              if ((nextSessionData.total_fields || 0) < nextTotalFields) {
+                const { data: updatedSession, error: sessionUpdateError } = await supabase
+                  .from('verification_sessions')
+                  .update({
+                    total_fields: nextTotalFields,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', sessionId)
+                  .select('*')
+                  .single();
+
+                if (sessionUpdateError) {
+                  console.warn('Could not update verification session field count:', sessionUpdateError);
+                  nextSessionData = {
+                    ...nextSessionData,
+                    total_fields: nextTotalFields,
+                    updated_at: new Date().toISOString(),
+                  };
+                } else if (updatedSession) {
+                  nextSessionData = updatedSession;
+                }
+              }
+            }
+          }
         }
       }
 
+      setSession(nextSessionData);
+      setVerificationItems(nextVerificationItems);
       setError(null);
     } catch (err) {
       console.error('Error fetching session data:', err);
@@ -205,7 +260,11 @@ export function useRealtimeVerification(sessionId: string) {
               )
             );
           } else if (payload.eventType === 'INSERT') {
-            setVerificationItems(prev => [...prev, payload.new as VerificationItem]);
+            setVerificationItems(prev =>
+              prev.some(item => item.id === payload.new.id)
+                ? prev
+                : [...prev, payload.new as VerificationItem]
+            );
           } else if (payload.eventType === 'DELETE') {
             setVerificationItems(prev =>
               prev.filter(item => item.id !== payload.old.id)

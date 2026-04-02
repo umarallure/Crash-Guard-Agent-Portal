@@ -76,6 +76,7 @@ export const OrderRecommendationsCard = (props: {
   onAssigned?: (input: { orderId: string; lawyerId: string }) => void;
   onUnassigned?: () => void;
   layout?: "list" | "horizontal";
+  hideHeader?: boolean;
 }) => {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -85,6 +86,7 @@ export const OrderRecommendationsCard = (props: {
   const [loadingLead, setLoadingLead] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [hasResolvedRecommendations, setHasResolvedRecommendations] = useState(false);
   const [assigningOrderId, setAssigningOrderId] = useState<string | null>(null);
   const [clearingAssignment, setClearingAssignment] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -214,18 +216,68 @@ export const OrderRecommendationsCard = (props: {
     }
   };
 
+  const leadOverrideState = props.leadOverrides?.state ?? null;
+  const leadOverrideInsured = props.leadOverrides?.insured ?? null;
+  const leadOverridePriorAttorneyInvolved = props.leadOverrides?.prior_attorney_involved ?? null;
+  const leadOverrideCurrentlyRepresented = props.leadOverrides?.currently_represented ?? null;
+  const leadOverrideIsInjured = props.leadOverrides?.is_injured ?? null;
+  const leadOverrideReceivedMedicalTreatment = props.leadOverrides?.received_medical_treatment ?? null;
+  const leadOverrideAccidentLastTwelveMonths = props.leadOverrides?.accident_last_12_months ?? null;
+
   const payload = useMemo(() => {
     return {
       lead: {
         submission_id: props.submissionId,
         lead_id: resolvedLeadId,
-        ...(props.leadOverrides || {}),
+        state: leadOverrideState,
+        insured: leadOverrideInsured,
+        prior_attorney_involved: leadOverridePriorAttorneyInvolved,
+        currently_represented: leadOverrideCurrentlyRepresented,
+        is_injured: leadOverrideIsInjured,
+        received_medical_treatment: leadOverrideReceivedMedicalTreatment,
+        accident_last_12_months: leadOverrideAccidentLastTwelveMonths,
       },
       limit: 8,
     };
-  }, [props.submissionId, resolvedLeadId, props.leadOverrides]);
+  }, [
+    props.submissionId,
+    resolvedLeadId,
+    leadOverrideState,
+    leadOverrideInsured,
+    leadOverridePriorAttorneyInvolved,
+    leadOverrideCurrentlyRepresented,
+    leadOverrideIsInjured,
+    leadOverrideReceivedMedicalTreatment,
+    leadOverrideAccidentLastTwelveMonths,
+  ]);
 
-  const run = async () => {
+  const requestSignature = useMemo(
+    () =>
+      JSON.stringify({
+        submissionId: props.submissionId,
+        leadId: resolvedLeadId,
+        state: leadOverrideState,
+        insured: leadOverrideInsured,
+        priorAttorneyInvolved: leadOverridePriorAttorneyInvolved,
+        currentlyRepresented: leadOverrideCurrentlyRepresented,
+        isInjured: leadOverrideIsInjured,
+        receivedMedicalTreatment: leadOverrideReceivedMedicalTreatment,
+        accidentLastTwelveMonths: leadOverrideAccidentLastTwelveMonths,
+      }),
+    [
+      props.submissionId,
+      resolvedLeadId,
+      leadOverrideState,
+      leadOverrideInsured,
+      leadOverridePriorAttorneyInvolved,
+      leadOverrideCurrentlyRepresented,
+      leadOverrideIsInjured,
+      leadOverrideReceivedMedicalTreatment,
+      leadOverrideAccidentLastTwelveMonths,
+    ],
+  );
+
+  const run = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -249,19 +301,20 @@ export const OrderRecommendationsCard = (props: {
       setData([]);
     } finally {
       setLoading(false);
+      setHasResolvedRecommendations(true);
     }
-  };
+  }, [payload]);
 
   useEffect(() => {
-    if (dealFlowStatus !== "eligible") return;
+    if (dealFlowStatus !== "eligible") {
+      setHasResolvedRecommendations(false);
+      setLoading(false);
+      return;
+    }
 
-    const t = window.setTimeout(() => {
-      void run();
-    }, 600);
-
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, dealFlowStatus]);
+    setHasResolvedRecommendations(false);
+    void run();
+  }, [dealFlowStatus, requestSignature, run]);
 
   const clearAssignedAttorney = async () => {
     if (!props.submissionId) {
@@ -518,11 +571,17 @@ export const OrderRecommendationsCard = (props: {
     if (state) return `Matching open orders for ${state.toUpperCase()}`;
     return "";
   }, [props.leadOverrides?.state]);
+  const hideHeader = props.hideHeader === true;
 
   const isHorizontalLayout = props.layout === "horizontal";
   const topRecommendationOrderId = data[0]?.order_id ?? null;
   const minimumHorizontalCards = 4;
   const horizontalCardShellClass = "flex h-[19.5rem] w-[20rem] shrink-0 flex-col justify-between rounded-[22px] p-4 shadow-sm";
+  const railAnimation = (index: number) =>
+    ({
+      className: "animate-fade-in-up motion-reduce:animate-none",
+      style: { animationDelay: `${Math.min(index, 5) * 70}ms` },
+    }) as const;
 
   const renderStatChip = (label: string, value: string) => (
     <div className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2.5 py-1 text-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
@@ -546,7 +605,8 @@ export const OrderRecommendationsCard = (props: {
   const renderPlaceholderCard = (slotIndex: number) => (
     <div
       key={`upcoming-${slotIndex}`}
-      className={`${horizontalCardShellClass} self-start overflow-hidden border border-dashed border-border/60 bg-[linear-gradient(180deg,rgba(255,250,246,0.88)_0%,rgba(255,255,255,0.98)_100%)]`}
+      className={`${horizontalCardShellClass} self-start overflow-hidden border border-dashed border-border/60 bg-[linear-gradient(180deg,rgba(255,250,246,0.88)_0%,rgba(255,255,255,0.98)_100%)] ${railAnimation(slotIndex).className}`}
+      style={railAnimation(slotIndex).style}
     >
       <div className="min-w-0 space-y-2.5">
         <div className="flex items-start justify-between gap-3">
@@ -581,7 +641,8 @@ export const OrderRecommendationsCard = (props: {
   const renderNoAttorneyCard = () => (
     <div
       key="no-attorney"
-      className={`${horizontalCardShellClass} overflow-hidden border border-dashed border-orange-200/80 bg-[linear-gradient(180deg,rgba(255,248,242,0.96)_0%,rgba(255,255,255,0.98)_100%)] shadow-[0_18px_36px_-28px_rgba(234,117,38,0.28)]`}
+      className={`${horizontalCardShellClass} overflow-hidden border border-dashed border-orange-200/80 bg-[linear-gradient(180deg,rgba(255,248,242,0.96)_0%,rgba(255,255,255,0.98)_100%)] shadow-[0_18px_36px_-28px_rgba(234,117,38,0.28)] ${railAnimation(0).className}`}
+      style={railAnimation(0).style}
     >
       <div className="space-y-2.5">
         <div className="flex items-start justify-between gap-3">
@@ -664,7 +725,8 @@ export const OrderRecommendationsCard = (props: {
       return (
         <div
           key={rec.order_id}
-          className={`${horizontalCardShellClass} border transition-all ${selectionToneClass}`}
+          className={`${horizontalCardShellClass} border transition-all ${selectionToneClass} ${railAnimation(rank - 1).className}`}
+          style={railAnimation(rank - 1).style}
         >
           <div className="min-w-0 space-y-1.5">
             <div className="flex items-start justify-between gap-3">
@@ -784,13 +846,14 @@ export const OrderRecommendationsCard = (props: {
     return (
       <div
         key={rec.order_id}
-        className={`rounded-xl border p-4 ${
+        className={`rounded-xl border p-4 ${railAnimation(rank - 1).className} ${
           isAssigned
             ? "border-orange-300 bg-orange-50/50"
             : isTopRecommendation
             ? "border-emerald-200 bg-emerald-50/40"
             : "bg-background"
         }`}
+        style={railAnimation(rank - 1).style}
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
           <div className="min-w-0 space-y-3">
@@ -892,33 +955,39 @@ export const OrderRecommendationsCard = (props: {
     );
   };
 
-  return (
-    <Card className="overflow-hidden border-[#f2d5c1] shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-[#f2d5c1] bg-[linear-gradient(90deg,rgba(234,117,38,0.28)_0%,rgba(234,117,38,0.14)_12%,rgba(234,117,38,0.07)_24%,rgba(234,117,38,0.02)_34%,rgba(234,117,38,0)_46%)] px-5 py-3.5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-sm font-bold tracking-tight">Attorney Recommendations</span>
-          {subtitle ? (
-            <span className="hidden text-xs text-muted-foreground sm:inline">{subtitle}</span>
-          ) : null}
-          {loadingLead ? <Badge variant="outline" className="text-[10px]">Resolving...</Badge> : null}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void refreshDealFlowStatus().then((status) => {
-            if (status === "eligible") {
-              void run();
-            }
-          })}
-          disabled={loading || clearingAssignment}
-          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className={`h-3 w-3 ${loading || clearingAssignment ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
+  const refreshButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() =>
+        void refreshDealFlowStatus().then((status) => {
+          if (status === "eligible") {
+            void run();
+          }
+        })
+      }
+      disabled={loading || clearingAssignment}
+      className="h-8 gap-2 rounded-md border-[#e6b086] bg-[#fff4ea] px-3 text-xs font-medium text-[#7a3718] shadow-sm hover:bg-[#ffe9d8] hover:text-[#6a2d13]"
+    >
+      <RefreshCw className={`h-3.5 w-3.5 ${loading || clearingAssignment ? "animate-spin" : ""}`} />
+      Refresh
+    </Button>
+  );
 
-      <CardContent className="space-y-3 pt-4">
+  const recommendationContent = (
+    <div className="space-y-3">
+      {hideHeader ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {subtitle ? (
+              <span className="text-xs text-muted-foreground">{subtitle}</span>
+            ) : null}
+            {loadingLead ? <Badge variant="outline" className="text-[10px]">Resolving...</Badge> : null}
+          </div>
+          {refreshButton}
+        </div>
+      ) : null}
+
         {dealFlowStatus === "loading" ? (
           <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -965,7 +1034,7 @@ export const OrderRecommendationsCard = (props: {
               </div>
             ) : null}
 
-            {loading ? (
+            {loading || !hasResolvedRecommendations ? (
               isHorizontalLayout ? (
                 <div className="-mx-1 overflow-x-auto pb-2">
                   <div className="flex min-w-max items-start gap-4 px-1">
@@ -980,7 +1049,7 @@ export const OrderRecommendationsCard = (props: {
               )
             ) : null}
 
-            {!loading && data.length === 0 ? (
+            {!loading && hasResolvedRecommendations && data.length === 0 ? (
               isHorizontalLayout ? (
                 <div className="-mx-1 overflow-x-auto pb-2">
                   <div className="flex min-w-max items-start gap-4 px-1">
@@ -995,7 +1064,7 @@ export const OrderRecommendationsCard = (props: {
               )
             ) : null}
 
-            {!loading && data.length > 0 ? (
+            {!loading && hasResolvedRecommendations && data.length > 0 ? (
               isHorizontalLayout ? (
                 <div className="-mx-1 overflow-x-auto pb-2">
                   <div className="flex min-w-max items-start gap-4 px-1">
@@ -1011,6 +1080,28 @@ export const OrderRecommendationsCard = (props: {
             ) : null}
           </div>
         )}
+    </div>
+  );
+
+  if (hideHeader) {
+    return recommendationContent;
+  }
+
+  return (
+    <Card className="overflow-hidden border-[#f2d5c1] shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-[#f2d5c1] bg-[linear-gradient(90deg,rgba(234,117,38,0.28)_0%,rgba(234,117,38,0.14)_12%,rgba(234,117,38,0.07)_24%,rgba(234,117,38,0.02)_34%,rgba(234,117,38,0)_46%)] px-5 py-3.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-sm font-bold tracking-tight">Attorney Recommendations</span>
+          {subtitle ? (
+            <span className="hidden text-xs text-muted-foreground sm:inline">{subtitle}</span>
+          ) : null}
+          {loadingLead ? <Badge variant="outline" className="text-[10px]">Resolving...</Badge> : null}
+        </div>
+        {refreshButton}
+      </div>
+
+      <CardContent className="space-y-3 pt-4">
+        {recommendationContent}
       </CardContent>
     </Card>
   );

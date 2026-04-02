@@ -37,6 +37,7 @@ type LeadDocument = {
   storage_path: string;
   bucket_name: string | null;
   uploaded_at: string | null;
+  uploaded_by?: string | null;
   status: string | null;
 };
 
@@ -187,6 +188,7 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
               storage_path: itemPath,
               bucket_name: bucketName,
               uploaded_at: file.created_at || file.updated_at || null,
+              uploaded_by: null,
               status: "uploaded",
             } satisfies LeadDocument,
           ];
@@ -234,7 +236,7 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
           };
         })
           .from("lead_documents")
-          .select("id, submission_id, request_id, category, file_name, file_size, file_type, storage_path, bucket_name, uploaded_at, status")
+          .select("id, submission_id, request_id, category, file_name, file_size, file_type, storage_path, bucket_name, uploaded_at, uploaded_by, status")
           .eq("submission_id", submissionId)
           .order("uploaded_at", { ascending: false }),
         fetchStorageDocuments(),
@@ -243,9 +245,15 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
       setRequest(requestData ?? null);
 
       const databaseDocuments = (documentData ?? []).filter(Boolean);
-      const mergedDocuments = [...databaseDocuments];
+      const storageDocumentKeys = new Set(
+        storageDocuments.map((document) => `${document.bucket_name || "lead-documents"}:${document.storage_path}`)
+      );
+      const databaseDocumentsStillInStorage = databaseDocuments.filter((document) =>
+        storageDocumentKeys.has(`${document.bucket_name || "lead-documents"}:${document.storage_path}`)
+      );
+      const mergedDocuments = [...databaseDocumentsStillInStorage];
       const existingKeys = new Set(
-        databaseDocuments.map((document) => `${document.bucket_name || "lead-documents"}:${document.storage_path}`)
+        databaseDocumentsStillInStorage.map((document) => `${document.bucket_name || "lead-documents"}:${document.storage_path}`)
       );
 
       storageDocuments.forEach((document) => {
@@ -473,6 +481,11 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
                         {category.documents.map((document) => {
                           const previewUrl = previewUrls[document.id];
                           const fileType = document.file_type || "";
+                          const uploadSourceLabel = document.uploaded_by ? "Direct Upload" : "Portal Upload";
+                          const uploadSourceClass = document.uploaded_by
+                            ? "border-transparent bg-[linear-gradient(135deg,#45505f_0%,#2c3440_48%,#161c24_100%)] text-white shadow-[0_12px_24px_-18px_rgba(15,23,42,0.95)]"
+                            : "border-[#efbb93]/70 bg-[#fff2e8] text-[#9a5a33]";
+                          const shouldShowStatusBadge = Boolean(document.status && document.status !== "uploaded");
 
                           return (
                             <div key={document.id} className="overflow-hidden rounded-lg border bg-background">
@@ -484,9 +497,16 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
                                     {document.uploaded_at ? ` • ${new Date(document.uploaded_at).toLocaleString()}` : ""}
                                   </div>
                                 </div>
-                                <Badge variant={document.status === "verified" ? "default" : "secondary"}>
-                                  {document.status || "uploaded"}
-                                </Badge>
+                                <div className="flex items-center gap-1.5">
+                                  <Badge variant="outline" className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${uploadSourceClass}`}>
+                                    {uploadSourceLabel}
+                                  </Badge>
+                                  {shouldShowStatusBadge ? (
+                                    <Badge variant={document.status === "verified" ? "default" : "secondary"}>
+                                      {document.status}
+                                    </Badge>
+                                  ) : null}
+                                </div>
                               </div>
 
                               <div className="h-44 overflow-hidden bg-muted/30">

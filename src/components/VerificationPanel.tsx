@@ -416,7 +416,7 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
     const leadData: Record<string, string> = {};
     if (verificationItems) {
       verificationItems.forEach(item => {
-        if (['lead_vendor', 'customer_full_name', 'phone_number', 'email'].includes(item.field_name)) {
+        if (['lead_vendor', 'customer_full_name', 'phone_number'].includes(item.field_name)) {
           leadData[item.field_name] = inputValues[item.id] || item.original_value || '';
         }
       });
@@ -450,7 +450,6 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       `CONTACT INFORMATION:`,
       `Address: ${fieldValues.street_address || ''} ${fieldValues.city || ''}, ${fieldValues.state || ''} ${fieldValues.zip_code || ''}`,
       `Phone: ${fieldValues.phone_number || 'N/A'}`,
-      `Email: ${fieldValues.email || 'N/A'}`,
       ``,
       `ACCIDENT/INCIDENT INFORMATION:`,
       `Accident Date: ${fieldValues.accident_date || 'N/A'}`,
@@ -940,6 +939,10 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
     const bindings = stepQuestionBindings[stepKey] || [];
 
     return bindings.filter((binding) => {
+      if (binding.fieldName && !itemByFieldName.has(binding.fieldName)) {
+        return false;
+      }
+
       if (stepKey === "accident_location" && binding.key === "passenger_relationship") {
         return supplementalAnswers.accident_location?.driver_or_passenger === "passenger";
       }
@@ -1244,7 +1247,11 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
                 <h3 className="text-[13px] font-semibold text-foreground leading-snug">{step.title}</h3>
               </div>
               <div className="mt-0.5 shrink-0 text-muted-foreground">
-                {isOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                    isOpen ? "rotate-180" : ""
+                  }`}
+                />
               </div>
             </button>
           </CollapsibleTrigger>
@@ -1337,7 +1344,7 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
 
   return (
     <Card
-      className="flex min-h-[30rem] flex-col overflow-hidden border-border/60 shadow-sm lg:h-[calc(100dvh-8rem)]"
+      className="flex min-h-[30rem] flex-col overflow-hidden border-[#2b333f]/80 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.8)] lg:h-[calc(100dvh-8rem)]"
     >
       <div className="flex-shrink-0 space-y-0 border-b border-orange-950/30 bg-[linear-gradient(90deg,#cb6a2a_0%,#a85221_52%,#724020_100%)] text-orange-50">
         <div className="flex items-center justify-between gap-2 px-5 py-3">
@@ -1505,7 +1512,6 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
                         leadData: {
                           customer_full_name: leadData.customer_full_name,
                           phone_number: leadData.phone_number,
-                          email: leadData.email,
                           lead_vendor: leadData.lead_vendor
                         },
                         callResult: {
@@ -1599,7 +1605,6 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
                         leadData: {
                           customer_full_name: leadData.customer_full_name,
                           phone_number: leadData.phone_number,
-                          email: leadData.email,
                           lead_vendor: leadData.lead_vendor
                         },
                         callResult: {
