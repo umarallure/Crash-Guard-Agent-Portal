@@ -58,6 +58,19 @@ interface LawyerRequirement {
   submission_link: string | null;
 }
 
+interface DocusignTemplateMapping {
+  id: string;
+  attorney_id: string | null;
+  lawyer_requirement_id: string | null;
+  state_code: string | null;
+  template_id: string;
+  template_name: string | null;
+  template_type: string | null;
+  is_default: boolean;
+  priority: number;
+  is_active: boolean;
+}
+
 type LawyerTypeFilter = "all" | "broker_lawyer" | "internal_lawyer";
 
 const FILTER_META: Record<
@@ -142,6 +155,7 @@ const getAvatarColor = (_name: string, type: string | null) => {
 
 export default function LawyerRequirements() {
   const [requirements, setRequirements] = useState<LawyerRequirement[]>([]);
+  const [templateMappings, setTemplateMappings] = useState<DocusignTemplateMapping[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRequirement, setEditingRequirement] = useState<LawyerRequirement | null>(null);
@@ -172,16 +186,30 @@ export default function LawyerRequirements() {
 
   const loadRequirements = async () => {
     setLoading(true);
-    const { data, error } = await supabaseAny
-      .from("lawyer_requirements")
-      .select("*")
-      .order("attorney_name");
+    const [{ data: requirementsData, error: requirementsError }, { data: mappingsData, error: mappingsError }] =
+      await Promise.all([
+        supabaseAny.from("lawyer_requirements").select("*").order("attorney_name"),
+        supabaseAny
+          .from("docusign_template_mappings")
+          .select("*")
+          .order("state_code", { ascending: true, nullsFirst: true })
+          .order("priority", { ascending: true })
+          .order("created_at", { ascending: true }),
+      ]);
 
-    if (error) {
-      console.error("Error loading requirements:", error);
+    if (requirementsError) {
+      console.error("Error loading requirements:", requirementsError);
       toast.error("Failed to load lawyer requirements");
     } else {
-      setRequirements(data || []);
+      setRequirements(requirementsData || []);
+    }
+
+    if (mappingsError) {
+      console.error("Error loading DocuSign template mappings:", mappingsError);
+      toast.error("Failed to load DocuSign templates");
+      setTemplateMappings([]);
+    } else {
+      setTemplateMappings(mappingsData || []);
     }
     setLoading(false);
   };
@@ -331,6 +359,45 @@ export default function LawyerRequirements() {
     internal_lawyer: internalCount,
   };
 
+  const getTemplateMappingsForRequirement = (req: LawyerRequirement) => {
+    const byRequirement = templateMappings.filter(
+      (mapping) => mapping.lawyer_requirement_id === req.id
+    );
+
+    if (byRequirement.length > 0) return byRequirement;
+
+    if (!req.attorney_id) return [];
+
+    return templateMappings.filter(
+      (mapping) =>
+        !mapping.lawyer_requirement_id &&
+        mapping.attorney_id === req.attorney_id
+    );
+  };
+
+  const getTemplateSummary = (reqs: LawyerRequirement[]) => {
+    const mappings = reqs.flatMap((req) => getTemplateMappingsForRequirement(req));
+    const uniqueTemplateIds = new Set(mappings.map((mapping) => mapping.template_id));
+    return uniqueTemplateIds.size;
+  };
+
+  const groupTemplatesByState = (mappings: DocusignTemplateMapping[]) => {
+    const grouped = new Map<string, DocusignTemplateMapping[]>();
+
+    mappings.forEach((mapping) => {
+      const stateKey = (mapping.state_code || "ALL").trim().toUpperCase() || "ALL";
+      const existing = grouped.get(stateKey) || [];
+      existing.push(mapping);
+      grouped.set(stateKey, existing);
+    });
+
+    return Array.from(grouped.entries()).sort(([stateA], [stateB]) => {
+      if (stateA === "ALL") return 1;
+      if (stateB === "ALL") return -1;
+      return stateA.localeCompare(stateB);
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-16">
@@ -426,6 +493,7 @@ export default function LawyerRequirements() {
           {filteredEntries.map(([attorneyName, reqs]) => {
             const isExpanded = expandedAttorney === attorneyName;
             const lawyerType = reqs[0]?.lawyer_type;
+            const templateCount = getTemplateSummary(reqs);
             return (
               <Card
                 key={attorneyName}
@@ -468,6 +536,12 @@ export default function LawyerRequirements() {
                             className="text-xs bg-slate-100 text-slate-600"
                           >
                             {reqs.length} config{reqs.length !== 1 ? "s" : ""}
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className="text-xs bg-amber-50 text-amber-700 border border-amber-200"
+                          >
+                            {templateCount} template{templateCount !== 1 ? "s" : ""}
                           </Badge>
                         </div>
 
@@ -527,6 +601,12 @@ export default function LawyerRequirements() {
                           key={req.id}
                           className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
                         >
+                          {(() => {
+                            const reqTemplateMappings = getTemplateMappingsForRequirement(req);
+                            const templatesByState = groupTemplatesByState(reqTemplateMappings);
+
+                            return (
+                              <>
                           {/* Top badge row */}
                           <div className="flex flex-wrap items-center gap-2 mb-4">
                             <Badge className={getLawyerTypeClasses(req.lawyer_type)}>
@@ -540,9 +620,13 @@ export default function LawyerRequirements() {
                               <FileText className="mr-1 h-3 w-3" />
                               SOL: {req.sol || "Not Set"}
                             </Badge>
+                            <Badge variant="outline" className="bg-white text-slate-600">
+                              <FileText className="mr-1 h-3 w-3" />
+                              {reqTemplateMappings.length} DocuSign template{reqTemplateMappings.length !== 1 ? "s" : ""}
+                            </Badge>
                           </div>
 
-                          {/* 4-column detail grid */}
+                          {/* Primary detail grid */}
                           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                             {/* Coverage States */}
                             <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
@@ -666,6 +750,82 @@ export default function LawyerRequirements() {
                               </div>
                             </div>
                           </div>
+
+                          <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                            <div className="flex items-center gap-1.5 mb-3">
+                              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                                DocuSign Templates
+                              </span>
+                            </div>
+
+                            {templatesByState.length > 0 ? (
+                              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                {templatesByState.map(([stateCode, stateMappings]) => (
+                                  <div
+                                    key={stateCode}
+                                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                                  >
+                                    <div className="mb-2 flex items-center justify-between gap-2">
+                                      <Badge
+                                        variant="outline"
+                                        className="border-amber-200 bg-amber-50 text-amber-700"
+                                      >
+                                        {stateCode === "ALL" ? "All States" : stateCode}
+                                      </Badge>
+                                      <span className="text-[11px] text-muted-foreground">
+                                        {stateMappings.length} template{stateMappings.length !== 1 ? "s" : ""}
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      {stateMappings.map((mapping) => (
+                                        <div
+                                          key={mapping.id}
+                                          className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                              <div className="truncate text-sm font-medium text-slate-900">
+                                                {mapping.template_name || mapping.template_id}
+                                              </div>
+                                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                {mapping.template_type && (
+                                                  <Badge variant="secondary" className="text-[10px]">
+                                                    {mapping.template_type}
+                                                  </Badge>
+                                                )}
+                                                {!mapping.is_active && (
+                                                  <Badge variant="outline" className="text-[10px]">
+                                                    Inactive
+                                                  </Badge>
+                                                )}
+                                                <span className="text-[10px] text-muted-foreground">
+                                                  Priority {mapping.priority}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            {mapping.is_default && (
+                                              <Badge className="shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                Default
+                                              </Badge>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-muted-foreground">
+                                No DocuSign templates mapped to this lawyer configuration yet.
+                              </div>
+                            )}
+                          </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
