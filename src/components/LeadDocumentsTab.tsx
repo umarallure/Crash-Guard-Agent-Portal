@@ -1,17 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, ExternalLink, FileText, FolderOpen, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, ExternalLink, FileText, FolderOpen, Image as ImageIcon, Loader2, RefreshCw, Upload } from "lucide-react";
 
 interface LeadDocumentsTabProps {
   submissionId: string;
+  allowDirectUpload?: boolean;
+  includeOtherCategory?: boolean;
 }
 
-type DocumentCategory = "police_report" | "insurance_document" | "medical_report";
+type DocumentCategory = "police_report" | "insurance_document" | "medical_report" | "other_document";
 
 type LeadDocumentRequest = {
   id: string;
@@ -55,7 +61,7 @@ type StorageListFile = {
 type DocumentTypeConfig = {
   key: DocumentCategory;
   label: string;
-  requestFlag: keyof Pick<
+  requestFlag?: keyof Pick<
     LeadDocumentRequest,
     "police_report_required" | "insurance_document_required" | "medical_report_required"
   >;
@@ -81,6 +87,11 @@ const documentTypeConfig: DocumentTypeConfig[] = [
     requestFlag: "medical_report_required",
     description: "Medical records, discharge paperwork, bills, and treatment documents.",
   },
+  {
+    key: "other_document",
+    label: "Other Document",
+    description: "Any additional files that do not fit the standard police, insurance, or medical groups.",
+  },
 ];
 
 const documentCategoryByFolder: Record<string, DocumentCategory> = {
@@ -90,13 +101,55 @@ const documentCategoryByFolder: Record<string, DocumentCategory> = {
   insurance_documents: "insurance_document",
   medical_report: "medical_report",
   medical_reports: "medical_report",
+  other_document: "other_document",
+  other_documents: "other_document",
 };
 
-export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
+const DOCUMENT_BUCKET_NAME = "lead-documents";
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+const ACCEPTED_UPLOAD_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+const FILE_EXTENSION_TO_MIME_TYPE: Record<string, string> = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+};
+
+const sanitizeFileName = (fileName: string) =>
+  fileName
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+
+const resolveUploadMimeType = (file: File) => {
+  if (file.type) return file.type;
+
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  return FILE_EXTENSION_TO_MIME_TYPE[extension] || "";
+};
+
+export function LeadDocumentsTab({
+  submissionId,
+  allowDirectUpload = false,
+  includeOtherCategory = false,
+}: LeadDocumentsTabProps) {
+  const { toast } = useToast();
   const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [request, setRequest] = useState<LeadDocumentRequest | null>(null);
   const [documents, setDocuments] = useState<LeadDocument[]>([]);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [selectedUploadCategory, setSelectedUploadCategory] = useState<DocumentCategory>("insurance_document");
+  const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const visibleDocumentTypeConfig = useMemo(
+    () =>
+      includeOtherCategory
+        ? documentTypeConfig
+        : documentTypeConfig.filter((documentType) => documentType.key !== "other_document"),
+    [includeOtherCategory]
+  );
 
   const inferCategoryFromPath = (path: string): DocumentCategory | null => {
     const normalizedPath = path.toLowerCase();
@@ -113,11 +166,14 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
       return "medical_report";
     }
 
+    if (normalizedPath.includes("/other_document/") || normalizedPath.includes("/other_documents/")) {
+      return "other_document";
+    }
+
     return null;
   };
 
   const fetchStorageDocuments = useCallback(async (): Promise<LeadDocument[]> => {
-    const bucketName = "lead-documents";
     const visitedPaths = new Set<string>();
     const rootPaths = [
       submissionId,
@@ -127,12 +183,16 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
       `${submissionId}/insurance_documents`,
       `${submissionId}/medical_report`,
       `${submissionId}/medical_reports`,
+      `${submissionId}/other_document`,
+      `${submissionId}/other_documents`,
       `police_report/${submissionId}`,
       `police_reports/${submissionId}`,
       `insurance_document/${submissionId}`,
       `insurance_documents/${submissionId}`,
       `medical_report/${submissionId}`,
       `medical_reports/${submissionId}`,
+      `other_document/${submissionId}`,
+      `other_documents/${submissionId}`,
     ];
 
     const collectFiles = async (path: string, depth = 0): Promise<LeadDocument[]> => {
@@ -142,7 +202,7 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
 
       visitedPaths.add(path);
 
-      const { data, error } = await supabase.storage.from(bucketName).list(path, {
+      const { data, error } = await supabase.storage.from(DOCUMENT_BUCKET_NAME).list(path, {
         limit: 100,
         sortBy: { column: "created_at", order: "desc" },
       });
@@ -186,7 +246,7 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
               file_size: file.metadata?.size || 0,
               file_type: file.metadata?.mimetype || "",
               storage_path: itemPath,
-              bucket_name: bucketName,
+              bucket_name: DOCUMENT_BUCKET_NAME,
               uploaded_at: file.created_at || file.updated_at || null,
               uploaded_by: null,
               status: "uploaded",
@@ -202,7 +262,7 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
     const deduped = new Map<string, LeadDocument>();
 
     rootFileResults.flat().forEach((document) => {
-      deduped.set(`${document.bucket_name || bucketName}:${document.storage_path}`, document);
+      deduped.set(`${document.bucket_name || DOCUMENT_BUCKET_NAME}:${document.storage_path}`, document);
     });
 
     return Array.from(deduped.values());
@@ -246,18 +306,18 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
 
       const databaseDocuments = (documentData ?? []).filter(Boolean);
       const storageDocumentKeys = new Set(
-        storageDocuments.map((document) => `${document.bucket_name || "lead-documents"}:${document.storage_path}`)
+        storageDocuments.map((document) => `${document.bucket_name || DOCUMENT_BUCKET_NAME}:${document.storage_path}`)
       );
       const databaseDocumentsStillInStorage = databaseDocuments.filter((document) =>
-        storageDocumentKeys.has(`${document.bucket_name || "lead-documents"}:${document.storage_path}`)
+        storageDocumentKeys.has(`${document.bucket_name || DOCUMENT_BUCKET_NAME}:${document.storage_path}`)
       );
       const mergedDocuments = [...databaseDocumentsStillInStorage];
       const existingKeys = new Set(
-        databaseDocumentsStillInStorage.map((document) => `${document.bucket_name || "lead-documents"}:${document.storage_path}`)
+        databaseDocumentsStillInStorage.map((document) => `${document.bucket_name || DOCUMENT_BUCKET_NAME}:${document.storage_path}`)
       );
 
       storageDocuments.forEach((document) => {
-        const key = `${document.bucket_name || "lead-documents"}:${document.storage_path}`;
+        const key = `${document.bucket_name || DOCUMENT_BUCKET_NAME}:${document.storage_path}`;
         if (!existingKeys.has(key)) {
           mergedDocuments.push(document);
           existingKeys.add(key);
@@ -279,6 +339,14 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
   useEffect(() => {
     void fetchDocuments();
   }, [fetchDocuments]);
+
+  useEffect(() => {
+    const firstRequiredCategory =
+      visibleDocumentTypeConfig.find((documentType) => documentType.requestFlag && request?.[documentType.requestFlag])?.key ||
+      "insurance_document";
+
+    setSelectedUploadCategory((currentCategory) => currentCategory || firstRequiredCategory);
+  }, [request, visibleDocumentTypeConfig]);
 
   useEffect(() => {
     const channel = supabase
@@ -320,7 +388,7 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
     const loadPreviewUrls = async () => {
       const urlEntries = await Promise.all(
         documents.map(async (document) => {
-          const bucket = document.bucket_name || "lead-documents";
+          const bucket = document.bucket_name || DOCUMENT_BUCKET_NAME;
           const { data, error } = await supabase.storage.from(bucket).createSignedUrl(document.storage_path, 60 * 60);
 
           if (error || !data?.signedUrl) {
@@ -344,24 +412,144 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
   }, [documents]);
 
   const documentsByCategory = useMemo(() => {
-    return documentTypeConfig.map((categoryConfig) => {
+    return visibleDocumentTypeConfig.map((categoryConfig) => {
       const categoryDocuments = documents.filter((document) => document.category === categoryConfig.key);
       return {
         ...categoryConfig,
         documents: categoryDocuments,
       };
     });
-  }, [documents]);
+  }, [documents, visibleDocumentTypeConfig]);
+
+  const requestableDocumentTypes = useMemo(() => visibleDocumentTypeConfig.filter((item) => item.requestFlag), [visibleDocumentTypeConfig]);
 
   const totalRequested = useMemo(() => {
     if (!request) return 0;
-    return documentTypeConfig.filter((item) => request[item.requestFlag]).length;
-  }, [request]);
+    return requestableDocumentTypes.filter((item) => item.requestFlag && request[item.requestFlag]).length;
+  }, [request, requestableDocumentTypes]);
 
   const totalUploadedRequested = useMemo(() => {
     if (!request) return 0;
-    return documentsByCategory.filter((item) => request[item.requestFlag] && item.documents.length > 0).length;
+    return documentsByCategory.filter((item) => item.requestFlag && request[item.requestFlag] && item.documents.length > 0).length;
   }, [documentsByCategory, request]);
+
+  const selectedUploadCategoryLabel =
+    visibleDocumentTypeConfig.find((documentType) => documentType.key === selectedUploadCategory)?.label || "Document";
+
+  const handleOpenDirectUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleSelectedFiles = (event: ChangeEvent<HTMLInputElement>) => {
+    setSelectedUploadFiles(Array.from(event.target.files || []));
+  };
+
+  const handleUploadFiles = async () => {
+    if (selectedUploadFiles.length === 0) {
+      toast({
+        title: "Select files first",
+        description: "Choose one or more files to upload for this lead.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const invalidFile = selectedUploadFiles.find((file) => {
+      const mimeType = resolveUploadMimeType(file);
+      return !ACCEPTED_UPLOAD_TYPES.includes(mimeType) || file.size > MAX_UPLOAD_SIZE_BYTES;
+    });
+
+    if (invalidFile) {
+      const reason = invalidFile.size > MAX_UPLOAD_SIZE_BYTES ? "larger than 10 MB" : "not a PDF, JPG, or PNG file";
+      toast({
+        title: "Unsupported file",
+        description: `${invalidFile.name} is ${reason}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadingFiles(true);
+
+    try {
+      const timestamp = new Date().toISOString();
+      const requestId = request?.id ?? null;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const leadDocumentsTable = (supabase as unknown as {
+        from: (table: "lead_documents") => {
+          insert: (payload: Array<Record<string, unknown>>) => Promise<{ error: Error | null }>;
+        };
+      }).from("lead_documents");
+
+      await Promise.all(
+        selectedUploadFiles.map(async (file) => {
+          const mimeType = resolveUploadMimeType(file);
+          const safeName = sanitizeFileName(file.name) || `document-${Date.now()}`;
+          const uniqueId =
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const storagePath = `${submissionId}/${selectedUploadCategory}/${uniqueId}-${safeName}`;
+
+          const { error: uploadError } = await supabase.storage.from(DOCUMENT_BUCKET_NAME).upload(storagePath, file, {
+            upsert: false,
+            contentType: mimeType,
+          });
+
+          if (uploadError) {
+            throw uploadError;
+          }
+
+          const { error: insertError } = await leadDocumentsTable.insert([
+            {
+              submission_id: submissionId,
+              request_id: requestId,
+              category: selectedUploadCategory,
+              file_name: file.name,
+              file_size: file.size,
+              file_type: mimeType,
+              storage_path: storagePath,
+              bucket_name: DOCUMENT_BUCKET_NAME,
+              uploaded_at: timestamp,
+              uploaded_by: user?.id ?? null,
+              status: "uploaded",
+            },
+          ]);
+
+          if (insertError) {
+            await supabase.storage.from(DOCUMENT_BUCKET_NAME).remove([storagePath]);
+            throw insertError;
+          }
+        })
+      );
+
+      setSelectedUploadFiles([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      await fetchDocuments();
+
+      toast({
+        title: "Documents uploaded",
+        description:
+          selectedUploadFiles.length === 1
+            ? `${selectedUploadFiles[0].name} was uploaded successfully.`
+            : `${selectedUploadFiles.length} files were uploaded successfully.`,
+      });
+    } catch (error) {
+      console.error("Error uploading documents:", error);
+      toast({
+        title: "Upload failed",
+        description: "The files could not be uploaded. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
 
   const isPreviewableImage = (fileType: string) => fileType.startsWith("image/");
   const isPreviewablePdf = (fileType: string) => fileType === "application/pdf";
@@ -402,9 +590,9 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
               {documents.length} file{documents.length === 1 ? "" : "s"}
             </Badge>
             <Badge variant="outline">
-              {totalUploadedRequested}/{totalRequested || documentTypeConfig.length} requested categories uploaded
+              {totalUploadedRequested}/{totalRequested || requestableDocumentTypes.length} requested categories uploaded
             </Badge>
-            <Button variant="outline" size="sm" onClick={fetchDocuments} disabled={loadingDocuments}>
+            <Button variant="outline" size="sm" onClick={() => void fetchDocuments()} disabled={loadingDocuments}>
               {loadingDocuments ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
           </div>
@@ -412,9 +600,96 @@ export function LeadDocumentsTab({ submissionId }: LeadDocumentsTabProps) {
       </CardHeader>
 
       <CardContent className="space-y-6">
-        <div className="grid gap-3 md:grid-cols-3">
+        {allowDirectUpload ? (
+          <div className="rounded-xl border bg-muted/10 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Upload className="h-4 w-4" />
+                  Upload Documents
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Add files directly from the lead detail page into this submission&apos;s document stream.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,220px)_auto] sm:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor={`lead-document-category-${submissionId}`} className="text-xs font-medium text-muted-foreground">
+                    Document Category
+                  </Label>
+                  <Select value={selectedUploadCategory} onValueChange={(value) => setSelectedUploadCategory(value as DocumentCategory)}>
+                    <SelectTrigger id={`lead-document-category-${submissionId}`} className="h-9 bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleDocumentTypeConfig.map((documentType) => (
+                        <SelectItem key={documentType.key} value={documentType.key}>
+                          {documentType.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={handleOpenDirectUpload}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Choose Files
+                  </Button>
+                  <Button type="button" onClick={() => void handleUploadFiles()} disabled={uploadingFiles || selectedUploadFiles.length === 0}>
+                    {uploadingFiles ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      "Upload"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <Input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+              className="hidden"
+              onChange={handleSelectedFiles}
+            />
+
+            <div className="mt-4 rounded-lg border border-dashed bg-background/70 px-4 py-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-medium">
+                    {selectedUploadFiles.length > 0
+                      ? `${selectedUploadFiles.length} file${selectedUploadFiles.length === 1 ? "" : "s"} ready for ${selectedUploadCategoryLabel}`
+                      : "No files selected yet"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Accepted types: PDF, JPG, PNG. Max size: 10 MB per file.</div>
+                </div>
+                {selectedUploadFiles.length > 0 ? <Badge variant="secondary">{selectedUploadFiles.length} selected</Badge> : null}
+              </div>
+
+              {selectedUploadFiles.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedUploadFiles.slice(0, 4).map((file) => (
+                    <Badge key={`${file.name}-${file.size}`} variant="outline">
+                      {file.name}
+                    </Badge>
+                  ))}
+                  {selectedUploadFiles.length > 4 ? <Badge variant="outline">+{selectedUploadFiles.length - 4} more</Badge> : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {documentsByCategory.map((category) => {
-            const isRequired = request ? Boolean(request[category.requestFlag]) : false;
+            const isRequired = category.requestFlag ? (request ? Boolean(request[category.requestFlag]) : false) : false;
             const hasFiles = category.documents.length > 0;
 
             return (

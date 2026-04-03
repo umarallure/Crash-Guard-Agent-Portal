@@ -31,9 +31,11 @@ type CallUpdate = {
   [key: string]: unknown;
 };
 
+const EMPTY_VALUE_LABEL = "N/A";
+
 const displayValue = (value: unknown) => {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string" && value.trim().length === 0) return "—";
+  if (value === null || value === undefined) return EMPTY_VALUE_LABEL;
+  if (typeof value === "string" && value.trim().length === 0) return EMPTY_VALUE_LABEL;
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return String(value);
 };
@@ -70,14 +72,14 @@ const formatColumnLabel = (key: string) => {
 };
 
 const formatDateIfPresent = (value: string | null | undefined) => {
-  if (!value) return "—";
+  if (!value) return EMPTY_VALUE_LABEL;
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return format(parsed, "MMM dd, yyyy");
 };
 
 const maskSsn = (ssn: string | null | undefined) => {
-  if (!ssn) return "—";
+  if (!ssn) return EMPTY_VALUE_LABEL;
   const cleaned = ssn.replace(/\D/g, "");
   if (cleaned.length < 4) return ssn;
   return `***-**-${cleaned.slice(-4)}`;
@@ -556,7 +558,11 @@ const LeadDetailsPage = () => {
 
           <TabsContent value="documents">
             {lead.submission_id ? (
-              <LeadDocumentsTab submissionId={lead.submission_id} />
+              <LeadDocumentsTab
+                submissionId={lead.submission_id}
+                allowDirectUpload
+                includeOtherCategory
+              />
             ) : (
               <Card>
                 <CardContent className="pt-6 text-sm text-muted-foreground">
@@ -697,9 +703,20 @@ const LeadDetailsPage = () => {
                     };
 
                     const visibleKeys = allKeys.filter((k) => !shouldHideKey(k));
+                    const hiddenCallUpdateKeys = new Set([
+                      'carrier',
+                      'carrier_attempted_1',
+                      'carrier_attempted_2',
+                      'carrier_attempted_3',
+                      'carrier_audit',
+                      'product_type_carrier',
+                    ]);
                     const preferredKeys = preferred.filter((k) => visibleKeys.includes(k));
-                    const remaining = visibleKeys.filter((k) => !preferred.includes(k)).sort();
-                    const columns = [...preferredKeys, ...remaining];
+                    const remaining = visibleKeys
+                      .filter((k) => !preferred.includes(k))
+                      .filter((k) => !hiddenCallUpdateKeys.has(k))
+                      .sort();
+                    const columns = preferredKeys.filter((k) => !hiddenCallUpdateKeys.has(k)).concat(remaining);
 
                     return (
                       <div className="w-full overflow-x-auto">

@@ -808,6 +808,75 @@ const SubmissionPortalPage = () => {
     fetchData(true);
   };
 
+  const handleExport = () => {
+    if (boardVisibleRows.length === 0) {
+      toast({
+        title: "No Data",
+        description: "No data to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const headers = [
+      'Submission ID',
+      'Date',
+      'Customer Name',
+      'Lead Vendor',
+      'Phone Number',
+      'Buffer Agent',
+      'Agent',
+      'Licensed Agent',
+      'Status',
+      'Call Result',
+      'Carrier',
+      'Product Type',
+      'Draft Date',
+      'Monthly Premium',
+      'Face Amount',
+      'From Callback',
+      'Source Type',
+      'Created At'
+    ];
+
+    const csvContent = [
+      headers.join(','),
+      ...boardVisibleRows.map((row) => [
+        row.submission_id,
+        row.date || row.submission_date || '',
+        row.insured_name || '',
+        row.lead_vendor || '',
+        row.client_phone_number || '',
+        row.buffer_agent || '',
+        row.agent || '',
+        row.licensed_agent_account || '',
+        row.status || '',
+        row.call_result || '',
+        row.carrier || '',
+        row.product_type || '',
+        row.draft_date || '',
+        row.monthly_premium || '',
+        row.face_amount || '',
+        row.from_callback ? 'Yes' : 'No',
+        row.source_type || '',
+        row.created_at || ''
+      ].map((field) => `"${field}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `submission-portal-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export Complete",
+      description: "Data exported to CSV successfully",
+    });
+  };
+
   const fetchNoteCounts = async (rows: SubmissionPortalRow[] | null | undefined) => {
     const safeRows = Array.isArray(rows) ? rows : [];
     const leadIds = safeRows.map((r) => r.id).filter(Boolean);
@@ -1307,6 +1376,9 @@ const SubmissionPortalPage = () => {
             <Badge variant="secondary" className="px-3 py-1 tabular-nums shrink-0">
               {boardVisibleRows.length} records
             </Badge>
+            <Button variant="outline" onClick={handleExport}>
+              Export CSV
+            </Button>
             <Button onClick={handleRefresh} disabled={refreshing}>
               <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
               Refresh
