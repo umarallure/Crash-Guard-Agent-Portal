@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -456,6 +456,13 @@ export const CallResultForm = ({
   const [qualifiedStage, setQualifiedStage] = useState("");
   const [qualifiedStageReason, setQualifiedStageReason] = useState("");
   
+  const handleCallSourceChange = (value: string) => {
+    setCallSource(value);
+    if (value === "Internal Ads" || value === "Internal Data") {
+      setLeadVendor("Internal Team");
+    }
+  };
+
   const { toast } = useToast();
   const { centers, leadVendors, loading: centersLoading } = useCenters();
   const { attorneys, loading: attorneysLoading } = useAttorneys();
@@ -1794,97 +1801,102 @@ export const CallResultForm = ({
   };
 
   const qualificationControls = (
-    <Dialog open={returnDidOpen} onOpenChange={setReturnDidOpen}>
-      <div className="space-y-3 rounded-[18px] border border-[#eddcd0] bg-white/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)]">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-sm font-semibold text-slate-950">
-                Is lead qualified?
-              </Label>
-              <p className="text-xs text-slate-600">
-                Pick the final direction and keep the closeout tight.
-              </p>
-            </div>
-            {isRetentionCall && (
-              <Badge className="w-fit rounded-full border border-violet-300/60 bg-violet-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700 hover:bg-violet-500/10">
-                <Shield className="mr-1 h-3 w-3" />
-                Retention
-              </Badge>
-            )}
+    <div className="space-y-3 rounded-[18px] border border-[#eddcd0] bg-white/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)]">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-0.5">
+            <Label className="text-sm font-semibold text-slate-950">
+              Is lead qualified?
+            </Label>
+            <p className="text-xs text-slate-600">
+              Pick the final direction and keep the closeout tight.
+            </p>
           </div>
-
-          <div className="grid gap-2">
-            <Button
-              type="button"
-              variant={applicationSubmitted === true ? "default" : "outline"}
-              onClick={() => {
-                setApplicationSubmitted(true);
-                setReturnDidOpen(false);
-              }}
-              className={`${applicationSubmitted === true ? "border-green-800 bg-green-800 text-white hover:bg-green-900" : "border-green-800 bg-white text-green-800 hover:border-green-800 hover:bg-green-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
-            >
-              <CheckCircle className="h-4 w-4" />
-              Yes
-            </Button>
-            <Button
-              type="button"
-              variant={applicationSubmitted === false ? "default" : "outline"}
-              onClick={() => {
-                setApplicationSubmitted(false);
-                setReturnDidOpen(true);
-              }}
-              className={`${applicationSubmitted === false ? "border-red-800 bg-red-800 text-white hover:bg-red-900" : "border-red-800 bg-white text-red-800 hover:border-red-800 hover:bg-red-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
-            >
-              <XCircle className="h-4 w-4" />
-              No, Return DID
-            </Button>
-          </div>
+          {isRetentionCall && (
+            <Badge className="w-fit rounded-full border border-violet-300/60 bg-violet-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700 hover:bg-violet-500/10">
+              <Shield className="mr-1 h-3 w-3" />
+              Retention
+            </Badge>
+          )}
         </div>
-      </div>
 
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Info className="h-4 w-4" />
-            Return this lead to the center
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 text-lg">
-          <p>Share the DID below to return this call to the originating center.</p>
-          <div className="flex items-center gap-2">
-            <div className="rounded-md bg-muted px-6 py-4 font-mono text-2xl font-bold">
-              {centerDid || "No DID configured"}
-            </div>
-            {centerDid && (
+        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+          <Button
+            type="button"
+            variant={applicationSubmitted === true ? "default" : "outline"}
+            onClick={() => {
+              setApplicationSubmitted(true);
+            }}
+            className={`${applicationSubmitted === true ? "border-green-800 bg-green-800 text-white hover:bg-green-900" : "border-green-800 bg-white text-green-800 hover:border-green-800 hover:bg-green-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
+          >
+            <CheckCircle className="h-4 w-4" />
+            Yes
+          </Button>
+          <Button
+            type="button"
+            variant={applicationSubmitted === false ? "default" : "outline"}
+            onClick={() => {
+              setApplicationSubmitted(false);
+            }}
+            className={`${applicationSubmitted === false ? "border-red-800 bg-red-800 text-white hover:bg-red-900" : "border-red-800 bg-white text-red-800 hover:border-red-800 hover:bg-red-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
+          >
+            <XCircle className="h-4 w-4" />
+            No
+          </Button>
+          <Dialog open={returnDidOpen} onOpenChange={setReturnDidOpen}>
+            <DialogTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(centerDid);
-                    toast({ title: "Copied", description: "DID copied to clipboard" });
-                  } catch (e) {
-                    toast({ title: "Copy failed", description: "Unable to copy DID", variant: "destructive" });
-                  }
-                }}
-                aria-label="Copy DID"
+                variant="outline"
+                className="h-10 rounded-md border-[#efcfb8] bg-[#fffaf5] text-[#8c5632] shadow-sm hover:bg-[#fff1e7]"
               >
-                <Copy className="h-4 w-4" />
+                <Info className="h-4 w-4" />
+                Return DID
               </Button>
-            )}
-          </div>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Info className="h-4 w-4" />
+                  Return this lead to the center
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 text-lg">
+                <p>Share the DID below to return this call to the originating center.</p>
+                <div className="flex items-center gap-2">
+                  <div className="rounded-md bg-muted px-6 py-4 font-mono text-2xl font-bold">
+                    {centerDid || "No DID configured"}
+                  </div>
+                  {centerDid && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(centerDid);
+                          toast({ title: "Copied", description: "DID copied to clipboard" });
+                        } catch (e) {
+                          toast({ title: "Copy failed", description: "Unable to copy DID", variant: "destructive" });
+                        }
+                      }}
+                      aria-label="Copy DID"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 
   const submittedApplicationDetailsSection = showSubmittedFields ? (
     <div className="space-y-4">
-      {qualificationControls}
-
       <div className="space-y-3 pt-0.5">
         <h3 className="text-sm font-semibold tracking-tight text-slate-950">
           Application Submitted
@@ -1893,7 +1905,7 @@ export const CallResultForm = ({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="callSourceQualified">Call Source</Label>
-              <Select value={callSource || undefined} onValueChange={setCallSource}>
+              <Select value={callSource || undefined} onValueChange={handleCallSourceChange}>
                 <SelectTrigger className="border-[#ead9ce] bg-white/95">
                   <SelectValue placeholder="Select call source" />
                 </SelectTrigger>
@@ -2037,7 +2049,261 @@ export const CallResultForm = ({
     </div>
   ) : null;
 
-  const notSubmittedDetailsSection = null;
+  const notSubmittedDetailsSection = showNotSubmittedFields ? (
+    <div className="space-y-4">
+      <div className="space-y-3 pt-0.5">
+        <h3 className="text-sm font-semibold tracking-tight text-slate-950">
+          Application Not Submitted
+        </h3>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="callSource" className="text-sm font-semibold">
+              Call Source <span className="text-red-500">*</span>
+            </Label>
+            <Select value={callSource || undefined} onValueChange={handleCallSourceChange} required>
+              <SelectTrigger className={`${!callSource ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectValue placeholder="Select call source (required)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
+                <SelectItem value="Agent Callback">Agent Callback</SelectItem>
+                <SelectItem value="Internal Ads">Internal Ads</SelectItem>
+                <SelectItem value="Internal Data">Internal Data</SelectItem>
+              </SelectContent>
+            </Select>
+            {!callSource && (
+              <p className="text-sm text-red-500">Call source is required</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agentWhoTookCallNotSubmitted">
+              Agent who took the call <span className="text-red-500">*</span>
+            </Label>
+            <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall} required>
+              <SelectTrigger className={`${!agentWhoTookCall ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectValue placeholder={agentsLoading ? "Loading agents..." : "Select agent (required)"} />
+              </SelectTrigger>
+              <SelectContent>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.key} value={agent.label}>
+                    {agent.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!agentWhoTookCall && (
+              <p className="text-sm text-red-500">Agent who took the call is required</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="pipelineNameNotSubmitted" className="text-sm font-semibold">
+              Pipeline Name
+            </Label>
+            <Select
+              value={selectedPipeline}
+              onValueChange={(val: "transfer_portal" | "submission_portal") => {
+                setSelectedPipeline(val);
+                setStatus("");
+                setStatusReason("");
+              }}
+            >
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectValue placeholder="Select pipeline" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
+                <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="statusPipelineStage">
+              Status / Stage <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={status}
+              onValueChange={(val) => {
+                setStatus(val);
+                setStatusReason("");
+              }}
+              required
+            >
+              <SelectTrigger className={`${!status ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectValue placeholder="Select stage (required)" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedPipelineStageOptions.map((stage) => (
+                  <SelectItem key={stage.key} value={stage.label}>
+                    {stage.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!status && (
+              <p className="text-sm text-red-500">Status / Stage is required</p>
+            )}
+          </div>
+
+          {showStatusReasonDropdown && (
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="statusReason">
+                {status === "DQ" || status === "⁠DQ" ? "Reason for DQ" :
+                 status === "Needs callback" ? "Callback Reason" :
+                 status === "Not Interested" ? "Reason Not Interested" :
+                 status === "Future Submission Date" ? "Future Submission Reason" :
+                 status === "Updated Banking/draft date" ? "Update Reason" :
+                 status === "Fulfilled carrier requirements" ? "Fulfillment Confirmation" :
+                 "Reason"}
+              </Label>
+              <Select value={statusReason} onValueChange={handleStatusReasonChange}>
+                <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                  <SelectValue placeholder={`Select reason for ${status.toLowerCase()}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {currentReasonOptions.map((reason) => (
+                    <SelectItem key={reason} value={reason}>
+                      {reason}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {showNewDraftDateField && (
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="newDraftDate">New Draft Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start border-[#ead9ce] bg-white/95 text-left font-normal",
+                      !newDraftDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {newDraftDate ? format(newDraftDate, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={newDraftDate}
+                    onSelect={handleNewDraftDateChange}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showCarrierAttemptedFields && (
+        <div className="space-y-3 rounded-[18px] border border-[#efcdc5] bg-[linear-gradient(180deg,rgba(255,241,238,0.95)_0%,rgba(255,248,247,0.98)_100%)] p-3">
+          <div className="space-y-0.5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#b0543a]">GI - Currently DQ</div>
+            <h4 className="text-sm font-semibold text-[#7f3020]">Carrier attempts</h4>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="carrierAttempted1">
+                Attempted Carrier #1 <span className="text-red-500">*</span>
+              </Label>
+              <Select value={carrierAttempted1} onValueChange={setCarrierAttempted1} required>
+                <SelectTrigger className={`${!carrierAttempted1 ? 'border-red-300 focus:border-red-500' : 'border-[#e7c9c1]'} bg-white/95`}>
+                  <SelectValue placeholder="Select carrier (required)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {carrierOptions.map((carrier) => (
+                    <SelectItem key={carrier} value={carrier}>
+                      {carrier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!carrierAttempted1 && (
+                <p className="text-sm text-red-500">Carrier #1 is required</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="carrierAttempted2">Attempted Carrier #2</Label>
+              <Select value={carrierAttempted2} onValueChange={setCarrierAttempted2}>
+                <SelectTrigger className="border-[#e7c9c1] bg-white/95">
+                  <SelectValue placeholder="Select carrier (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {carrierOptions.map((carrier) => (
+                    <SelectItem key={carrier} value={carrier}>
+                      {carrier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="carrierAttempted3">Attempted Carrier #3</Label>
+              <Select value={carrierAttempted3} onValueChange={setCarrierAttempted3}>
+                <SelectTrigger className="border-[#e7c9c1] bg-white/95">
+                  <SelectValue placeholder="Select carrier (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {carrierOptions.map((carrier) => (
+                    <SelectItem key={carrier} value={carrier}>
+                      {carrier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3 border-t border-[#f0e2d7] pt-4">
+        <div className="space-y-2">
+          <Label htmlFor="notes">
+            Notes <span className="text-red-500">*</span>
+          </Label>
+          <Textarea
+            id="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder={showStatusReasonDropdown && statusReason && statusReason !== "Other"
+              ? "Note has been auto-populated. You can edit if needed."
+              : showStatusReasonDropdown && statusReason === "Other"
+              ? "Please enter a custom message."
+              : "Why the call got dropped or application not get submitted? Please provide the reason (required)"
+            }
+            className={`${!notes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
+            rows={4}
+            required
+          />
+          {showStatusReasonDropdown && statusReason && statusReason !== "Other" && (
+            <p className="text-sm text-slate-500">
+              Note has been auto-populated based on the selected reason. You can edit it if needed.
+            </p>
+          )}
+          {showStatusReasonDropdown && statusReason === "Other" && (
+            <p className="text-sm text-slate-500">
+              Please enter a custom message for this reason.
+            </p>
+          )}
+          {!notes.trim() && (
+            <p className="text-sm text-red-500">Notes are required</p>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <>
@@ -2106,9 +2372,11 @@ export const CallResultForm = ({
           <CollapsibleContent>
             <div className="border-t border-[#d97231]/15 bg-white px-4 pb-4 pt-3.5">
         <form onSubmit={handleSubmit} className="space-y-4">
-          {showSubmittedFields ? submittedApplicationDetailsSection : qualificationControls}
+          {qualificationControls}
 
-          {!showSubmittedFields && showNotSubmittedFields ? notSubmittedDetailsSection : null}
+          {showSubmittedFields && submittedApplicationDetailsSection}
+
+          {showNotSubmittedFields && notSubmittedDetailsSection}
 
           {/* Call Source Dropdown - REQUIRED (for non-qualified leads layout stays the same) */}
           {false && showNotSubmittedFields && (
@@ -2116,7 +2384,7 @@ export const CallResultForm = ({
               <Label htmlFor="callSource" className="text-base font-semibold">
                 Call Source <span className="text-red-500">*</span>
               </Label>
-              <Select value={callSource || undefined} onValueChange={setCallSource} required>
+              <Select value={callSource || undefined} onValueChange={handleCallSourceChange} required>
                 <SelectTrigger className={`${!callSource ? 'border-red-300 focus:border-red-500' : ''}`}>
                   <SelectValue placeholder="Select call source (required)" />
                 </SelectTrigger>
@@ -2367,6 +2635,21 @@ export const CallResultForm = ({
             </div>
           )}
 
+          {/* Validation message for not submitted applications */}
+          {applicationSubmitted === false && (
+            (!agentWhoTookCall || !status || !notes.trim() || (status === "GI - Currently DQ" && !carrierAttempted1))
+          ) && (
+            <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3">
+              <p className="text-sm text-red-700">
+                Please complete all required fields:
+                {!agentWhoTookCall && " Agent who took the call"}
+                {!status && " Status/Stage"}
+                {status === "GI - Currently DQ" && !carrierAttempted1 && " Carrier Attempted #1"}
+                {!notes.trim() && " Notes"}
+              </p>
+            </div>
+          )}
+
           {/* Validation Messages */}
           {applicationSubmitted === true && verificationProgress >= 80 && !hasAttorneySelection && (
             <div className="rounded-[18px] border border-amber-200 bg-amber-50/90 p-3 text-sm text-amber-800">
@@ -2380,16 +2663,21 @@ export const CallResultForm = ({
           )}
 
           {/* Save Button */}
-          {applicationSubmitted !== false && (
-            <div className="flex justify-end">
-              <Button 
-                type="submit" 
+          <div className="flex justify-end">
+              <Button
+                type="submit"
                 disabled={
-                  applicationSubmitted === null || 
-                  !callSource || 
-                  isSubmitting || 
+                  applicationSubmitted === null ||
+                  !callSource ||
+                  isSubmitting ||
                   (applicationSubmitted === true && !hasAttorneySelection) ||
-                  (applicationSubmitted === true && needsSubmissionStatus && !submissionStatus)
+                  (applicationSubmitted === true && needsSubmissionStatus && !submissionStatus) ||
+                  (applicationSubmitted === false && (
+                    !agentWhoTookCall ||
+                    !status ||
+                    !notes.trim() ||
+                    (status === "GI - Currently DQ" && !carrierAttempted1)
+                  ))
                 }
                 className="min-w-36 rounded-md bg-[#c25516] text-white shadow-sm hover:bg-[#a94812]"
               >
@@ -2403,7 +2691,6 @@ export const CallResultForm = ({
                 )}
               </Button>
             </div>
-          )}
           </form>
             </div>
           </CollapsibleContent>
