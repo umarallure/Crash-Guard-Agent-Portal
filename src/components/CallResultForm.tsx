@@ -496,7 +496,7 @@ export const CallResultForm = ({
       const label = (stage?.label ?? "").trim();
 
       if (!key || !label) return false;
-      return !label.includes(" - ");
+      return true;
     });
   }, [dbSubmissionStages]);
 
@@ -506,7 +506,7 @@ export const CallResultForm = ({
       const label = (stage?.label ?? "").trim();
 
       if (!key || !label) return false;
-      return !label.includes(" - ");
+      return true;
     });
   }, [dbTransferStages]);
 
@@ -543,10 +543,7 @@ export const CallResultForm = ({
   const selectedSubmittedLawyerId = selectedSubmittedLawyer?.id || "";
   const selectedSubmittedLawyerName = selectedSubmittedLawyer?.attorney_name || "";
   const isBrokerFulfillment = attorneyFulfillmentMode === "broker";
-  const hasAttorneySelection = isBrokerFulfillment
-    ? Boolean(selectedSubmittedLawyerId)
-    : Boolean(assignedAttorneyId);
-  const needsSubmissionStatus = isBrokerFulfillment && Boolean(selectedSubmittedLawyerId);
+  const showSubmissionStatusField = isBrokerFulfillment && Boolean(selectedSubmittedLawyerId);
 
   const prevVerifiedFieldValuesRef = useRef<Record<string, string>>({});
 
@@ -1188,6 +1185,19 @@ export const CallResultForm = ({
   const showNewDraftDateField = applicationSubmitted === false && status === "Updated Banking/draft date" && statusReason;
   const showCarrierAttemptedFields = applicationSubmitted === false && status === "GI - Currently DQ";
   const currentReasonOptions = getReasonOptions(status);
+  const isQualifiedFormComplete =
+    Boolean(callSource) &&
+    Boolean(agentWhoTookCall) &&
+    Boolean(selectedPipeline) &&
+    Boolean(qualifiedStage) &&
+    Boolean(notes.trim());
+  const isNotQualifiedFormComplete =
+    Boolean(callSource) &&
+    Boolean(agentWhoTookCall) &&
+    Boolean(selectedPipeline) &&
+    Boolean(status) &&
+    Boolean(notes.trim()) &&
+    (status !== "GI - Currently DQ" || Boolean(carrierAttempted1));
 
   const handleStatusReasonChange = (reason: string) => {
     setStatusReason(reason);
@@ -1904,10 +1914,12 @@ export const CallResultForm = ({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="callSourceQualified">Call Source</Label>
+              <Label htmlFor="callSourceQualified">
+                Call Source <span className="text-red-500">*</span>
+              </Label>
               <Select value={callSource || undefined} onValueChange={handleCallSourceChange}>
-                <SelectTrigger className="border-[#ead9ce] bg-white/95">
-                  <SelectValue placeholder="Select call source" />
+                <SelectTrigger className={`${!callSource ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder="Select call source (required)" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
@@ -1916,13 +1928,18 @@ export const CallResultForm = ({
                   <SelectItem value="Internal Data">Internal Data</SelectItem>
                 </SelectContent>
               </Select>
+              {!callSource && (
+                <p className="text-sm text-red-500">Call source is required</p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="agentWhoTookCall">Agent who took the call</Label>
+              <Label htmlFor="agentWhoTookCall">
+                Agent who took the call <span className="text-red-500">*</span>
+              </Label>
               <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall}>
-                <SelectTrigger className="border-[#ead9ce] bg-white/95">
-                  <SelectValue placeholder="Select agent" />
+                <SelectTrigger className={`${!agentWhoTookCall ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder="Select agent (required)" />
                 </SelectTrigger>
                 <SelectContent>
                   {agents.map((agent) => (
@@ -1932,10 +1949,15 @@ export const CallResultForm = ({
                   ))}
                 </SelectContent>
               </Select>
+              {!agentWhoTookCall && (
+                <p className="text-sm text-red-500">Agent who took the call is required</p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="pipelineName">Pipeline Name</Label>
+              <Label htmlFor="pipelineName">
+                Pipeline Name <span className="text-red-500">*</span>
+              </Label>
               <Select
                 value={selectedPipeline}
                 onValueChange={(val: "transfer_portal" | "submission_portal") => {
@@ -1944,18 +1966,23 @@ export const CallResultForm = ({
                   setQualifiedStageReason("");
                 }}
               >
-                <SelectTrigger className="border-[#ead9ce] bg-white/95">
-                  <SelectValue placeholder="Select pipeline" />
+                <SelectTrigger className={`${!selectedPipeline ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder="Select pipeline (required)" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
                   <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
                 </SelectContent>
               </Select>
+              {!selectedPipeline && (
+                <p className="text-sm text-red-500">Pipeline name is required</p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="qualifiedStage">Status / Stage</Label>
+              <Label htmlFor="qualifiedStage">
+                Status / Stage <span className="text-red-500">*</span>
+              </Label>
               <Select
                 value={qualifiedStage}
                 onValueChange={(val) => {
@@ -1963,8 +1990,8 @@ export const CallResultForm = ({
                   setQualifiedStageReason("");
                 }}
               >
-                <SelectTrigger className="border-[#ead9ce] bg-white/95">
-                  <SelectValue placeholder="Select stage" />
+                <SelectTrigger className={`${!qualifiedStage ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                  <SelectValue placeholder="Select stage (required)" />
                 </SelectTrigger>
                 <SelectContent>
                   {selectedPipelineStageOptions.map((stage) => (
@@ -1974,6 +2001,9 @@ export const CallResultForm = ({
                   ))}
                 </SelectContent>
               </Select>
+              {!qualifiedStage && (
+                <p className="text-sm text-red-500">Status / Stage is required</p>
+              )}
             </div>
 
             {submittedStageReasonOptions.length > 0 && (
@@ -1997,13 +2027,13 @@ export const CallResultForm = ({
       </div>
 
       <div className="space-y-3 border-t border-[#f0e2d7] pt-4">
-        {needsSubmissionStatus && (
+        {showSubmissionStatusField && (
           <div className="space-y-2">
             <Label htmlFor="submissionStatus" className="text-sm font-semibold text-slate-950">
-              Submission Status <span className="text-red-500">*</span>
+              Submission Status
             </Label>
-            <Select value={submissionStatus} onValueChange={setSubmissionStatus} required>
-              <SelectTrigger className={`${!submissionStatus ? "border-red-300 focus:border-red-500" : "border-[#ead9ce]"} bg-white/95`}>
+            <Select value={submissionStatus} onValueChange={setSubmissionStatus}>
+              <SelectTrigger className="border-[#ead9ce] bg-white/95">
                 <SelectValue placeholder="Select submission status" />
               </SelectTrigger>
               <SelectContent>
@@ -2016,18 +2046,23 @@ export const CallResultForm = ({
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="notesSubmitted">Agent Notes</Label>
+          <Label htmlFor="notesSubmitted">
+            Agent Notes <span className="text-red-500">*</span>
+          </Label>
           <Textarea
             id="notesSubmitted"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Enter any additional notes about this application..."
             rows={4}
-            className="border-[#ead9ce] bg-white/95"
+            className={`${!notes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
           />
           <p className="text-sm text-slate-500">
             Application details will be auto-generated and combined with your notes when saved.
           </p>
+          {!notes.trim() && (
+            <p className="text-sm text-red-500">Agent Notes are required</p>
+          )}
         </div>
       </div>
     </div>
@@ -2084,7 +2119,7 @@ export const CallResultForm = ({
 
           <div className="space-y-2">
             <Label htmlFor="pipelineNameNotSubmitted" className="text-sm font-semibold">
-              Pipeline Name
+              Pipeline Name <span className="text-red-500">*</span>
             </Label>
             <Select
               value={selectedPipeline}
@@ -2094,14 +2129,17 @@ export const CallResultForm = ({
                 setStatusReason("");
               }}
             >
-              <SelectTrigger className="border-[#ead9ce] bg-white/95">
-                <SelectValue placeholder="Select pipeline" />
+              <SelectTrigger className={`${!selectedPipeline ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectValue placeholder="Select pipeline (required)" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="transfer_portal">Transfer Pipeline</SelectItem>
                 <SelectItem value="submission_portal">Submission Pipeline</SelectItem>
               </SelectContent>
             </Select>
+            {!selectedPipeline && (
+              <p className="text-sm text-red-500">Pipeline name is required</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -2619,30 +2657,31 @@ export const CallResultForm = ({
             </div>
           )}
 
-          {/* Validation message for not submitted applications */}
-          {applicationSubmitted === false && (
-            (!agentWhoTookCall || !status || !notes.trim() || (status === "GI - Currently DQ" && !carrierAttempted1))
-          ) && (
+          {applicationSubmitted === true && !isQualifiedFormComplete && (
             <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3">
               <p className="text-sm text-red-700">
                 Please complete all required fields:
+                {!callSource && " Call Source"}
                 {!agentWhoTookCall && " Agent who took the call"}
-                {!status && " Status/Stage"}
-                {status === "GI - Currently DQ" && !carrierAttempted1 && " Carrier Attempted #1"}
-                {!notes.trim() && " Notes"}
+                {!selectedPipeline && " Pipeline Name"}
+                {!qualifiedStage && " Status / Stage"}
+                {!notes.trim() && " Agent Notes"}
               </p>
             </div>
           )}
 
-          {/* Validation Messages */}
-          {applicationSubmitted === true && verificationProgress >= 80 && !hasAttorneySelection && (
-            <div className="rounded-[18px] border border-amber-200 bg-amber-50/90 p-3 text-sm text-amber-800">
-              Please {isBrokerFulfillment ? "select a broker fulfillment lawyer above" : "assign an internal lawyer order above"} before saving the call result.
-            </div>
-          )}
-          {applicationSubmitted === true && needsSubmissionStatus && !submissionStatus && (
-            <div className="rounded-[18px] border border-amber-200 bg-amber-50/90 p-3 text-sm text-amber-800">
-              Please select a submission status before saving the call result.
+          {/* Validation message for not submitted applications */}
+          {applicationSubmitted === false && !isNotQualifiedFormComplete && (
+            <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3">
+              <p className="text-sm text-red-700">
+                Please complete all required fields:
+                {!callSource && " Call Source"}
+                {!agentWhoTookCall && " Agent who took the call"}
+                {!selectedPipeline && " Pipeline Name"}
+                {!status && " Status/Stage"}
+                {status === "GI - Currently DQ" && !carrierAttempted1 && " Carrier Attempted #1"}
+                {!notes.trim() && " Notes"}
+              </p>
             </div>
           )}
 
@@ -2652,16 +2691,9 @@ export const CallResultForm = ({
                 type="submit"
                 disabled={
                   applicationSubmitted === null ||
-                  !callSource ||
                   isSubmitting ||
-                  (applicationSubmitted === true && !hasAttorneySelection) ||
-                  (applicationSubmitted === true && needsSubmissionStatus && !submissionStatus) ||
-                  (applicationSubmitted === false && (
-                    !agentWhoTookCall ||
-                    !status ||
-                    !notes.trim() ||
-                    (status === "GI - Currently DQ" && !carrierAttempted1)
-                  ))
+                  (applicationSubmitted === true && !isQualifiedFormComplete) ||
+                  (applicationSubmitted === false && !isNotQualifiedFormComplete)
                 }
                 className="min-w-36 rounded-md bg-[#c25516] text-white shadow-sm hover:bg-[#a94812]"
               >
