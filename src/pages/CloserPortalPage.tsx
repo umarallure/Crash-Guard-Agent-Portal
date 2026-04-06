@@ -21,6 +21,7 @@ import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
+import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 
 interface CloserPortalRow {
   id: string;
@@ -100,6 +101,7 @@ const CloserPortalPage = () => {
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [timeTick, setTimeTick] = useState(() => Date.now());
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
+  const { unblockedStateCodes } = useSalesMapCoverageStates();
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -291,7 +293,14 @@ const CloserPortalPage = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
 
-  const stateOptions = useMemo(() => getStateFilterOptions(data), [data]);
+  const stateOptions = useMemo(() => {
+    return getStateFilterOptions(data).map((option) => ({
+      ...option,
+      itemClassName: unblockedStateCodes.has(option.value)
+        ? "bg-emerald-50 text-emerald-950 hover:bg-emerald-100 hover:text-emerald-950"
+        : undefined,
+    }));
+  }, [data, unblockedStateCodes]);
 
   const fetchNoteCounts = async (rows: CloserPortalRow[]) => {
     const leadIds = rows.map((row) => row.id).filter(Boolean);

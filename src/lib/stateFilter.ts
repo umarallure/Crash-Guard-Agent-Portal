@@ -1,3 +1,11 @@
+import { US_STATES } from "@/lib/us-states";
+
+type StateFilterOption = {
+  value: string;
+  label: string;
+  searchText?: string;
+};
+
 const toTitleCase = (value: string) =>
   value
     .toLowerCase()
@@ -5,6 +13,27 @@ const toTitleCase = (value: string) =>
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+
+const STATE_BY_CODE = new Map(
+  US_STATES.map((state) => [state.code.toUpperCase(), state])
+);
+
+const STATE_BY_NAME = new Map(
+  US_STATES.map((state) => [state.name.toLowerCase(), state])
+);
+
+const getStateMatchToken = (value?: string | null): string => {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return "";
+
+  const byCode = STATE_BY_CODE.get(trimmed.toUpperCase());
+  if (byCode) return byCode.code;
+
+  const byName = STATE_BY_NAME.get(toTitleCase(trimmed).toLowerCase());
+  if (byName) return byName.code;
+
+  return formatStateFilterLabel(trimmed);
+};
 
 export const formatStateFilterLabel = (value?: string | null): string => {
   const trimmed = (value || "").trim();
@@ -17,26 +46,22 @@ export const formatStateFilterLabel = (value?: string | null): string => {
   return toTitleCase(trimmed);
 };
 
-export const getStateFilterOptions = <T extends { state?: string | null }>(records: T[]): string[] => {
-  const optionsByKey = new Map<string, string>();
+export const getStateFilterOptions = <T extends { state?: string | null }>(records: T[]): StateFilterOption[] => {
+  void records;
 
-  records.forEach((record) => {
-    const rawValue = (record.state || "").trim();
-    const label = formatStateFilterLabel(rawValue);
-    const key = rawValue.toLowerCase();
-
-    if (!key || !label || optionsByKey.has(key)) return;
-    optionsByKey.set(key, label);
-  });
-
-  return Array.from(optionsByKey.values()).sort((a, b) => a.localeCompare(b));
+  return US_STATES.map((state) => ({
+    value: state.code,
+    label: `${state.code} - ${state.name}`,
+    searchText: `${state.code} ${state.name}`,
+  }));
 };
 
 export const matchesStateFilter = (value: string | null | undefined, selectedStates: string[]): boolean => {
   if (selectedStates.length === 0) return true;
 
-  const normalizedValue = formatStateFilterLabel(value);
+  const normalizedValue = getStateMatchToken(value);
   if (!normalizedValue) return false;
 
-  return selectedStates.includes(normalizedValue);
+  const selectedStateTokens = new Set(selectedStates.map((selectedState) => getStateMatchToken(selectedState)));
+  return selectedStateTokens.has(normalizedValue);
 };

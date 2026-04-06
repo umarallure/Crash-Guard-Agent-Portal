@@ -9,8 +9,15 @@ import {
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
+export interface MultiSelectOption {
+  value: string;
+  label: string;
+  searchText?: string;
+  itemClassName?: string;
+}
+
 interface MultiSelectProps {
-  options: string[];
+  options: Array<string | MultiSelectOption>;
   selected: string[];
   onChange: (selected: string[]) => void;
   placeholder?: string;
@@ -33,41 +40,78 @@ export function MultiSelect({
   const [open, setOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
 
-  // Safety check for options and selected - ensure they're always arrays
-  const safeOptions = React.useMemo(() => Array.isArray(options) ? options : [], [options]);
-  const safeSelected = React.useMemo(() => Array.isArray(selected) ? selected : [], [selected]);
+  const safeOptions = React.useMemo(() => (Array.isArray(options) ? options : []), [options]);
+  const safeSelected = React.useMemo(() => (Array.isArray(selected) ? selected : []), [selected]);
   const shouldCollapseSelection = maxVisibleBadges !== null && safeSelected.length > maxVisibleBadges;
 
-  // Filter options based on search term
+  const normalizedOptions = React.useMemo<MultiSelectOption[]>(() => {
+    return safeOptions.reduce<MultiSelectOption[]>((acc, option) => {
+      if (typeof option === 'string') {
+        acc.push({
+          value: option,
+          label: option,
+          searchText: option,
+        });
+        return acc;
+      }
+
+      const value = option?.value?.trim();
+      if (!value) return acc;
+
+      const label = option.label?.trim() || value;
+      acc.push({
+        value,
+        label,
+        searchText: option.searchText?.trim() || `${label} ${value}`,
+        itemClassName: option.itemClassName?.trim() || undefined,
+      });
+      return acc;
+    }, []);
+  }, [safeOptions]);
+
+  const optionLabelByValue = React.useMemo(() => {
+    const map = new Map<string, string>();
+    normalizedOptions.forEach((option) => {
+      map.set(option.value, option.label);
+    });
+    return map;
+  }, [normalizedOptions]);
+
   const filteredOptions = React.useMemo(() => {
-    if (!searchTerm.trim()) return safeOptions;
-    return safeOptions.filter(option =>
-      option.toLowerCase().includes(searchTerm.toLowerCase())
+    const trimmedSearch = searchTerm.trim().toLowerCase();
+    if (!trimmedSearch) return normalizedOptions;
+
+    return normalizedOptions.filter((option) =>
+      `${option.label} ${option.value} ${option.searchText || ''}`.toLowerCase().includes(trimmedSearch)
     );
-  }, [safeOptions, searchTerm]);
+  }, [normalizedOptions, searchTerm]);
+
+  const allFilteredSelected = React.useMemo(() => {
+    const filteredValues = filteredOptions.map((option) => option.value);
+    return filteredValues.length > 0 && filteredValues.every((value) => safeSelected.includes(value));
+  }, [filteredOptions, safeSelected]);
 
   const handleUnselect = React.useCallback((item: string) => {
-    onChange(safeSelected.filter((s) => s !== item));
+    onChange(safeSelected.filter((selectedItem) => selectedItem !== item));
   }, [safeSelected, onChange]);
 
   const handleSelect = React.useCallback((item: string) => {
     if (safeSelected.includes(item)) {
-      onChange(safeSelected.filter((s) => s !== item));
+      onChange(safeSelected.filter((selectedItem) => selectedItem !== item));
     } else {
       onChange([...safeSelected, item]);
     }
   }, [safeSelected, onChange]);
 
   const handleToggleAll = React.useCallback(() => {
-    if (safeSelected.length === filteredOptions.length) {
-      // Deselect all filtered options
-      onChange(safeSelected.filter(s => !filteredOptions.includes(s)));
+    const filteredValues = filteredOptions.map((option) => option.value);
+
+    if (allFilteredSelected) {
+      onChange(safeSelected.filter((selectedValue) => !filteredValues.includes(selectedValue)));
     } else {
-      // Select all filtered options
-      const newSelected = [...new Set([...safeSelected, ...filteredOptions])];
-      onChange(newSelected);
+      onChange([...new Set([...safeSelected, ...filteredValues])]);
     }
-  }, [safeSelected, filteredOptions, onChange]);
+  }, [allFilteredSelected, filteredOptions, onChange, safeSelected]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -103,7 +147,7 @@ export function MultiSelect({
                     handleUnselect(item);
                   }}
                 >
-                  {item}
+                  {optionLabelByValue.get(item) ?? item}
                   <button
                     className="ml-1 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                     onKeyDown={(e) => {
@@ -152,7 +196,7 @@ export function MultiSelect({
                 onClick={handleToggleAll}
                 className="w-full justify-start text-xs"
               >
-                {safeSelected.length === filteredOptions.length ? 'Deselect All' : 'Select All'}
+                {allFilteredSelected ? 'Deselect All' : 'Select All'}
               </Button>
             </div>
           )}
@@ -160,18 +204,19 @@ export function MultiSelect({
             <div className="p-1">
               {filteredOptions.map((option) => (
                 <button
-                  key={option}
+                  key={option.value}
                   type="button"
-                  onClick={() => handleSelect(option)}
+                  onClick={() => handleSelect(option.value)}
                   className={cn(
                     'w-full text-left px-3 py-2 text-sm rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center',
-                    highlightSelectedOptions && safeSelected.includes(option) && 'bg-accent text-accent-foreground'
+                    highlightSelectedOptions && safeSelected.includes(option.value) && 'bg-accent text-accent-foreground',
+                    option.itemClassName
                   )}
                 >
                   <div
                     className={cn(
                       'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-                      safeSelected.includes(option)
+                      safeSelected.includes(option.value)
                         ? 'bg-primary text-primary-foreground'
                         : 'opacity-50 [&_svg]:invisible'
                     )}
@@ -186,7 +231,7 @@ export function MultiSelect({
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   </div>
-                  <span>{option}</span>
+                  <span>{option.label}</span>
                 </button>
               ))}
             </div>

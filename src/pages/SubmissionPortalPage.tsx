@@ -38,6 +38,7 @@ import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
+import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 
 export interface SubmissionPortalRow {
   id: string;
@@ -93,6 +94,38 @@ interface ColumnInfo {
   description: string;
   details?: ColumnInfoDetail[];
 }
+
+const SHARED_PIPELINE_FILTER_STORAGE_KEY = "shared-pipeline-filters";
+
+type SharedPipelineFilterStorage = {
+  datePreset: DateRangePreset;
+  customStartDate: string;
+  customEndDate: string;
+  leadVendorFilter: string;
+  selectedStates: string[];
+  searchTerm: string;
+};
+
+const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(SHARED_PIPELINE_FILTER_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<SharedPipelineFilterStorage>;
+    return {
+      datePreset: typeof parsed.datePreset === "string" ? parsed.datePreset as DateRangePreset : "all",
+      customStartDate: typeof parsed.customStartDate === "string" ? parsed.customStartDate : "",
+      customEndDate: typeof parsed.customEndDate === "string" ? parsed.customEndDate : "",
+      leadVendorFilter: typeof parsed.leadVendorFilter === "string" ? parsed.leadVendorFilter : "__ALL__",
+      selectedStates: Array.isArray(parsed.selectedStates) ? parsed.selectedStates.filter((state): state is string => typeof state === "string") : [],
+      searchTerm: typeof parsed.searchTerm === "string" ? parsed.searchTerm : "",
+    };
+  } catch {
+    return null;
+  }
+};
 
 const SUBMISSION_STATS_STAGE_KEYS = {
   intakeQueue: ["retainer_signed", "qualified_missing_info"],
@@ -343,13 +376,14 @@ const SubmissionPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
+  const savedSharedFilters = useMemo(() => readSharedPipelineFilters(), []);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(savedSharedFilters?.datePreset ?? "all");
+  const [customStartDate, setCustomStartDate] = useState(savedSharedFilters?.customStartDate ?? "");
+  const [customEndDate, setCustomEndDate] = useState(savedSharedFilters?.customEndDate ?? "");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
-  const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
-  const [searchTerm, setSearchTerm] = useState<string>("");
-  const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  const [leadVendorFilter, setLeadVendorFilter] = useState(savedSharedFilters?.leadVendorFilter ?? "__ALL__");
+  const [searchTerm, setSearchTerm] = useState<string>(savedSharedFilters?.searchTerm ?? "");
+  const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
@@ -362,6 +396,7 @@ const SubmissionPortalPage = () => {
   const [editStage, setEditStage] = useState("");
   const [editReason, setEditReason] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const { unblockedStateCodes } = useSalesMapCoverageStates();
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -489,7 +524,14 @@ const SubmissionPortalPage = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
 
-  const stateOptions = useMemo(() => getStateFilterOptions(data), [data]);
+  const stateOptions = useMemo(() => {
+    return getStateFilterOptions(data).map((option) => ({
+      ...option,
+      itemClassName: unblockedStateCodes.has(option.value)
+        ? "bg-emerald-50 text-emerald-950 hover:bg-emerald-100 hover:text-emerald-950"
+        : undefined,
+    }));
+  }, [data, unblockedStateCodes]);
 
   const generateVerificationLogSummary = (logs: CallLog[], submission?: any): string => {
     if (!logs || logs.length === 0) {
@@ -800,6 +842,23 @@ const SubmissionPortalPage = () => {
   }, [data, datePreset, customStartDate, customEndDate, statusFilter, leadVendorFilter, selectedStates, searchTerm]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const sharedFiltersToPersist: SharedPipelineFilterStorage = {
+      datePreset,
+      customStartDate,
+      customEndDate,
+      leadVendorFilter,
+      selectedStates,
+      searchTerm,
+    };
+
+    window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
+  }, [datePreset, customStartDate, customEndDate, leadVendorFilter, selectedStates, searchTerm]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
     if (stagesLoading) return;
     fetchData();
   }, [stagesLoading]);

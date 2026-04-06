@@ -32,6 +32,7 @@ import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
+import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 
 export interface TransferPortalRow {
   id: string;
@@ -67,6 +68,59 @@ const TRANSFER_HANDOFF_STAGE_KEY = "retainer_signed";
 
 interface ColumnInfoDetail { label: string; value: string; }
 interface ColumnInfo { description: string; details?: ColumnInfoDetail[]; }
+
+const SHARED_PIPELINE_FILTER_STORAGE_KEY = "shared-pipeline-filters";
+const TRANSFER_FILTER_STORAGE_KEY = "transfer-portal-filters";
+
+type SharedPipelineFilterStorage = {
+  datePreset: DateRangePreset;
+  customStartDate: string;
+  customEndDate: string;
+  leadVendorFilter: string;
+  selectedStates: string[];
+  searchTerm: string;
+};
+
+type TransferFilterStorage = {
+  sourceTypeFilter: string;
+};
+
+const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(SHARED_PIPELINE_FILTER_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<SharedPipelineFilterStorage>;
+    return {
+      datePreset: typeof parsed.datePreset === "string" ? parsed.datePreset as DateRangePreset : "all",
+      customStartDate: typeof parsed.customStartDate === "string" ? parsed.customStartDate : "",
+      customEndDate: typeof parsed.customEndDate === "string" ? parsed.customEndDate : "",
+      leadVendorFilter: typeof parsed.leadVendorFilter === "string" ? parsed.leadVendorFilter : "__ALL__",
+      selectedStates: Array.isArray(parsed.selectedStates) ? parsed.selectedStates.filter((state): state is string => typeof state === "string") : [],
+      searchTerm: typeof parsed.searchTerm === "string" ? parsed.searchTerm : "",
+    };
+  } catch {
+    return null;
+  }
+};
+
+const readTransferFilters = (): TransferFilterStorage | null => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(TRANSFER_FILTER_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<TransferFilterStorage>;
+    return {
+      sourceTypeFilter: typeof parsed.sourceTypeFilter === "string" ? parsed.sourceTypeFilter : "__ALL__",
+    };
+  } catch {
+    return null;
+  }
+};
 
 const TRANSFER_STATS_STAGE_KEYS = {
   newTransfers: ["transfer_api"],
@@ -295,13 +349,15 @@ const TransferPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [allTimeTransfers, setAllTimeTransfers] = useState(0);
-  const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
-  const [sourceTypeFilter, setSourceTypeFilter] = useState("__ALL__");
-  const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
-  const [selectedStates, setSelectedStates] = useState<string[]>([]);
-  const [searchTerm, setSearchTerm] = useState<string>("");
+  const savedSharedFilters = useMemo(() => readSharedPipelineFilters(), []);
+  const savedTransferFilters = useMemo(() => readTransferFilters(), []);
+  const [datePreset, setDatePreset] = useState<DateRangePreset>(savedSharedFilters?.datePreset ?? "all");
+  const [customStartDate, setCustomStartDate] = useState(savedSharedFilters?.customStartDate ?? "");
+  const [customEndDate, setCustomEndDate] = useState(savedSharedFilters?.customEndDate ?? "");
+  const [sourceTypeFilter, setSourceTypeFilter] = useState(savedTransferFilters?.sourceTypeFilter ?? "__ALL__");
+  const [leadVendorFilter, setLeadVendorFilter] = useState(savedSharedFilters?.leadVendorFilter ?? "__ALL__");
+  const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
+  const [searchTerm, setSearchTerm] = useState<string>(savedSharedFilters?.searchTerm ?? "");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
@@ -322,6 +378,7 @@ const TransferPortalPage = () => {
   const [editPipeline, setEditPipeline] = useState("transfer_portal");
   const [editStage, setEditStage] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
+  const { unblockedStateCodes } = useSalesMapCoverageStates();
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -383,7 +440,14 @@ const TransferPortalPage = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
 
-  const stateOptions = useMemo(() => getStateFilterOptions(data), [data]);
+  const stateOptions = useMemo(() => {
+    return getStateFilterOptions(data).map((option) => ({
+      ...option,
+      itemClassName: unblockedStateCodes.has(option.value)
+        ? "bg-emerald-50 text-emerald-950 hover:bg-emerald-100 hover:text-emerald-950"
+        : undefined,
+    }));
+  }, [data, unblockedStateCodes]);
 
   const { toast } = useToast();
 
@@ -482,6 +546,31 @@ const TransferPortalPage = () => {
     setFilteredData(applyFilters(data));
     setCurrentPage(1); // Reset to first page when filters change
   }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, leadVendorFilter, selectedStates, searchTerm]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const sharedFiltersToPersist: SharedPipelineFilterStorage = {
+      datePreset,
+      customStartDate,
+      customEndDate,
+      leadVendorFilter,
+      selectedStates,
+      searchTerm,
+    };
+
+    window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
+  }, [datePreset, customStartDate, customEndDate, leadVendorFilter, selectedStates, searchTerm]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const transferFiltersToPersist: TransferFilterStorage = {
+      sourceTypeFilter,
+    };
+
+    window.localStorage.setItem(TRANSFER_FILTER_STORAGE_KEY, JSON.stringify(transferFiltersToPersist));
+  }, [sourceTypeFilter]);
 
   // Pagination calculations
   const stageFilteredData = useMemo(() => {
