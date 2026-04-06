@@ -909,6 +909,9 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
 
   const getFieldValue = (fieldName: string) => getItemValue(itemByFieldName.get(fieldName));
   const leadVendor = getFieldValue("lead_vendor");
+  const accidentDate = getFieldValue("accident_date");
+  const accidentScenario = getFieldValue("accident_scenario");
+  const accidentAddress = getFieldValue("accident_location");
 
   const getCustomItemValue = (fieldName: "medical_treatment_proof" | "insurance_documents" | "police_report") => {
     const item = customItems[fieldName];
@@ -1393,17 +1396,44 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       </div>
 
       <CardContent ref={panelScrollRef} className="space-y-3 flex-1 min-h-0 overflow-y-auto overscroll-y-none pt-4">
+
         <div className="rounded-lg border border-orange-200/70 bg-[linear-gradient(180deg,rgba(255,244,236,0.95)_0%,rgba(255,250,246,0.92)_100%)] px-4 py-3 shadow-[0_10px_24px_-20px_rgba(203,106,42,0.55)]">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]"
-            >
-              Lead Vendor
-            </Badge>
-            <span className="text-sm font-semibold text-foreground">
-              {leadVendor || "Not available"}
-            </span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="outline"
+                className="rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]"
+              >
+                Accident Date
+              </Badge>
+              <span className="text-sm font-semibold text-foreground">
+                {accidentDate || "Not available"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="outline"
+                className="rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]"
+              >
+                Accident Scenario
+              </Badge>
+              <span className="text-sm font-semibold text-foreground">
+                {accidentScenario || "Not available"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="outline"
+                className="rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]"
+              >
+                Accident Address
+              </Badge>
+              <span className="text-sm font-semibold text-foreground">
+                {accidentAddress || "Not available"}
+              </span>
+            </div>
           </div>
         </div>
 

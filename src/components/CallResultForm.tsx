@@ -464,7 +464,7 @@ export const CallResultForm = ({
   };
 
   const { toast } = useToast();
-  const { centers, leadVendors, loading: centersLoading } = useCenters();
+  const { centers } = useCenters();
   const { attorneys, loading: attorneysLoading } = useAttorneys();
   const { stages: dbSubmissionStages } = usePipelineStages("submission_portal");
   const { stages: dbTransferStages } = usePipelineStages("transfer_portal");
@@ -1928,22 +1928,6 @@ export const CallResultForm = ({
                   {agents.map((agent) => (
                     <SelectItem key={agent.key} value={agent.label}>
                       {agent.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="leadVendor">Lead Vendor</Label>
-              <Select value={leadVendor} onValueChange={setLeadVendor}>
-                <SelectTrigger className="border-[#ead9ce] bg-white/95">
-                  <SelectValue placeholder="Select lead vendor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {leadVendors.map((vendor) => (
-                    <SelectItem key={vendor} value={vendor}>
-                      {vendor}
                     </SelectItem>
                   ))}
                 </SelectContent>
