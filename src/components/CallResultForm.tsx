@@ -514,6 +514,10 @@ export const CallResultForm = ({
     return selectedPipeline === "transfer_portal" ? transferStageOptions : submissionStageOptions;
   }, [selectedPipeline, submissionStageOptions, transferStageOptions]);
 
+  const getPipelineDisplayName = (pipeline: "transfer_portal" | "submission_portal") => {
+    return pipeline === "transfer_portal" ? "Transfer Pipeline" : "Submission Pipeline";
+  };
+
   const qualifiedMissingInfoLabel =
     submissionStageOptions.find((stage) => (stage?.key ?? "").trim() === "qualified_missing_info")?.label ??
     "Qualified Missing Information";
@@ -1597,113 +1601,53 @@ export const CallResultForm = ({
         console.error("Verification session update failed:", sessionError);
       }
 
-      if (applicationSubmitted === true) {
-        try {
-          const { data: leadData, error: leadError } = await supabase
-            .from("leads")
-            .select("*")
-            .eq("submission_id", submissionId)
-            .single();
+      try {
+        const { data: leadData, error: leadError } = await supabase
+          .from("leads")
+          .select("customer_full_name, phone_number, email, lead_vendor")
+          .eq("submission_id", submissionId)
+          .single();
 
-          if (!leadError && leadData) {
-            const slackStatus = applicationSubmitted === true
-              ? (finalStatus || 'Submitted')
-              : (status || 'Submitted');
+        if (!leadError && leadData) {
+          const stageLabel = stageKeyToLabel.get(finalStatus)
+            ?? (applicationSubmitted === true ? qualifiedStage : status)
+            ?? finalStatus
+            ?? "Unknown Stage";
 
-            const callResultForSlack = {
-              application_submitted: applicationSubmitted,
-              buffer_agent: bufferAgent,
-              agent_who_took_call: agentWhoTookCall,
-              lead_vendor: leadData.lead_vendor || leadVendor || 'N/A',
-              status: slackStatus,
-              notes: finalNotes,
-              dq_reason: showStatusReasonDropdown ? statusReason : null,
-              ...(accidentDate && { accident_date: accidentDate }),
-              ...(accidentLocation && { accident_location: accidentLocation }),
-              ...(injuries && { injuries }),
-              ...(medicalAttention !== null && { medical_attention: medicalAttention }),
-              ...(policeAttended !== null && { police_attended: policeAttended }),
-              ...(insured !== null && { insured }),
-            };
-            
-            
-            const { error: slackError } = await supabase.functions.invoke('slack-notification', {
-              body: {
-                submissionId: submissionId,
-                leadData: {
-                  customer_full_name: leadData.customer_full_name,
-                  phone_number: leadData.phone_number,
-                  email: leadData.email
-                },
-                callResult: callResultForSlack
-              }
-            });
+          const { error: callResultNotificationError } = await supabase.functions.invoke("call-result-notification", {
+            body: {
+              submissionId,
+              leadData: {
+                customer_full_name: leadData.customer_full_name,
+                phone_number: leadData.phone_number,
+                email: leadData.email,
+                lead_vendor: leadData.lead_vendor,
+              },
+              callResult: {
+                application_submitted: applicationSubmitted,
+                pipelineName: getPipelineDisplayName(selectedPipeline),
+                stageName: stageLabel,
+                statusKey: finalStatus,
+                additionalNotes: notes,
+                notes: finalNotes,
+                dq_reason: applicationSubmitted === true && qualifiedStageReason
+                  ? qualifiedStageReason
+                  : (showStatusReasonDropdown ? statusReason : null),
+                buffer_agent: bufferAgent,
+                agent_who_took_call: agentWhoTookCall,
+                lead_vendor: leadData.lead_vendor || leadVendor || 'N/A',
+              },
+            },
+          });
 
-            if (slackError) {
-              console.error("Error sending Slack notification:", slackError);
-            } else {
-              console.log("Slack notification sent successfully");
-            }
+          if (callResultNotificationError) {
+            console.error("Call result notification failed:", callResultNotificationError);
+          } else {
+            console.log("Call result notification sent successfully");
           }
-        } catch (slackError) {
-          console.error("Slack notification failed:", slackError);
         }
-      }
-
-      if (applicationSubmitted === false) {
-        try {
-          const { data: leadData, error: leadError } = await supabase
-            .from("leads")
-            .select("*")
-            .eq("submission_id", submissionId)
-            .single();
-
-          if (!leadError && leadData) {
-            const callResultForCenter = {
-              application_submitted: applicationSubmitted,
-              status: finalStatus,
-              dq_reason: showStatusReasonDropdown ? statusReason : null,
-              notes: notes,
-              buffer_agent: bufferAgent,
-              agent_who_took_call: agentWhoTookCall,
-              lead_vendor: leadData.lead_vendor || leadVendor || 'N/A',
-              accident_date: accidentDate ? format(accidentDate, "yyyy-MM-dd") : null,
-              accident_location: accidentLocation || null,
-              accident_scenario: accidentScenario || null,
-              injuries: injuries || null,
-              medical_attention: medicalAttention || null,
-              police_attended: policeAttended,
-              insured: insured,
-              vehicle_registration: vehicleRegistration || null,
-              insurance_company: insuranceCompany || null,
-              prior_attorney_involved: priorAttorneyInvolved,
-              prior_attorney_details: priorAttorneyDetails || null
-            };
-            
-            console.log("Sending center notification for not submitted application");
-            
-            const { error: centerError } = await supabase.functions.invoke('center-notification', {
-              body: {
-                submissionId: submissionId,
-                leadData: {
-                  customer_full_name: leadData.customer_full_name,
-                  phone_number: leadData.phone_number,
-                  email: leadData.email,
-                  lead_vendor: leadData.lead_vendor
-                },
-                callResult: callResultForCenter
-              }
-            });
-
-            if (centerError) {
-              console.error("Error sending center notification:", centerError);
-            } else {
-              console.log("Center notification sent successfully");
-            }
-          }
-        } catch (centerError) {
-          console.error("Center notification failed:", centerError);
-        }
+      } catch (callResultNotificationError) {
+        console.error("Call result notification invoke failed:", callResultNotificationError);
       }
 
       if (applicationSubmitted === false && (finalStatus === 'Disconnected' || finalStatus === 'Disconnected - Never Retransferred')) {

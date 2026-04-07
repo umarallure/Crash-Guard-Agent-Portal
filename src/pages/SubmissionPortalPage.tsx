@@ -382,7 +382,7 @@ const SubmissionPortalPage = () => {
   const [customEndDate, setCustomEndDate] = useState(savedSharedFilters?.customEndDate ?? "");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
   const [leadVendorFilter, setLeadVendorFilter] = useState(savedSharedFilters?.leadVendorFilter ?? "__ALL__");
-  const [searchTerm, setSearchTerm] = useState<string>(savedSharedFilters?.searchTerm ?? "");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
@@ -850,11 +850,11 @@ const SubmissionPortalPage = () => {
       customEndDate,
       leadVendorFilter,
       selectedStates,
-      searchTerm,
+      searchTerm: "",
     };
 
     window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
-  }, [datePreset, customStartDate, customEndDate, leadVendorFilter, selectedStates, searchTerm]);
+  }, [datePreset, customStartDate, customEndDate, leadVendorFilter, selectedStates]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
