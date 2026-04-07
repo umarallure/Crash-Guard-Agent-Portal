@@ -925,7 +925,22 @@ const CallResultUpdate = () => {
   const revealMotionClass =
     "will-change-[opacity,transform,filter] motion-reduce:transform-none motion-reduce:opacity-100 motion-reduce:blur-0 motion-reduce:transition-none";
 
+  // When verification drives the script panel (open + scroll), we don't want the script panel's
+  // intermediate scroll events (especially during smooth scroll) to bounce the verification panel back.
+  const suppressLinkedScriptSyncRef = useRef(false);
+  const suppressLinkedScriptSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (suppressLinkedScriptSyncTimeoutRef.current) {
+        clearTimeout(suppressLinkedScriptSyncTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const updateLinkedScriptSection = useCallback(() => {
+    if (suppressLinkedScriptSyncRef.current) return;
+
     const container = scriptScrollRef.current;
     if (!container || !callFlowSections.length) return;
 
@@ -982,13 +997,14 @@ const CallResultUpdate = () => {
     };
   }, [showVerificationPanel]);
 
-  // When a verification field is checked/edited, open + scroll the corresponding script section
-  const handleFieldVerifiedWithSync = (fieldName: string, value: string, checked: boolean) => {
-    handleFieldVerified(fieldName, value, checked);
-
-    const targetEyebrow = fieldToScriptSectionEyebrow[fieldName];
+  const focusScriptSection = (targetEyebrow: string | null | undefined) => {
     const targetIdx = targetEyebrow ? scriptSectionIndexByEyebrow.get(targetEyebrow) : undefined;
     if (targetIdx == null) return;
+
+    suppressLinkedScriptSyncRef.current = true;
+    if (suppressLinkedScriptSyncTimeoutRef.current) {
+      clearTimeout(suppressLinkedScriptSyncTimeoutRef.current);
+    }
 
     setLinkedScriptSectionEyebrow(targetEyebrow);
 
@@ -1003,9 +1019,26 @@ const CallResultUpdate = () => {
     requestAnimationFrame(() => {
       const el = sectionRefs.current[targetIdx];
       if (el && scriptScrollRef.current) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Use an instant jump here to avoid passing through intermediate sections
+        // that would otherwise update the linked eyebrow repeatedly.
+        el.scrollIntoView({ behavior: "auto", block: "start" });
       }
     });
+
+    // Give the browser a moment to apply layout + scroll, then re-enable sync.
+    suppressLinkedScriptSyncTimeoutRef.current = setTimeout(() => {
+      suppressLinkedScriptSyncRef.current = false;
+    }, 250);
+  };
+
+  // When a verification field is checked/edited, open + scroll the corresponding script section
+  const handleFieldVerifiedWithSync = (fieldName: string, value: string, checked: boolean) => {
+    handleFieldVerified(fieldName, value, checked);
+    focusScriptSection(fieldToScriptSectionEyebrow[fieldName]);
+  };
+
+  const handleVerificationStepFocus = (stepEyebrow: string) => {
+    focusScriptSection(stepEyebrow);
   };
 
   // ---- Pre-call cards (DNC + Disclaimer) ----
@@ -2477,6 +2510,7 @@ const CallResultUpdate = () => {
                     sessionId={verificationSessionId}
                     onTransferReady={handleTransferReady}
                     onFieldVerified={handleFieldVerifiedWithSync}
+                    onStepFocus={handleVerificationStepFocus}
                     linkedSectionEyebrow={linkedScriptSectionEyebrow || undefined}
                   />
                 </div>

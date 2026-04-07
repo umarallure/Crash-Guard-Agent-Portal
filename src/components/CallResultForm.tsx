@@ -1587,11 +1587,20 @@ export const CallResultForm = ({
             console.error('Sync to daily_deal_flow failed:', syncError);
           }     
       try {
-        const { error: sessionUpdateError } = await supabase
+        const completedAt = new Date().toISOString();
+        let sessionUpdateQuery = supabase
           .from('verification_sessions')
-          .update({ status: 'completed' })
-          .eq('submission_id', submissionId)
-          .in('status', ['pending', 'in_progress', 'ready_for_transfer', 'transferred']);
+          .update({ status: 'completed', completed_at: completedAt });
+
+        if (verificationSessionId) {
+          sessionUpdateQuery = sessionUpdateQuery.eq('id', verificationSessionId);
+        } else {
+          sessionUpdateQuery = sessionUpdateQuery
+            .eq('submission_id', submissionId)
+            .in('status', ['pending', 'in_progress', 'ready_for_transfer', 'transferred']);
+        }
+
+        const { error: sessionUpdateError } = await sessionUpdateQuery;
 
         if (sessionUpdateError) {
           console.error("Error updating verification session:", sessionUpdateError);

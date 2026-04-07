@@ -632,9 +632,16 @@ const CloserPortalPage = () => {
         return;
       }
 
+      const claimedAt = new Date().toISOString();
+
       await supabase
         .from("verification_sessions")
-        .update({ status: "in_progress", licensed_agent_id: claimLicensedAgent })
+        .update({
+          status: "in_progress",
+          licensed_agent_id: claimLicensedAgent,
+          claimed_at: claimedAt,
+          completed_at: null,
+        })
         .eq("id", claimSessionId);
 
       const { error: leadStatusError } = await supabase
@@ -658,7 +665,7 @@ const CloserPortalPage = () => {
         eventType: "call_claimed",
         eventDetails: {
           verification_session_id: claimSessionId,
-          claimed_at: new Date().toISOString(),
+          claimed_at: claimedAt,
           claimed_from_dashboard: true,
           claim_type: "manual_claim",
         },

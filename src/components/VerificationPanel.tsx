@@ -407,10 +407,11 @@ interface VerificationPanelProps {
   sessionId: string;
   onTransferReady?: () => void;
   onFieldVerified?: (fieldName: string, value: string, checked: boolean) => void;
+  onStepFocus?: (stepEyebrow: string) => void;
   linkedSectionEyebrow?: string;
 }
 
-export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified, linkedSectionEyebrow }: VerificationPanelProps) => {
+export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified, onStepFocus, linkedSectionEyebrow }: VerificationPanelProps) => {
   // Helper to get lead data from verificationItems
   const getLeadData = () => {
     const leadData: Record<string, string> = {};
@@ -496,6 +497,8 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
   });
   const panelScrollRef = useRef<HTMLDivElement | null>(null);
   const stepRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const activeStepEyebrowRef = useRef<string | null>(null);
+  const suppressedLinkedEyebrowRef = useRef<string | null>(null);
   
   const {
     session,
@@ -510,20 +513,33 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
   } = useRealtimeVerification(sessionId);
 
   useEffect(() => {
-    // Update elapsed time every second
-    const interval = setInterval(() => {
-      if (session?.started_at) {
-        const start = new Date(session.started_at);
-        const now = new Date();
-        const diff = Math.floor((now.getTime() - start.getTime()) / 1000);
-        const minutes = Math.floor(diff / 60);
-        const seconds = diff % 60;
-        setElapsedTime(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-      }
-    }, 1000);
+    const timerStart = session?.claimed_at;
+    const timerEnd = session?.completed_at;
+
+    if (!timerStart) {
+      setElapsedTime("00:00");
+      return;
+    }
+
+    const updateElapsedTime = () => {
+      const start = new Date(timerStart);
+      const end = timerEnd ? new Date(timerEnd) : new Date();
+      const diff = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+      const minutes = Math.floor(diff / 60);
+      const seconds = diff % 60;
+      setElapsedTime(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+    };
+
+    updateElapsedTime();
+
+    if (timerEnd) {
+      return;
+    }
+
+    const interval = setInterval(updateElapsedTime, 1000);
 
     return () => clearInterval(interval);
-  }, [session?.started_at]);
+  }, [session?.claimed_at, session?.completed_at]);
 
   // Initialize input values when verification items change
   useEffect(() => {
@@ -582,6 +598,10 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
   useEffect(() => {
     if (!linkedSectionEyebrow) return;
     if (typeof window !== "undefined" && !window.matchMedia("(min-width: 1024px)").matches) return;
+    if (suppressedLinkedEyebrowRef.current === linkedSectionEyebrow) {
+      suppressedLinkedEyebrowRef.current = null;
+      return;
+    }
 
     const linkedStep = verificationStepDefinitions.find((step) => step.eyebrow === linkedSectionEyebrow);
     if (!linkedStep) return;
@@ -606,6 +626,41 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       });
     });
   }, [linkedSectionEyebrow]);
+
+  const updateLinkedVerificationStep = useCallback(() => {
+    const container = panelScrollRef.current;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const anchor = container.scrollTop + container.clientHeight * 0.24;
+    let nextEyebrow = verificationStepDefinitions[0]?.eyebrow ?? null;
+
+    verificationStepDefinitions.forEach((step) => {
+      const stepRef = stepRefs.current[step.key];
+      if (!stepRef) return;
+
+      const stepTop =
+        stepRef.getBoundingClientRect().top - containerRect.top + container.scrollTop;
+
+      if (stepTop <= anchor) {
+        nextEyebrow = step.eyebrow;
+      }
+    });
+
+    if (!nextEyebrow || activeStepEyebrowRef.current === nextEyebrow) return;
+
+    activeStepEyebrowRef.current = nextEyebrow;
+    suppressedLinkedEyebrowRef.current = nextEyebrow;
+    onStepFocus?.(nextEyebrow);
+  }, [onStepFocus]);
+
+  useEffect(() => {
+    if (!verificationItems?.length) return;
+
+    requestAnimationFrame(() => {
+      updateLinkedVerificationStep();
+    });
+  }, [openStepSections, updateLinkedVerificationStep, verificationItems]);
 
   const upsertCustomVerificationItem = async (fieldName: 'medical_treatment_proof' | 'insurance_documents' | 'police_report', updates: { verified_value?: string; is_verified?: boolean }) => {
     const existing = customItems[fieldName];
@@ -1395,7 +1450,11 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
         </div>
       </div>
 
-      <CardContent ref={panelScrollRef} className="space-y-3 flex-1 min-h-0 overflow-y-auto overscroll-y-none pt-4">
+      <CardContent
+        ref={panelScrollRef}
+        className="space-y-3 flex-1 min-h-0 overflow-y-auto overscroll-y-none pt-4"
+        onScroll={updateLinkedVerificationStep}
+      >
 
         <div className="rounded-lg border border-orange-200/70 bg-[linear-gradient(180deg,rgba(255,244,236,0.95)_0%,rgba(255,250,246,0.92)_100%)] px-4 py-3 shadow-[0_10px_24px_-20px_rgba(203,106,42,0.55)]">
           <div className="space-y-2">

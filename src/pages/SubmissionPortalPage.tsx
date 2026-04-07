@@ -1197,10 +1197,19 @@ const SubmissionPortalPage = () => {
     setClaimLoading(true);
     try {
       if (!claimLicensedAgent) { toast({ title: "Error", description: "Please select a closer", variant: "destructive" }); return; }
-      await supabase.from("verification_sessions").update({ status: "in_progress", licensed_agent_id: claimLicensedAgent }).eq("id", claimSessionId);
+      const claimedAt = new Date().toISOString();
+      await supabase
+        .from("verification_sessions")
+        .update({
+          status: "in_progress",
+          licensed_agent_id: claimLicensedAgent,
+          claimed_at: claimedAt,
+          completed_at: null,
+        })
+        .eq("id", claimSessionId);
       const agentName = licensedAgents.find((a) => a.user_id === claimLicensedAgent)?.display_name || "Licensed Agent";
       const { customerName, leadVendor } = await getLeadInfo(claimSubmissionId!);
-      await logCallUpdate({ submissionId: claimSubmissionId!, agentId: claimLicensedAgent, agentType: "licensed", agentName, eventType: "call_claimed", eventDetails: { verification_session_id: claimSessionId, claimed_at: new Date().toISOString(), claimed_from_dashboard: true, claim_type: "manual_claim" }, verificationSessionId: claimSessionId!, customerName, leadVendor, isRetentionCall: false });
+      await logCallUpdate({ submissionId: claimSubmissionId!, agentId: claimLicensedAgent, agentType: "licensed", agentName, eventType: "call_claimed", eventDetails: { verification_session_id: claimSessionId, claimed_at: claimedAt, claimed_from_dashboard: true, claim_type: "manual_claim" }, verificationSessionId: claimSessionId!, customerName, leadVendor, isRetentionCall: false });
       await supabase.functions.invoke("center-transfer-notification", { body: { type: "reconnected", submissionId: claimSubmissionId, agentType: "licensed", agentName, leadData: claimLead } });
       const submissionIdForRedirect = claimSubmissionId;
       setClaimModalOpen(false); setClaimSessionId(null); setClaimSubmissionId(null); setClaimLead(null); setClaimLicensedAgent("");
