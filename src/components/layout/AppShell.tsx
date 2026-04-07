@@ -38,6 +38,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLicensedAgent } from '@/hooks/useLicensedAgent';
 import { useCenterUser } from '@/hooks/useCenterUser';
 import { canAccessNavigation, isRestrictedUser } from '@/lib/userPermissions';
+import { NotificationBell } from '@/components/NotificationBell';
 
 type NavItem = {
   label: string;
@@ -450,37 +451,40 @@ const AppShell = ({
                 <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full"
-                    aria-label="Account menu"
-                  >
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src="" alt={user?.email || 'User'} />
-                      <AvatarFallback className="text-foreground">{avatarFallback}</AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground truncate">
-                    {user?.email || 'Signed in'}
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      void handleSignOut();
-                    }}
-                    className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="flex items-center gap-1">
+                <NotificationBell />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-full"
+                      aria-label="Account menu"
+                    >
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src="" alt={user?.email || 'User'} />
+                        <AvatarFallback className="text-foreground">{avatarFallback}</AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground truncate">
+                      {user?.email || 'Signed in'}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        void handleSignOut();
+                      }}
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </header>
 
