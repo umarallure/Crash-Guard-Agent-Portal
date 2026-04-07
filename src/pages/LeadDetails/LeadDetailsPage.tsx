@@ -160,10 +160,12 @@ const LeadDetailsPage = () => {
       }
 
       setLoading(true);
+      // The URL param may be either the lead's primary `id` (used by notification
+      // redirect_urls) or the legacy `submission_id`. Try both in one query.
       const { data, error } = await supabase
         .from("leads")
         .select("*")
-        .eq("submission_id", submissionId)
+        .or(`id.eq.${submissionId},submission_id.eq.${submissionId}`)
         .maybeSingle();
 
       if (error) {
@@ -180,7 +182,7 @@ const LeadDetailsPage = () => {
       if (!data) {
         toast({
           title: "Lead not found",
-          description: `No lead found for submission ID ${submissionId}`,
+          description: `No lead found for ID ${submissionId}`,
           variant: "destructive",
         });
         setLead(null);
