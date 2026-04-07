@@ -104,7 +104,7 @@ const FieldGrid = ({
 
 const LeadDetailsPage = () => {
   const navigate = useNavigate();
-  const { submissionId } = useParams();
+  const { leadId } = useParams();
   const { toast } = useToast();
 
   const [lead, setLead] = useState<LeadRow | null>(null);
@@ -118,6 +118,7 @@ const LeadDetailsPage = () => {
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [callUpdatesLoading, setCallUpdatesLoading] = useState(false);
   const [callUpdates, setCallUpdates] = useState<CallUpdate[]>([]);
+  const routeLeadId = (leadId ?? "").trim();
 
   const fetchCallUpdates = async (targetSubmissionId: string | null | undefined) => {
     if (!targetSubmissionId) {
@@ -149,24 +150,45 @@ const LeadDetailsPage = () => {
 
   useEffect(() => {
     const run = async () => {
-      if (!submissionId) {
+      if (!routeLeadId) {
         setLoading(false);
         toast({
           title: "Error",
-          description: "Missing submission ID in route",
+          description: "Missing lead ID in route",
           variant: "destructive",
         });
         return;
       }
 
       setLoading(true);
-      // The URL param may be either the lead's primary `id` (used by notification
-      // redirect_urls) or the legacy `submission_id`. Try both in one query.
-      const { data, error } = await supabase
-        .from("leads")
-        .select("*")
-        .or(`id.eq.${submissionId},submission_id.eq.${submissionId}`)
-        .maybeSingle();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(routeLeadId);
+
+      // New links use the lead record id. Keep a submission_id fallback so older
+      // links still open without throwing a UUID parsing error.
+      let data: LeadRow | null = null;
+      let error: { message: string } | null = null;
+
+      if (isUuid) {
+        const response = await supabase
+          .from("leads")
+          .select("*")
+          .eq("id", routeLeadId)
+          .maybeSingle();
+
+        data = (response.data as LeadRow | null) ?? null;
+        error = response.error ? { message: response.error.message } : null;
+      }
+
+      if (!data && !error) {
+        const response = await supabase
+          .from("leads")
+          .select("*")
+          .eq("submission_id", routeLeadId)
+          .maybeSingle();
+
+        data = (response.data as LeadRow | null) ?? null;
+        error = response.error ? { message: response.error.message } : null;
+      }
 
       if (error) {
         toast({
@@ -182,7 +204,7 @@ const LeadDetailsPage = () => {
       if (!data) {
         toast({
           title: "Lead not found",
-          description: `No lead found for ID ${submissionId}`,
+          description: `No lead found for ID ${routeLeadId}`,
           variant: "destructive",
         });
         setLead(null);
@@ -197,7 +219,7 @@ const LeadDetailsPage = () => {
         const { data: ddfRow, error: ddfErr } = await supabase
           .from("daily_deal_flow")
           .select("id,status")
-          .eq("submission_id", submissionId)
+          .eq("submission_id", data.submission_id)
           .order("updated_at", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(1)
@@ -222,7 +244,7 @@ const LeadDetailsPage = () => {
     };
 
     run();
-  }, [submissionId, toast]);
+  }, [routeLeadId, toast]);
 
   const handleSaveNote = async () => {
     const trimmedNote = newNote.trim();

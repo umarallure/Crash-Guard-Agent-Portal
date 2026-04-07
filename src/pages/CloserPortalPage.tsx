@@ -467,8 +467,8 @@ const CloserPortalPage = () => {
   };
 
   const handleView = (row: CloserPortalRow) => {
-    if (!row?.submission_id) return;
-    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+    if (!row?.id) return;
+    navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: "/closer-portal" },
     });
   };
@@ -488,7 +488,7 @@ const CloserPortalPage = () => {
       return;
     }
 
-    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+    navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: "/closer-portal" },
     });
   };

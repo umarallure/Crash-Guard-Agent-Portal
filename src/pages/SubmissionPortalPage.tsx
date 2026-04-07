@@ -1105,8 +1105,8 @@ const SubmissionPortalPage = () => {
   }
 
   const handleView = (row: SubmissionPortalRow) => {
-    if (!row?.submission_id) return;
-    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+    if (!row?.id) return;
+    navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: '/submission-portal' },
     });
   };
@@ -1126,7 +1126,7 @@ const SubmissionPortalPage = () => {
       return;
     }
 
-    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+    navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: '/submission-portal' },
     });
   };

@@ -1224,7 +1224,7 @@ export const CallResultForm = ({
     }
   };
 
-  const syncModifiedVerifiedFieldsToLeads = async () => {
+  const syncModifiedVerifiedFieldsToLeads = async (statusOverride?: string | null) => {
     const booleanFields = new Set([
       "police_attended",
       "insured",
@@ -1268,6 +1268,13 @@ export const CallResultForm = ({
       "additional_notes",
     ]);
 
+    const updates: LeadsUpdate = {};
+    const normalizedStatusOverride = (statusOverride || "").trim();
+
+    if (normalizedStatusOverride) {
+      updates.status = normalizedStatusOverride;
+    }
+
     let effectiveSessionId = verificationSessionId;
 
     if (!effectiveSessionId) {
@@ -1282,41 +1289,38 @@ export const CallResultForm = ({
       effectiveSessionId = verificationSession?.id ?? undefined;
     }
 
-    if (!effectiveSessionId) return;
+    if (effectiveSessionId) {
+      const { data: items, error } = await supabase
+        .from("verification_items")
+        .select("field_name, verified_value, original_value, is_modified, is_verified")
+        .eq("session_id", effectiveSessionId);
 
-    const { data: items, error } = await supabase
-      .from("verification_items")
-      .select("field_name, verified_value, original_value, is_modified, is_verified")
-      .eq("session_id", effectiveSessionId);
+      if (error) throw error;
 
-    if (error) throw error;
-    if (!items || items.length === 0) return;
+      for (const item of items || []) {
+        if (!item.is_verified || !item.is_modified) continue;
+        const fieldName = item.field_name;
+        if (!allowedFields.has(fieldName)) continue;
 
-    const updates: LeadsUpdate = {};
+        const raw = (item.verified_value ?? item.original_value ?? "").toString().trim();
+        if (!raw.length) {
+          (updates as any)[fieldName] = null;
+          continue;
+        }
 
-    for (const item of items) {
-      if (!item.is_verified || !item.is_modified) continue;
-      const fieldName = item.field_name;
-      if (!allowedFields.has(fieldName)) continue;
+        if (booleanFields.has(fieldName)) {
+          (updates as any)[fieldName] = raw.toLowerCase() === "true";
+          continue;
+        }
 
-      const raw = (item.verified_value ?? item.original_value ?? "").toString().trim();
-      if (!raw.length) {
-        (updates as any)[fieldName] = null;
-        continue;
+        if (numberFields.has(fieldName)) {
+          const parsed = Number(raw);
+          (updates as any)[fieldName] = Number.isFinite(parsed) ? parsed : null;
+          continue;
+        }
+
+        (updates as any)[fieldName] = raw;
       }
-
-      if (booleanFields.has(fieldName)) {
-        (updates as any)[fieldName] = raw.toLowerCase() === "true";
-        continue;
-      }
-
-      if (numberFields.has(fieldName)) {
-        const parsed = Number(raw);
-        (updates as any)[fieldName] = Number.isFinite(parsed) ? parsed : null;
-        continue;
-      }
-
-      (updates as any)[fieldName] = raw;
     }
 
     if (Object.keys(updates).length === 0) return;
@@ -1336,29 +1340,12 @@ export const CallResultForm = ({
     let finalSubmissionId = submissionId;
 
     try {
-      let finalStatus = status;
+      let finalStatus = "";
       if (applicationSubmitted === true) {
-        finalStatus = qualifiedStage || "Submitted";
-        if (
-          selectedPipeline === "submission_portal" &&
-          getQualifiedStageKey(qualifiedStage) === "qualified_missing_info" &&
-          qualifiedStageReason
-        ) {
-          finalStatus = `${qualifiedStage} - ${qualifiedStageReason}`;
-        }
-        const stageKey = pipelineStageLabelToKey.get(finalStatus);
-        if (stageKey) {
-          finalStatus = stageKey;
-        }
-      } else if (status) {
-        const stageKey = pipelineStageLabelToKey.get(status);
-        if (stageKey) {
-          finalStatus = stageKey;
-        }
+        finalStatus = getQualifiedStageKey(qualifiedStage || "Submitted") || "Submitted";
+      } else {
+        finalStatus = getQualifiedStageKey(status);
       }
-
-      // Map status for sheet value
-      const mappedStatus = mapStatusToSheetValue(finalStatus);
 
       // Generate final notes
       let finalNotes = notes;
@@ -1388,8 +1375,6 @@ export const CallResultForm = ({
         submission_id: submissionId,
         application_submitted: applicationSubmitted,
         status: finalStatus,
-        pipeline_name: selectedPipeline,
-        qualified_stage: getQualifiedStageKey(applicationSubmitted === true ? qualifiedStage : status) || null,
         notes: finalNotes,
         dq_reason: applicationSubmitted === true && qualifiedStageReason
           ? qualifiedStageReason
@@ -1631,8 +1616,6 @@ export const CallResultForm = ({
               agent_who_took_call: agentWhoTookCall,
               lead_vendor: leadData.lead_vendor || leadVendor || 'N/A',
               status: slackStatus,
-              pipeline_name: applicationSubmitted === true ? selectedPipeline : null,
-              qualified_stage: getQualifiedStageKey(qualifiedStage) || null,
               notes: finalNotes,
               dq_reason: showStatusReasonDropdown ? statusReason : null,
               ...(accidentDate && { accident_date: accidentDate }),
@@ -1770,7 +1753,7 @@ export const CallResultForm = ({
         }
       }
       try {
-        await syncModifiedVerifiedFieldsToLeads();
+        await syncModifiedVerifiedFieldsToLeads(finalStatus);
       } catch (leadSyncError: any) {
         console.error("Failed to sync verification edits to leads:", leadSyncError);
         toast({

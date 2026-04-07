@@ -29,7 +29,7 @@ serve(async (req)=>{
     ];
 
     const isSubmittedApplication = callResult && callResult.application_submitted === true;
-    const candidateStatus = callResult?.status || callResult?.qualified_stage || null;
+    const candidateStatus = callResult?.status || null;
     const hasCustomStatus = !!candidateStatus;
     const isQualifiedTitle = hasCustomStatus && qualifiedTitles.includes(candidateStatus as string);
     let slackMessage;

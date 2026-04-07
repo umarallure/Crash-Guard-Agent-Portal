@@ -673,8 +673,8 @@ const TransferPortalPage = () => {
   };
 
   const handleView = (row: TransferPortalRow) => {
-    if (!row?.submission_id) return;
-    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+    if (!row?.id) return;
+    navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: '/transfer-portal' },
     });
   };
@@ -694,7 +694,7 @@ const TransferPortalPage = () => {
       return;
     }
 
-    navigate(`/leads/${encodeURIComponent(row.submission_id)}`, {
+    navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: '/transfer-portal' },
     });
   };
