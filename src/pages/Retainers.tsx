@@ -83,8 +83,10 @@ const Retainers = () => {
     }
   }, [user]);
 
-  const handleViewLead = async (submissionId: string) => {
-    if (!submissionId) return;
+  const handleViewLead = async (lead: LeadWithCallResult) => {
+    const submissionId = (lead?.submission_id || '').trim();
+    const leadId = (lead?.id || '').trim();
+    if (!submissionId || !leadId) return;
     setViewLeadLoadingId(submissionId);
 
     try {
@@ -104,7 +106,7 @@ const Retainers = () => {
         return;
       }
 
-      navigate(`/leads/${encodeURIComponent(submissionId)}`);
+      navigate(`/leads/${encodeURIComponent(leadId)}`);
     } catch (e) {
       console.error('Error resolving View Lead route:', e);
       toast({
@@ -713,7 +715,7 @@ const Retainers = () => {
                                 className="text-lg font-semibold group-hover:underline text-left"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  navigate(`/leads/${encodeURIComponent(lead.submission_id)}`);
+                                  navigate(`/leads/${encodeURIComponent(lead.id)}`);
                                 }}
                               >
                                 {(lead.customer_full_name || 'N/A') + ' - ' + (lead.lead_vendor || 'N/A')}
@@ -881,7 +883,7 @@ const Retainers = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleViewLead(lead.submission_id)}
+                              onClick={() => handleViewLead(lead)}
                               disabled={viewLeadLoadingId === lead.submission_id}
                               className="flex items-center gap-2"
                             >

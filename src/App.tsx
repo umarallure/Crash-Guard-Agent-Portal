@@ -197,7 +197,7 @@ const App = () => (
               } 
             />
             <Route 
-              path="/leads/:submissionId" 
+              path="/leads/:leadId" 
               element={
                 <ProtectedRoute>
                   <AppShell title="Lead Details">
