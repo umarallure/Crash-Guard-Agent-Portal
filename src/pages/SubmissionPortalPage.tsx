@@ -39,6 +39,7 @@ import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
+import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 
 export interface SubmissionPortalRow {
   id: string;
@@ -51,6 +52,7 @@ export interface SubmissionPortalRow {
   buffer_agent?: string;
   agent?: string;
   licensed_agent_account?: string;
+  tag?: string | null;
   assigned_attorney_id?: string | null;
   status?: string;
   call_result?: string;
@@ -384,6 +386,7 @@ const SubmissionPortalPage = () => {
   const [leadVendorFilter, setLeadVendorFilter] = useState(savedSharedFilters?.leadVendorFilter ?? "__ALL__");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
+  const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
@@ -493,6 +496,10 @@ const SubmissionPortalPage = () => {
       filtered = filtered.filter((record) => (record.lead_vendor || '') === leadVendorFilter);
     }
 
+    if (tagFilter !== ALL_LEAD_TAGS_VALUE) {
+      filtered = filtered.filter((record) => (record.tag || '') === tagFilter);
+    }
+
     if (selectedStates.length > 0) {
       filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
     }
@@ -522,6 +529,15 @@ const SubmissionPortalPage = () => {
       if (v) set.add(v);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    data.forEach((row) => {
+      const tag = (row.tag || "").trim();
+      if (tag) set.add(tag);
+    });
+    return LEAD_TAG_OPTIONS.filter((tag) => set.has(tag));
   }, [data]);
 
   const stateOptions = useMemo(() => {
@@ -724,6 +740,7 @@ const SubmissionPortalPage = () => {
           buffer_agent: lead.buffer_agent || submission?.buffer_agent || '',
           agent: lead.agent || submission?.agent || '',
           licensed_agent_account: (lead as any).licensed_agent_account || submission?.licensed_agent_account || '',
+          tag: lead.tag || '',
           assigned_attorney_id: (lead as any).assigned_attorney_id || submission?.assigned_attorney_id || null,
           status: normalizedStatus,
           call_result: '',
@@ -839,7 +856,7 @@ const SubmissionPortalPage = () => {
   // Update filtered data whenever data or filters change
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, datePreset, customStartDate, customEndDate, statusFilter, leadVendorFilter, selectedStates, searchTerm]);
+  }, [data, datePreset, customStartDate, customEndDate, statusFilter, leadVendorFilter, selectedStates, searchTerm, tagFilter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1461,7 +1478,7 @@ const SubmissionPortalPage = () => {
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-foreground">Filters</span>
-                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1471,6 +1488,7 @@ const SubmissionPortalPage = () => {
                           setStatusFilter("__ALL__");
                           setSelectedStates([]);
                           setLeadVendorFilter("__ALL__");
+                          setTagFilter(ALL_LEAD_TAGS_VALUE);
                         }}
                         className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
                       >
@@ -1488,7 +1506,7 @@ const SubmissionPortalPage = () => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Range</label>
                     <PresetDateRangeFilter
@@ -1515,6 +1533,23 @@ const SubmissionPortalPage = () => {
                           <SelectItem value="__ALL__">All Vendors</SelectItem>
                           {leadVendorOptions.map((vendor) => (
                             <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tag</label>
+                    <Select value={tagFilter} onValueChange={setTagFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Tags" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value={ALL_LEAD_TAGS_VALUE}>All Tags</SelectItem>
+                          {tagOptions.map((tag) => (
+                            <SelectItem key={tag} value={tag}>{tag}</SelectItem>
                           ))}
                         </SelectGroup>
                       </SelectContent>
@@ -1683,6 +1718,11 @@ const SubmissionPortalPage = () => {
                                     <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
                                       {row.lead_vendor || '—'}
                                     </Badge>
+                                    {row.tag ? (
+                                      <Badge className={`max-w-full w-fit truncate rounded-full border px-2.5 py-1 text-[10.5px] font-medium ${getLeadTagToneClass(row.tag)}`}>
+                                        {row.tag}
+                                      </Badge>
+                                    ) : null}
                                   </div>
                                 </CardContent>
                               </Card>

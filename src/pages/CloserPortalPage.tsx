@@ -22,6 +22,7 @@ import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
+import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 
 interface CloserPortalRow {
   id: string;
@@ -34,6 +35,7 @@ interface CloserPortalRow {
   buffer_agent?: string;
   agent?: string;
   licensed_agent_account?: string;
+  tag?: string | null;
   assigned_attorney_id?: string | null;
   status?: string;
   call_result?: string;
@@ -96,6 +98,7 @@ const CloserPortalPage = () => {
   const LAST_24H_MS = 24 * 60 * 60 * 1000;
   const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
+  const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
@@ -259,6 +262,10 @@ const CloserPortalPage = () => {
       filtered = filtered.filter((record) => (record.lead_vendor || "") === leadVendorFilter);
     }
 
+    if (tagFilter !== ALL_LEAD_TAGS_VALUE) {
+      filtered = filtered.filter((record) => (record.tag || "") === tagFilter);
+    }
+
     if (statusFilter !== "__ALL__") {
       filtered = filtered.filter((record) => deriveCloserStageKey(record) === statusFilter);
     }
@@ -291,6 +298,15 @@ const CloserPortalPage = () => {
       if (vendor) set.add(vendor);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    data.forEach((row) => {
+      const tag = (row.tag || "").trim();
+      if (tag) set.add(tag);
+    });
+    return LEAD_TAG_OPTIONS.filter((tag) => set.has(tag));
   }, [data]);
 
   const stateOptions = useMemo(() => {
@@ -380,6 +396,7 @@ const CloserPortalPage = () => {
           buffer_agent: lead.buffer_agent || "",
           agent: lead.agent || "",
           licensed_agent_account: (lead as any).licensed_agent_account || "",
+          tag: lead.tag || "",
           assigned_attorney_id: (lead as any).assigned_attorney_id || null,
           carrier: lead.carrier || "",
           product_type: lead.product_type || "",
@@ -430,7 +447,7 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, leadVendorFilter, statusFilter, selectedStates, searchTerm, timeTick, activeSessionIds]);
+  }, [data, leadVendorFilter, statusFilter, tagFilter, selectedStates, searchTerm, timeTick, activeSessionIds]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
@@ -755,13 +772,14 @@ const CloserPortalPage = () => {
                     <div className="flex items-center gap-2">
                       <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm font-semibold text-foreground">Filters</span>
-                      {(statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+                      {(statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                         <button
                           type="button"
                           onClick={() => {
                             setStatusFilter("__ALL__");
                             setSelectedStates([]);
                             setLeadVendorFilter("__ALL__");
+                            setTagFilter(ALL_LEAD_TAGS_VALUE);
                           }}
                           className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
                         >
@@ -779,7 +797,7 @@ const CloserPortalPage = () => {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Vendor</label>
                       <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
@@ -791,6 +809,23 @@ const CloserPortalPage = () => {
                             <SelectItem value="__ALL__">All Vendors</SelectItem>
                             {leadVendorOptions.map((vendor) => (
                               <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tag</label>
+                      <Select value={tagFilter} onValueChange={setTagFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Tags" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={ALL_LEAD_TAGS_VALUE}>All Tags</SelectItem>
+                            {tagOptions.map((tag) => (
+                              <SelectItem key={tag} value={tag}>{tag}</SelectItem>
                             ))}
                           </SelectGroup>
                         </SelectContent>
@@ -928,6 +963,11 @@ const CloserPortalPage = () => {
                                     <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
                                       {row.lead_vendor || "—"}
                                     </Badge>
+                                    {row.tag ? (
+                                      <Badge className={`max-w-full w-fit truncate rounded-full border px-2.5 py-1 text-[10.5px] font-medium ${getLeadTagToneClass(row.tag)}`}>
+                                        {row.tag}
+                                      </Badge>
+                                    ) : null}
                                     <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
                                       {statusText}
                                     </Badge>

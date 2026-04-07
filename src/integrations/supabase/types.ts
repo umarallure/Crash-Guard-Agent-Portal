@@ -487,6 +487,7 @@ export type Database = {
           status: string | null
           submission_id: string
           sync_status: string | null
+          tag: string | null
           updated_at: string | null
         }
         Insert: {
@@ -520,6 +521,7 @@ export type Database = {
           status?: string | null
           submission_id: string
           sync_status?: string | null
+          tag?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -553,6 +555,7 @@ export type Database = {
           status?: string | null
           submission_id?: string
           sync_status?: string | null
+          tag?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -592,6 +595,7 @@ export type Database = {
           product_type: string | null
           social_security: string | null
           status: string | null
+          tag: string | null
           state: string | null
           street_address: string | null
           submission_date: string | null
@@ -655,6 +659,7 @@ export type Database = {
           product_type?: string | null
           social_security?: string | null
           status?: string | null
+          tag?: string | null
           state?: string | null
           street_address?: string | null
           submission_date?: string | null
@@ -718,6 +723,7 @@ export type Database = {
           product_type?: string | null
           social_security?: string | null
           status?: string | null
+          tag?: string | null
           state?: string | null
           street_address?: string | null
           submission_date?: string | null

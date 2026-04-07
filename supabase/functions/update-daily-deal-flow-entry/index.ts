@@ -9,6 +9,7 @@ type RequestBody = {
   licensed_agent_account?: string | null;
   status?: string | null;
   call_result?: string | null;
+  tag?: string | null;
   carrier?: string | null;
   product_type?: string | null;
   draft_date?: string | null;
@@ -163,6 +164,7 @@ serve(async (req)=>{
       licensed_agent_account = null,
       status = null,
       call_result = null,
+      tag = null,
       carrier = null,
       product_type = null,
       draft_date = null,
@@ -263,6 +265,7 @@ serve(async (req)=>{
           agent,
           licensed_agent_account,
           status: finalStatus,
+          tag,
           call_result: callResultStatus,
           carrier,
           product_type,
@@ -303,6 +306,7 @@ serve(async (req)=>{
             agent,
             licensed_agent_account,
             status: finalStatus,
+            tag,
             call_result: callResultStatus,
             carrier,
             product_type,
@@ -360,6 +364,7 @@ serve(async (req)=>{
             agent,
             licensed_agent_account,
             status: finalStatus,
+            tag,
             call_result: callResultStatus,
             carrier,
             product_type,
@@ -422,6 +427,7 @@ serve(async (req)=>{
           agent,
           licensed_agent_account,
           status: finalStatus,
+          tag,
           call_result: callResultStatus,
           carrier,
           product_type,
@@ -479,6 +485,7 @@ serve(async (req)=>{
           agent,
           licensed_agent_account,
           status: finalStatus,
+          tag,
           call_result: callResultStatus,
           carrier,
           product_type,

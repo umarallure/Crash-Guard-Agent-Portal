@@ -29,6 +29,7 @@ import type { Database } from "@/integrations/supabase/types";
 interface CallResultFormProps {
   submissionId: string;
   customerName?: string;
+  selectedTag?: string | null;
   onSuccess?: () => void;
   initialAssignedAttorneyId?: string;
   verificationSessionId?: string;
@@ -404,6 +405,7 @@ const combineNotes = (structuredNotes: string, additionalNotes: string) => {
 export const CallResultForm = ({
   submissionId,
   customerName,
+  selectedTag = null,
   onSuccess,
   initialAssignedAttorneyId,
   verificationSessionId,
@@ -1228,7 +1230,7 @@ export const CallResultForm = ({
     }
   };
 
-  const syncModifiedVerifiedFieldsToLeads = async (statusOverride?: string | null) => {
+  const syncModifiedVerifiedFieldsToLeads = async (statusOverride?: string | null, tagOverride?: string | null) => {
     const booleanFields = new Set([
       "police_attended",
       "insured",
@@ -1278,6 +1280,9 @@ export const CallResultForm = ({
     if (normalizedStatusOverride) {
       updates.status = normalizedStatusOverride;
     }
+
+    const normalizedTagOverride = (tagOverride || "").trim();
+    updates.tag = normalizedTagOverride || null;
 
     let effectiveSessionId = verificationSessionId;
 
@@ -1536,6 +1541,7 @@ export const CallResultForm = ({
                 status: finalStatus,
                 call_result: applicationSubmitted === true ? "Qualified" : "Not Qualified",
                 notes: finalNotes,
+                tag: (selectedTag || "").trim() || null,
                 from_callback: callSource === "Agent Callback",
                 is_callback: submissionId.startsWith('CB') || submissionId.startsWith('CBB'),
                 is_retention_call: isRetentionCall,
@@ -1628,6 +1634,7 @@ export const CallResultForm = ({
                 pipelineName: getPipelineDisplayName(selectedPipeline),
                 stageName: stageLabel,
                 statusKey: finalStatus,
+                tag: (selectedTag || "").trim() || null,
                 additionalNotes: notes,
                 notes: finalNotes,
                 dq_reason: applicationSubmitted === true && qualifiedStageReason
@@ -1697,7 +1704,7 @@ export const CallResultForm = ({
         }
       }
       try {
-        await syncModifiedVerifiedFieldsToLeads(finalStatus);
+        await syncModifiedVerifiedFieldsToLeads(finalStatus, selectedTag);
       } catch (leadSyncError: any) {
         console.error("Failed to sync verification edits to leads:", leadSyncError);
         toast({

@@ -23,6 +23,7 @@ type Payload = {
     pipelineName?: string | null;
     stageName?: string | null;
     statusKey?: string | null;
+    tag?: string | null;
     additionalNotes?: string | null;
     notes?: string | null;
     dq_reason?: string | null;
@@ -162,6 +163,7 @@ serve(async (req) => {
     const pipelineName = (payload.callResult?.pipelineName || "").trim() || "Unknown Pipeline";
     const stageName = (payload.callResult?.stageName || "").trim() || "Unknown Stage";
     const statusKey = (payload.callResult?.statusKey || "").trim() || "Unknown Status Key";
+    const tag = (payload.callResult?.tag || "").trim();
     const additionalNotes = (payload.callResult?.additionalNotes || "").trim();
     const notes = (payload.callResult?.notes || "").trim();
     const reason = (payload.callResult?.dq_reason || "").trim();
@@ -192,6 +194,7 @@ serve(async (req) => {
             { type: "mrkdwn", text: `*Pipeline:*\n${pipelineName}` },
             { type: "mrkdwn", text: `*Stage:*\n${stageName}` },
             { type: "mrkdwn", text: `*Status Key:*\n${statusKey}` },
+            { type: "mrkdwn", text: `*Tag:*\n${tag || "No tag"}` },
             { type: "mrkdwn", text: `*Application Submitted:*\n${isSubmitted ? "Yes" : "No"}` },
           ],
         },

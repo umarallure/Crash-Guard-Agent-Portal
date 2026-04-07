@@ -33,6 +33,7 @@ import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
+import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 
 export interface TransferPortalRow {
   id: string;
@@ -45,6 +46,7 @@ export interface TransferPortalRow {
   buffer_agent?: string;
   agent?: string;
   licensed_agent_account?: string;
+  tag?: string | null;
   status?: string;
   call_result?: string;
   carrier?: string;
@@ -358,6 +360,7 @@ const TransferPortalPage = () => {
   const [leadVendorFilter, setLeadVendorFilter] = useState(savedSharedFilters?.leadVendorFilter ?? "__ALL__");
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
@@ -409,6 +412,10 @@ const TransferPortalPage = () => {
       filtered = filtered.filter((record) => (record.lead_vendor || '') === leadVendorFilter);
     }
 
+    if (tagFilter !== ALL_LEAD_TAGS_VALUE) {
+      filtered = filtered.filter((record) => (record.tag || '') === tagFilter);
+    }
+
     if (selectedStates.length > 0) {
       filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
     }
@@ -438,6 +445,15 @@ const TransferPortalPage = () => {
       if (v) set.add(v);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    (data || []).forEach((row) => {
+      const tag = (row.tag || '').trim();
+      if (tag) set.add(tag);
+    });
+    return LEAD_TAG_OPTIONS.filter((tag) => set.has(tag));
   }, [data]);
 
   const stateOptions = useMemo(() => {
@@ -487,6 +503,7 @@ const TransferPortalPage = () => {
           buffer_agent: lead.buffer_agent || '',
           agent: lead.agent || '',
           licensed_agent_account: (lead as any).licensed_agent_account || '',
+          tag: lead.tag || '',
           carrier: lead.carrier || '',
           product_type: lead.product_type || '',
           draft_date: lead.draft_date || '',
@@ -545,7 +562,7 @@ const TransferPortalPage = () => {
   useEffect(() => {
     setFilteredData(applyFilters(data));
     setCurrentPage(1); // Reset to first page when filters change
-  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, leadVendorFilter, selectedStates, searchTerm]);
+  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, leadVendorFilter, selectedStates, searchTerm, tagFilter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1278,7 +1295,7 @@ const TransferPortalPage = () => {
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-foreground">Filters</span>
-                    {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || selectedStage !== "all") && (
+                    {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || selectedStage !== "all" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1288,6 +1305,7 @@ const TransferPortalPage = () => {
                           setSourceTypeFilter("__ALL__");
                           setSelectedStates([]);
                           setLeadVendorFilter("__ALL__");
+                          setTagFilter(ALL_LEAD_TAGS_VALUE);
                           setSelectedStage("all");
                           setCurrentPage(1);
                         }}
@@ -1307,7 +1325,7 @@ const TransferPortalPage = () => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
                   {/* Date range */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1338,6 +1356,27 @@ const TransferPortalPage = () => {
                           {leadVendorOptions.map((vendor) => (
                             <SelectItem key={vendor} value={vendor}>
                               {vendor}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Tag
+                    </label>
+                    <Select value={tagFilter} onValueChange={setTagFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Tags" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value={ALL_LEAD_TAGS_VALUE}>All Tags</SelectItem>
+                          {tagOptions.map((tag) => (
+                            <SelectItem key={tag} value={tag}>
+                              {tag}
                             </SelectItem>
                           ))}
                         </SelectGroup>
@@ -1531,6 +1570,11 @@ const TransferPortalPage = () => {
                                     <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
                                       {row.lead_vendor || "—"}
                                     </Badge>
+                                    {row.tag ? (
+                                      <Badge className={`max-w-full w-fit truncate rounded-full border px-2.5 py-1 text-[10.5px] font-medium ${getLeadTagToneClass(row.tag)}`}>
+                                        {row.tag}
+                                      </Badge>
+                                    ) : null}
                                   </div>
                                 </CardContent>
                               </Card>

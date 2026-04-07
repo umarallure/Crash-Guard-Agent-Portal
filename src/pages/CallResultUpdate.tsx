@@ -23,10 +23,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale } from "lucide-react";
 import { DOCUSIGN_TEMPLATE_IDS } from "@/lib/docusignTemplates";
 import { US_STATES } from "@/lib/us-states";
+import { LEAD_TAG_OPTIONS, getLeadTagToneClass } from "@/lib/leadTags";
 
 interface Lead {
   id: string;
   submission_id: string;
+  tag?: string | null;
   customer_full_name: string;
   phone_number: string;
   email: string;
@@ -537,6 +539,7 @@ const CallResultUpdate = () => {
   const fromCallback = searchParams.get("fromCallback");
   const assignedAttorneyId = searchParams.get("assignedAttorneyId");
   const [lead, setLead] = useState<Lead | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [verificationSessionId, setVerificationSessionId] = useState<string | null>(null);
@@ -660,6 +663,10 @@ const CallResultUpdate = () => {
       setLoading(false);
     }
   }, [submissionId, toast]);
+
+  useEffect(() => {
+    setSelectedTag((lead?.tag || "").trim());
+  }, [lead?.id, lead?.tag]);
 
   const screeningPhone = normalizePhoneForLookup(verifiedFieldValues.phone_number || lead?.phone_number);
   const callFlowSections = useMemo(() => callScriptTabs.flatMap((tab) => tab.sections), []);
@@ -2472,12 +2479,32 @@ const CallResultUpdate = () => {
               </div>
             </div>
 
-            {!showVerificationPanel || !verificationSessionId ? (
-              <StartVerificationModal
-                submissionId={submissionId!}
-                onVerificationStarted={handleVerificationStarted}
-              />
-            ) : null}
+            <div className="flex flex-col items-start gap-3 sm:items-end">
+              <div className="flex max-w-full flex-wrap justify-start gap-2 sm:justify-end">
+                {LEAD_TAG_OPTIONS.map((tagOption) => {
+                  const isActive = selectedTag === tagOption;
+                  return (
+                    <Button
+                      key={tagOption}
+                      type="button"
+                      variant={isActive ? "default" : "outline"}
+                      size="sm"
+                      className={`h-9 rounded-full px-4 text-xs font-semibold ${isActive ? "" : getLeadTagToneClass(tagOption)}`}
+                      onClick={() => setSelectedTag((current) => (current === tagOption ? "" : tagOption))}
+                    >
+                      {tagOption}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {!showVerificationPanel || !verificationSessionId ? (
+                <StartVerificationModal
+                  submissionId={submissionId!}
+                  onVerificationStarted={handleVerificationStarted}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
         {showVerificationPanel && verificationSessionId ? (
@@ -2568,6 +2595,7 @@ const CallResultUpdate = () => {
                 <CallResultForm
                   submissionId={submissionId!}
                   customerName={lead.customer_full_name}
+                  selectedTag={selectedTag}
                   initialAssignedAttorneyId={currentAssignedAttorneyId || undefined}
                   verificationSessionId={verificationSessionId || undefined}
                   verifiedFieldValues={verifiedFieldValues}
@@ -2597,6 +2625,7 @@ const CallResultUpdate = () => {
                   <CallResultForm
                     submissionId={submissionId!}
                     customerName={lead.customer_full_name}
+                    selectedTag={selectedTag}
                     initialAssignedAttorneyId={currentAssignedAttorneyId || undefined}
                     verificationSessionId={verificationSessionId || undefined}
                     verificationProgress={verificationProgress}
