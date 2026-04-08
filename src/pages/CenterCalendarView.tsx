@@ -105,6 +105,7 @@ const CenterCalendarView = () => {
       const { data: leadsData, error: leadsError } = await supabase
         .from('leads')
         .select('id, submission_id, customer_full_name, phone_number, carrier, monthly_premium, coverage_amount, state, created_at, draft_date, submission_date')
+        .eq('is_active', true)
         .eq('lead_vendor', leadVendor)
         .order('draft_date', { ascending: false });
 

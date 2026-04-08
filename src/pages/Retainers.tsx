@@ -178,6 +178,7 @@ const Retainers = () => {
       let query = supabase
         .from('leads')
         .select(`*`, { count: 'exact' })
+        .eq('is_active', true)
         .order('created_at', { ascending: false })
         .range(0, 9999);
 

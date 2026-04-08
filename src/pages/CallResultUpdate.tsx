@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,6 +72,16 @@ interface Lead {
   contact_address?: string;
 }
 
+interface DncProviderDetail {
+  provider: string;
+  isTcpa: boolean;
+  isDnc: boolean;
+  isInvalid: boolean;
+  isClean: boolean;
+  matchedLists: string[];
+  error: string | null;
+}
+
 interface DncLookupSummary {
   phone: string;
   cleanedPhone: string | null;
@@ -70,6 +89,7 @@ interface DncLookupSummary {
   isTcpaLitigator: boolean | null;
   isInvalid: boolean | null;
   isClean: boolean | null;
+  providers: DncProviderDetail[];
   raw: unknown;
 }
 
@@ -122,6 +142,23 @@ const normalizePhoneForLookup = (value: string | null | undefined) => {
   return "";
 };
 
+const isLookupRecord = (value: unknown): value is Record<string, unknown> => {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+};
+
+const findPhoneMatchInLookupArray = (value: unknown, phone: string) => {
+  if (!Array.isArray(value)) return null;
+
+  const normalizedPhone = normalizePhoneForLookup(phone);
+  if (!normalizedPhone) return null;
+
+  const normalizedEntries = value
+    .map((item) => normalizePhoneForLookup(String(item)))
+    .filter(Boolean);
+
+  return normalizedEntries.includes(normalizedPhone);
+};
+
 const toBooleanFlag = (value: unknown): boolean | null => {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 1 ? true : value === 0 ? false : null;
@@ -166,31 +203,101 @@ const findStringValue = (entries: Array<{ key: string; value: unknown }>, keyPar
 };
 
 const summarizeDncLookup = (raw: unknown, phone: string): DncLookupSummary => {
-  const entries = flattenLookupPayload(raw);
+  const root = isLookupRecord(raw) ? raw : null;
+  const flags = isLookupRecord(root?.flags) ? root.flags : null;
 
-  const isTcpaLitigator =
-    findFlag(entries, ["tcpa"]) ??
-    findFlag(entries, ["litigator"]);
+  // ---- Primary path: trust the edge function's cross-validated flags ----
+  // The edge function already runs multi-provider cross-validation to eliminate
+  // false positives. We read its pre-computed flags directly rather than
+  // re-deriving from nested provider data (which would bypass the cross-check).
+  const edgeTcpaFlag =
+    toBooleanFlag(flags?.isTcpa) ??
+    toBooleanFlag(root?.isTcpa) ??
+    toBooleanFlag(root?.isTcpaLitigator);
 
-  const isOnDnc =
-    findFlag(entries, ["federal", "dnc"]) ??
-    findFlag(entries, ["national", "dnc"]) ??
-    findFlag(entries, ["state", "dnc"]) ??
-    findFlag(entries, ["dnc"]);
+  const edgeDncFlag =
+    toBooleanFlag(flags?.isDnc) ??
+    toBooleanFlag(root?.isDnc) ??
+    toBooleanFlag(root?.isOnDnc);
 
-  const invalidExplicit =
-    findFlag(entries, ["invalid"]) ??
-    findFlag(entries, ["phone", "invalid"]);
+  const edgeInvalidFlag =
+    toBooleanFlag(flags?.isInvalid) ??
+    toBooleanFlag(root?.isInvalid);
 
-  const validExplicit =
-    findFlag(entries, ["valid"]) ??
-    findFlag(entries, ["clean"]) ??
-    findFlag(entries, ["phone", "valid"]);
+  const edgeCleanFlag =
+    toBooleanFlag(flags?.isClean) ??
+    toBooleanFlag(root?.isClean);
 
+  // ---- Fallback path: legacy single-provider response without flags ----
+  // Only used when the edge function response doesn't include a flags object
+  // (e.g. old deployment that hasn't been updated yet).
+  const hasCrossValidatedFlags = flags !== null || root?.callStatus !== undefined;
+
+  let fallbackTcpa: boolean | null = null;
+  let fallbackDnc: boolean | null = null;
+  let fallbackInvalid: boolean | null = null;
+  let fallbackClean: boolean | null = null;
+
+  if (!hasCrossValidatedFlags) {
+    const entries = flattenLookupPayload(raw);
+    const providerData = isLookupRecord(root?.data) ? root.data : null;
+
+    fallbackTcpa =
+      findPhoneMatchInLookupArray(providerData?.tcpa_litigator, phone) ??
+      findPhoneMatchInLookupArray(root?.tcpa_litigator, phone) ??
+      findFlag(entries, ["tcpa"]) ??
+      findFlag(entries, ["litigator"]);
+
+    fallbackDnc =
+      findPhoneMatchInLookupArray(providerData?.federal_dnc, phone) ??
+      findPhoneMatchInLookupArray(providerData?.state_dnc, phone) ??
+      findPhoneMatchInLookupArray(providerData?.national_dnc, phone) ??
+      findPhoneMatchInLookupArray(providerData?.dnc, phone) ??
+      findPhoneMatchInLookupArray(providerData?.dnc_number, phone) ??
+      findPhoneMatchInLookupArray(root?.federal_dnc, phone) ??
+      findPhoneMatchInLookupArray(root?.state_dnc, phone) ??
+      findPhoneMatchInLookupArray(root?.national_dnc, phone) ??
+      findPhoneMatchInLookupArray(root?.dnc, phone) ??
+      findPhoneMatchInLookupArray(root?.dnc_number, phone) ??
+      findFlag(entries, ["federal", "dnc"]) ??
+      findFlag(entries, ["national", "dnc"]) ??
+      findFlag(entries, ["state", "dnc"]) ??
+      findFlag(entries, ["dnc"]);
+
+    fallbackInvalid =
+      findPhoneMatchInLookupArray(providerData?.invalid, phone) ??
+      findPhoneMatchInLookupArray(root?.invalid, phone) ??
+      findFlag(entries, ["invalid"]) ??
+      findFlag(entries, ["phone", "invalid"]);
+
+    const fallbackCleanArray =
+      findPhoneMatchInLookupArray(providerData?.cleaned_number, phone) ??
+      findPhoneMatchInLookupArray(root?.cleaned_number, phone);
+
+    fallbackClean =
+      fallbackCleanArray ??
+      findFlag(entries, ["valid"]) ??
+      findFlag(entries, ["clean"]) ??
+      findFlag(entries, ["phone", "valid"]);
+  }
+
+  const isTcpaLitigator = edgeTcpaFlag ?? fallbackTcpa;
+  const isOnDnc = edgeDncFlag ?? fallbackDnc;
+  const invalidExplicit = edgeInvalidFlag ?? fallbackInvalid;
+  const validExplicit = edgeCleanFlag ?? fallbackClean;
+
+  const flatEntries = flattenLookupPayload(raw);
   const cleanedPhone =
-    findStringValue(entries, ["clean"]) ??
-    findStringValue(entries, ["formatted"]) ??
-    findStringValue(entries, ["number"]);
+    findStringValue(flatEntries, ["clean"]) ??
+    findStringValue(flatEntries, ["formatted"]) ??
+    findStringValue(flatEntries, ["number"]);
+
+  // Extract provider-level details from the multi-provider response
+  const providers: DncProviderDetail[] = Array.isArray(
+    (root as Record<string, unknown> | null)?.providers,
+  )
+    ? ((root as Record<string, unknown>).providers as DncProviderDetail[])
+    : [];
 
   return {
     phone,
@@ -199,6 +306,7 @@ const summarizeDncLookup = (raw: unknown, phone: string): DncLookupSummary => {
     isTcpaLitigator,
     isInvalid: invalidExplicit ?? (validExplicit === false ? true : null),
     isClean: validExplicit ?? (invalidExplicit === true ? false : null),
+    providers,
     raw,
   };
 };
@@ -210,6 +318,98 @@ const scriptHighlights = [
   "Medical records are the second verification checkpoint",
   "Do not proceed if fraud red flags appear",
 ];
+
+const docusignDesktopGuideSteps = [
+  {
+    step: "Step 1",
+    title: "Open the DocuSign email",
+    body: "Ask the lead to check their email. They should have received a DocuSign email from us. If it is not there, have them check their spam folder.",
+    images: [
+      {
+        src: "/assets/docusign-guide/step2.webp",
+        alt: "DocuSign email with Review Document button highlighted",
+      },
+    ],
+  },
+  {
+    step: "Step 2",
+    title: "Review and continue",
+    body: "Have them check the electronic records consent box, then click Continue to enter the agreement.",
+    images: [
+      {
+        src: "/assets/docusign-guide/step3.webp",
+        alt: "DocuSign review and continue screen with checkbox and Continue button highlighted",
+      },
+    ],
+  },
+  {
+    step: "Step 3",
+    title: "Start the signing flow",
+    body: "Tell them to click Start at the top so DocuSign jumps directly to each required field.",
+    images: [
+      {
+        src: "/assets/docusign-guide/step4.webp",
+        alt: "DocuSign page with Start button highlighted",
+      },
+    ],
+  },
+  {
+    step: "Step 4",
+    title: "Complete the initials",
+    body: "When the Initial tag appears, have them click it. If DocuSign opens a confirmation box, review the initials preview and choose Adopt and Initial.",
+    images: [
+      {
+        src: "/assets/docusign-guide/step6.webp",
+        alt: "DocuSign Initial tag highlighted",
+      },
+      {
+        src: "/assets/docusign-guide/step7.webp",
+        alt: "DocuSign adopt your initials screen with Adopt and Initial button highlighted",
+      },
+    ],
+  },
+  {
+    step: "Step 5",
+    title: "Sign and move to the next field",
+    body: "When the Sign tag appears, have them click it to place the signature. If another required field remains, use Next to move forward.",
+    images: [
+      {
+        src: "/assets/docusign-guide/step5.webp",
+        alt: "DocuSign Sign tag highlighted",
+      },
+      {
+        src: "/assets/docusign-guide/step8.webp",
+        alt: "DocuSign Next button highlighted",
+      },
+    ],
+  },
+  {
+    step: "Step 6",
+    title: "Finish the agreement",
+    body: "Once every required field is complete, have them click Finish. If Finish does not work yet, there is still a required field left. On some screens Finish appears at the top right.",
+    images: [
+      {
+        src: "/assets/docusign-guide/step9.webp",
+        alt: "DocuSign Finish button at the bottom of the page highlighted",
+      },
+      {
+        src: "/assets/docusign-guide/step10.webp",
+        alt: "DocuSign Finish button in the top bar highlighted",
+      },
+    ],
+  },
+  {
+    step: "Step 7",
+    title: "Confirm completion and save a copy",
+    body: "Once the Completed screen appears, let them know the agreement has been submitted successfully and they can save a copy for their records.",
+    images: [
+      {
+        src: "/assets/docusign-guide/step11.webp",
+        alt: "DocuSign completed screen with Save a Copy option highlighted",
+      },
+    ],
+  },
+] as const;
 
 const callScriptTabs: ScriptTabDefinition[] = [
   {
@@ -400,8 +600,8 @@ const callScriptTabs: ScriptTabDefinition[] = [
   },
   {
     value: "docs",
-    label: "Docs & Handoff",
-    description: "Settlement history, vehicle data, documents, retainer, and attorney transfer.",
+    label: "Documentation",
+    description: "Settlement history, vehicle data, documents, retainer, and transfer prep.",
     icon: "docs",
     sections: [
       {
@@ -556,11 +756,14 @@ const CallResultUpdate = () => {
   const [dncLookupLoading, setDncLookupLoading] = useState(false);
   const [dncLookupError, setDncLookupError] = useState<string | null>(null);
   const [dncLookupSummary, setDncLookupSummary] = useState<DncLookupSummary | null>(null);
+  const [showTcpaBlockedModal, setShowTcpaBlockedModal] = useState(false);
   const [isDncLookupCollapsed, setIsDncLookupCollapsed] = useState(false);
   const [isDisclaimerCollapsed, setIsDisclaimerCollapsed] = useState(false);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
   const [isAttorneyRecommendationCollapsed, setIsAttorneyRecommendationCollapsed] = useState(false);
+  const [isAttorneyDisclosureCollapsed, setIsAttorneyDisclosureCollapsed] = useState(false);
   const [isContractCollapsed, setIsContractCollapsed] = useState(false);
+  const [isDocusignGuideCollapsed, setIsDocusignGuideCollapsed] = useState(false);
   const [isDocumentUploadCollapsed, setIsDocumentUploadCollapsed] = useState(false);
   const [openScriptSections, setOpenScriptSections] = useState<Record<string, boolean>>({});
   const [linkedScriptSectionEyebrow, setLinkedScriptSectionEyebrow] = useState<string | null>(null);
@@ -730,12 +933,19 @@ const CallResultUpdate = () => {
     }
 
     if (dncLookupSummary.isTcpaLitigator) {
+      const flaggedBy = dncLookupSummary.providers
+        .filter((p) => p.isTcpa)
+        .map((p) => p.provider === "blacklist_alliance" ? "Blacklist Alliance" : "RealValidito");
+
       return (
         <Alert variant="destructive" className="animate-scale-in">
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>TCPA litigator flagged</AlertTitle>
           <AlertDescription>
             This phone number {dncLookupSummary.cleanedPhone || dncLookupSummary.phone} appears to be flagged as a TCPA litigator. Review carefully before proceeding.
+            {flaggedBy.length > 0 && (
+              <span className="mt-1 block text-xs opacity-80">Confirmed by: {flaggedBy.join(", ")}</span>
+            )}
           </AlertDescription>
         </Alert>
       );
@@ -754,12 +964,31 @@ const CallResultUpdate = () => {
     }
 
     if (dncLookupSummary.isOnDnc === true) {
+      const flaggedBy = dncLookupSummary.providers
+        .filter((p) => p.isDnc)
+        .map((p) => p.provider === "blacklist_alliance" ? "Blacklist Alliance" : "RealValidito");
+
       return (
         <Alert variant="destructive" className="animate-scale-in border-amber-500/50 text-amber-700 [&>svg]:text-amber-700 dark:text-amber-400">
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>Phone number is on a DNC list</AlertTitle>
           <AlertDescription>
             The screened phone number {dncLookupSummary.cleanedPhone || dncLookupSummary.phone} appears on a DNC list. Verbal consent must be captured clearly before proceeding.
+            {flaggedBy.length > 0 && (
+              <span className="mt-1 block text-xs opacity-80">Confirmed by: {flaggedBy.join(", ")}</span>
+            )}
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
+    if (dncLookupSummary.isOnDnc === null) {
+      return (
+        <Alert className="animate-scale-in border-slate-400/50 text-slate-700 [&>svg]:text-slate-700 dark:text-slate-300">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>DNC status could not be confirmed</AlertTitle>
+          <AlertDescription>
+            The screened phone number {dncLookupSummary.cleanedPhone || dncLookupSummary.phone} could not be confidently classified. Review the lookup payload before treating this number as clear.
           </AlertDescription>
         </Alert>
       );
@@ -856,8 +1085,8 @@ const CallResultUpdate = () => {
         { id: "safeguards", label: "Safeguards" },
         { id: "verification", label: "Verification" },
         { id: "attorney", label: "Attorney" },
-        { id: "handoff", label: "Handoff" },
-        { id: "result", label: "Call Result" },
+        { id: "handoff", label: "Documentation" },
+        { id: "result", label: "Handoff" },
       ];
     }
     return [
@@ -1049,10 +1278,8 @@ const CallResultUpdate = () => {
   };
 
   // ---- Pre-call cards (DNC + Disclaimer) ----
-  // Show disclaimer only when the DNC result flags the number
-  const showDisclaimer = Boolean(
-    dncLookupSummary && (dncLookupSummary.isOnDnc || dncLookupSummary.isTcpaLitigator || dncLookupSummary.isInvalid)
-  );
+  // Always show disclaimer once DNC screening has completed
+  const showDisclaimer = Boolean(dncLookupSummary);
 
   const preCallCards = (
     <div className={`grid grid-cols-1 items-start gap-4${showDisclaimer ? " xl:grid-cols-2" : ""}`}>
@@ -1352,6 +1579,18 @@ const CallResultUpdate = () => {
     attorneyFulfillmentMode === "broker"
       ? selectedSubmittedLawyer?.attorney_name || ""
       : selectedAssignedAttorneyLabel;
+  const attorneyDisclosureBullets = useMemo(() => {
+    const lawFirmReference = selectedHandoffAttorneyLabel || "the selected law firm";
+
+    return [
+      selectedHandoffAttorneyLabel
+        ? `Before we move forward, I want to confirm that the law firm we are partnering you with is ${selectedHandoffAttorneyLabel}.`
+        : "Before we move forward, I want to confirm the law firm we are partnering you with for this matter.",
+      "Accident Payments is not the law firm, does not own or control the law firm, and is acting only as an independent intake and referral partner.",
+      `With your permission, we will share the information you provided with ${lawFirmReference} so they can review your matter, contact you directly, and discuss representation and next steps with you.`,
+      `Do you agree to be connected with ${lawFirmReference}, and do you authorize Accident Payments and ${lawFirmReference} to communicate with each other as needed about your case, including follow-up and case-related correspondence?`,
+    ];
+  }, [selectedHandoffAttorneyLabel]);
   const defaultRetainerState = useMemo(
     () => String(verifiedFieldValues?.state || lead?.state || "").trim().toUpperCase(),
     [verifiedFieldValues?.state, lead?.state],
@@ -1414,6 +1653,13 @@ const CallResultUpdate = () => {
     "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]";
   const uploadInfoButtonClass =
     "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]";
+  const scriptGuideCardClass = "overflow-hidden border-[#2b333f]/80 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.8)]";
+  const scriptGuideHeaderClass =
+    "border-b border-[#384252]/95 bg-[linear-gradient(90deg,#161c24_0%,#1d2530_34%,#28313d_66%,#333d4a_100%)] text-slate-100";
+  const scriptGuideChevronClass =
+    "shrink-0 rounded-md border border-white/12 bg-white/8 p-1 text-slate-100 transition-colors hover:bg-white/12";
+  const scriptGuideStepBadgeClass =
+    "rounded-full border-[#384252]/95 bg-[linear-gradient(90deg,#161c24_0%,#1d2530_34%,#28313d_66%,#333d4a_100%)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white shadow-none";
 
   // ---- Contract / DocuSign card ----
   const contractCard = (
@@ -1654,6 +1900,100 @@ const CallResultUpdate = () => {
     </Card>
   );
 
+  const docusignGuideCard = (
+    <Card className={scriptGuideCardClass}>
+      <Collapsible open={!isDocusignGuideCollapsed} onOpenChange={(open) => setIsDocusignGuideCollapsed(!open)}>
+        <div className={scriptGuideHeaderClass}>
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5">
+            <div className="flex items-center gap-2.5">
+              <FileText className="h-4 w-4 text-slate-200" />
+              <span className="text-sm font-bold tracking-tight text-white">DocuSign Signing Script</span>
+            </div>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className={scriptGuideChevronClass}
+                aria-label={isDocusignGuideCollapsed ? "Expand DocuSign signing script" : "Collapse DocuSign signing script"}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                    !isDocusignGuideCollapsed ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </div>
+          <p className="px-5 pb-3 text-xs leading-5 text-slate-200/80">
+            Match what the signer sees to the screenshots below and guide them one step at a time. Click any image to
+            enlarge it.
+          </p>
+        </div>
+
+        <CollapsibleContent>
+          <CardContent className="space-y-4 pt-4">
+            <div className="space-y-3">
+              {docusignDesktopGuideSteps.map((step) => (
+                <div
+                  key={step.step}
+                  className="group/step rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm transition-all duration-200 hover:border-[#4b5666]/35 hover:bg-[linear-gradient(180deg,rgba(96,111,131,0.08)_0%,rgba(255,255,255,0.98)_100%)] hover:shadow-[0_18px_36px_-28px_rgba(30,41,59,0.34)] lg:flex lg:items-center lg:gap-3"
+                >
+                  <div className="space-y-2 lg:w-fit lg:min-w-[24rem] lg:max-w-[46rem] lg:flex-none lg:self-center">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={scriptGuideStepBadgeClass}>
+                        {step.step}
+                      </Badge>
+                      <div className="text-sm font-semibold text-foreground">{step.title}</div>
+                    </div>
+                    <p className="text-sm leading-6 text-muted-foreground">{step.body}</p>
+                  </div>
+
+                  <div className="hidden lg:flex lg:min-w-[5rem] lg:flex-1 items-center">
+                    <div className="h-px flex-1 bg-border/60 transition-colors duration-200 group-hover/step:bg-[#4b5666]/45" />
+                    <div className="mx-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-border/60 bg-muted/40 transition-colors duration-200 group-hover/step:border-[#4b5666]/35 group-hover/step:bg-[rgba(96,111,131,0.12)]">
+                      <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/55 transition-colors duration-200 group-hover/step:bg-[#4b5666]" />
+                    </div>
+                    <div className="h-px flex-1 bg-border/60 transition-colors duration-200 group-hover/step:bg-[#4b5666]/45" />
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-start gap-2.5 lg:mt-0 lg:flex-none lg:justify-start">
+                    {step.images.map((image) => (
+                      <Popover key={image.src}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="w-[15rem] max-w-full overflow-hidden rounded-lg border border-border/60 bg-white shadow-sm transition-all duration-200 hover:scale-[1.01] group-hover/step:border-[#4b5666]/25"
+                            aria-label={`Preview ${step.title} screenshot`}
+                          >
+                            <img
+                              src={image.src}
+                              alt={image.alt}
+                              loading="lazy"
+                              className="h-36 w-full object-contain bg-white"
+                            />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[30rem] p-2">
+                          <div className="space-y-2">
+                            <img
+                              src={image.src}
+                              alt={image.alt}
+                              className="max-h-[28rem] w-full rounded-md border border-border/60 object-contain bg-white"
+                            />
+                            <p className="text-xs leading-5 text-muted-foreground">{image.alt}</p>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+
   const documentUploadCard = (
     <Card className={handoffCardClass}>
       <Collapsible open={!isDocumentUploadCollapsed} onOpenChange={(open) => setIsDocumentUploadCollapsed(!open)}>
@@ -1827,6 +2167,64 @@ const CallResultUpdate = () => {
     </Card>
   ) : null;
 
+  const attorneyDisclosureCard = (
+    <Card className="border-amber-200/60 bg-amber-50/20 shadow-sm">
+      <Collapsible
+        open={!isAttorneyDisclosureCollapsed}
+        onOpenChange={(open) => setIsAttorneyDisclosureCollapsed(!open)}
+      >
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/40"
+          >
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <span className="text-sm font-semibold text-amber-900">Partner Law Firm Disclosure</span>
+              <span className="hidden text-xs text-amber-700/70 sm:inline">Verbal agreement required</span>
+            </div>
+            <ChevronDown
+              className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform ${
+                !isAttorneyDisclosureCollapsed ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="space-y-2.5 border-t border-amber-200/40 px-5 pb-4 pt-3">
+            <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+              <p className="text-[11px] leading-4 text-amber-800">
+                Use this after a law firm has been selected above and before moving into documentation or handoff.
+              </p>
+            </div>
+
+            <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                Read to Caller
+              </div>
+              <ul className="space-y-2">
+                {attorneyDisclosureBullets.map((line) => (
+                  <li key={line} className="flex gap-2">
+                    <span className="mt-[0.7rem] h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+              <p className="text-[13px] font-semibold text-amber-900">
+                Get a clear verbal YES to the selected law firm and to case-related communication between our team and that firm.
+              </p>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+
   // ---- Backwards-compatible combined cards (for non-verification layout) ----
   const callSupportCards = (
     <div className="space-y-4">
@@ -1894,7 +2292,7 @@ const CallResultUpdate = () => {
               <div className="mb-3 rounded-xl border bg-muted/20 px-4 py-3">
                 <div className="text-sm font-semibold text-foreground">Call Flow</div>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Full intake flow, verification checkpoints, documents, handoff, and internal review in one place.
+                  Full intake flow, verification checkpoints, documentation, handoff, and internal review in one place.
                 </p>
               </div>
 
@@ -2029,6 +2427,7 @@ const CallResultUpdate = () => {
         </Collapsible>
       </Card>
       {contractCard}
+      {docusignGuideCard}
       {documentUploadCard}
     </div>
   );
@@ -2118,13 +2517,18 @@ const CallResultUpdate = () => {
 
       try {
         const { data, error } = await supabase.functions.invoke("dnc-lookup", {
-          body: { mobileNumber: screeningPhone },
+          body: { mobileNumber: screeningPhone, leadId: lead?.id ?? null },
         });
 
         if (error) throw error;
         if (cancelled) return;
 
-        setDncLookupSummary(summarizeDncLookup(data, screeningPhone));
+        const summary = summarizeDncLookup(data, screeningPhone);
+        setDncLookupSummary(summary);
+
+        if (summary.isTcpaLitigator) {
+          setShowTcpaBlockedModal(true);
+        }
       } catch (error) {
         if (cancelled) return;
         console.error("DNC lookup failed:", error);
@@ -2142,7 +2546,7 @@ const CallResultUpdate = () => {
     return () => {
       cancelled = true;
     };
-  }, [screeningPhone]);
+  }, [screeningPhone, lead?.id]);
 
   useEffect(() => {
     const seedVerifiedFields = async () => {
@@ -2435,6 +2839,40 @@ const CallResultUpdate = () => {
 
   return (
     <div className="min-h-full bg-muted/30">
+      {/* ── TCPA Litigator Block Modal ── */}
+      <AlertDialog open={showTcpaBlockedModal}>
+        <AlertDialogContent className="border-red-500/60 bg-red-50 dark:bg-red-950/80">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-700 dark:text-red-400">
+              <ShieldAlert className="h-5 w-5" />
+              TCPA Litigator Detected
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 text-red-700/90 dark:text-red-300/90">
+              <p className="font-medium">
+                Continuing this call is not permitted.
+              </p>
+              <p>
+                The phone number <span className="font-mono font-semibold">{dncLookupSummary?.cleanedPhone || dncLookupSummary?.phone || screeningPhone}</span> has been identified as a TCPA litigator. This lead has been deactivated and will no longer appear in the portal.
+              </p>
+              <p className="text-sm">
+                Any further contact with this number could expose the company to significant legal liability. Please end the call immediately if still connected.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={() => {
+                setShowTcpaBlockedModal(false);
+                navigate("/transfer-portal");
+              }}
+            >
+              Acknowledged — Return to Portal
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="w-full px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
         <div className="space-y-8">
         {/* ── Header ── */}
@@ -2555,13 +2993,14 @@ const CallResultUpdate = () => {
             {flowConnector("connector-attorney", "Attorney Match", 60)}
             <section
               ref={revealRef("attorney-section", "attorney")}
-              className={`scroll-mt-6 ${revealMotionClass} ${revealClass("attorney-section")}`}
+              className={`space-y-4 scroll-mt-6 ${revealMotionClass} ${revealClass("attorney-section")}`}
               style={revealTransition(100)}
             >
               {attorneyRecommendationCard}
+              {attorneyDisclosureCard}
             </section>
 
-            {flowConnector("connector-handoff", "Handoff", 60)}
+            {flowConnector("connector-handoff", "Documentation", 60)}
             <section
               ref={(el) => { sectionNavRefs.current["handoff"] = el; }}
               className="space-y-5 scroll-mt-6"
@@ -2574,6 +3013,13 @@ const CallResultUpdate = () => {
                 {contractCard}
               </div>
               <div
+                ref={revealRef("docusign-guide-card")}
+                className={`${revealMotionClass} ${revealClass("docusign-guide-card", "translate-y-4")}`}
+                style={revealTransition(130)}
+              >
+                {docusignGuideCard}
+              </div>
+              <div
                 ref={revealRef("document-upload-card")}
                 className={`${revealMotionClass} ${revealClass("document-upload-card", "translate-y-4")}`}
                 style={revealTransition(170)}
@@ -2582,7 +3028,7 @@ const CallResultUpdate = () => {
               </div>
             </section>
 
-            {flowConnector("connector-result", "Call Result", 60)}
+            {flowConnector("connector-result", "Handoff", 60)}
             <section
               ref={(el) => { sectionNavRefs.current["result"] = el; }}
               className="space-y-4 scroll-mt-6"
@@ -2616,8 +3062,9 @@ const CallResultUpdate = () => {
             >
 
               <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
-                <div className="self-start">
+                <div className="self-start space-y-4">
                   {attorneyRecommendationCard}
+                  {attorneyDisclosureCard}
                 </div>
 
                 <div className="space-y-6">

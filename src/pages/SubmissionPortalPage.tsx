@@ -679,6 +679,7 @@ const SubmissionPortalPage = () => {
       let leadsQuery = (supabase as any)
         .from('leads')
         .select('*')
+        .eq('is_active', true)
         .order('submission_date', { ascending: false })
         .order('created_at', { ascending: false });
 

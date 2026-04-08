@@ -110,6 +110,7 @@ const Dashboard = () => {
         supabase
           .from('leads')
           .select('*', { count: 'exact', head: true })
+          .eq('is_active', true)
           .gte('created_at', startIso)
           .lt('created_at', endExclusiveIso),
         supabase
