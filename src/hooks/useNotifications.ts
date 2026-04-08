@@ -18,6 +18,8 @@ export interface AppNotification {
   redirect_url: string | null;
   is_read: boolean;
   created_at: string;
+  lead_id: string | null;
+  lead_name: string | null;
 }
 
 const POLL_INTERVAL_MS = 15_000; // check for new notifications every 15 s

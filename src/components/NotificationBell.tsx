@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -8,12 +8,15 @@ import {
   ArrowLeftRight,
   MessageSquare,
   Check,
+  FolderOpen,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/hooks/useNotifications';
 import type { AppNotification, NotificationCategory } from '@/hooks/useNotifications';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function timeAgo(dateString: string): string {
   const diff = Date.now() - new Date(dateString).getTime();
@@ -28,51 +31,70 @@ function timeAgo(dateString: string): string {
   return new Date(dateString).toLocaleDateString();
 }
 
-// ─── Category icon ───────────────────────────────────────────────────────────
+// ─── Category config ──────────────────────────────────────────────────────────
 
 const CATEGORY_CONFIG: Record<
   NotificationCategory,
   { icon: React.ElementType; bg: string; color: string }
 > = {
-  new_lead: {
-    icon: Sparkles,
-    bg: 'bg-primary/10',
-    color: 'text-primary',
-  },
-  lead_assigned: {
-    icon: UserPlus,
-    bg: 'bg-green-500/10',
-    color: 'text-green-600',
-  },
-  stage_updated: {
-    icon: TrendingUp,
-    bg: 'bg-blue-500/10',
-    color: 'text-blue-600',
-  },
-  pipeline_changed: {
-    icon: ArrowLeftRight,
-    bg: 'bg-amber-500/10',
-    color: 'text-amber-600',
-  },
-  note_added: {
-    icon: MessageSquare,
-    bg: 'bg-muted',
-    color: 'text-muted-foreground',
-  },
+  new_lead:         { icon: Sparkles,       bg: 'bg-primary/10',    color: 'text-primary' },
+  lead_assigned:    { icon: UserPlus,       bg: 'bg-green-500/10',  color: 'text-green-600' },
+  stage_updated:    { icon: TrendingUp,     bg: 'bg-blue-500/10',   color: 'text-blue-600' },
+  pipeline_changed: { icon: ArrowLeftRight, bg: 'bg-amber-500/10',  color: 'text-amber-600' },
+  note_added:       { icon: MessageSquare,  bg: 'bg-muted',         color: 'text-muted-foreground' },
 };
 
 function CategoryIcon({ category }: { category: NotificationCategory }) {
   const { icon: Icon, bg, color } = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG.note_added;
   return (
-    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${bg}`}>
-      <Icon className={`h-4 w-4 ${color}`} />
+    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${bg}`}>
+      <Icon className={`h-3.5 w-3.5 ${color}`} />
     </span>
   );
 }
 
-// ─── Notification card ───────────────────────────────────────────────────────
+// ─── Grouping ─────────────────────────────────────────────────────────────────
 
-function NotificationCard({
+interface NotificationGroup {
+  key: string;
+  lead_id: string | null;
+  lead_name: string | null;
+  items: AppNotification[];
+  groupUnreadCount: number;
+  latestAt: string;
+}
+
+function buildGroups(notifications: AppNotification[]): NotificationGroup[] {
+  const map = new Map<string, NotificationGroup>();
+
+  for (const n of notifications) {
+    const key = n.lead_id ?? `_ungrouped_${n.id}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        lead_id: n.lead_id,
+        lead_name: n.lead_name ?? null,
+        items: [],
+        groupUnreadCount: 0,
+        latestAt: n.created_at,
+      });
+    }
+
+    const group = map.get(key)!;
+    group.items.push(n);
+    if (!n.is_read) group.groupUnreadCount++;
+    if (n.created_at > group.latestAt) group.latestAt = n.created_at;
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime())
+    .slice(0, 8);
+}
+
+// ─── Individual notification row ──────────────────────────────────────────────
+
+function NotificationRow({
   notif,
   onClick,
 }: {
@@ -81,54 +103,95 @@ function NotificationCard({
 }) {
   return (
     <button
-      key={notif.id}
       onClick={() => onClick(notif)}
-      className={`w-full text-left flex items-start gap-3 px-4 py-3 transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30 ${
+      className={`relative w-full text-left flex items-start gap-2.5 pl-8 pr-4 py-2.5 transition-colors hover:bg-primary/5 focus-visible:outline-none border-t border-border/50 ${
         !notif.is_read ? 'bg-primary/[0.03]' : ''
       }`}
     >
+      {!notif.is_read && (
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+      )}
+
       <CategoryIcon category={notif.category} />
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <p
-            className={`text-sm leading-snug ${
-              !notif.is_read
-                ? 'font-semibold text-foreground'
-                : 'font-medium text-foreground/80'
-            }`}
-          >
-            {notif.title}
-          </p>
-          <span className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap mt-px">
-            {timeAgo(notif.created_at)}
-          </span>
-        </div>
+        <p className={`text-xs leading-snug truncate ${!notif.is_read ? 'font-semibold text-foreground' : 'font-medium text-foreground/80'}`}>
+          {notif.title}
+        </p>
         {notif.description && (
-          <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+          <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1 leading-relaxed">
             {notif.description}
           </p>
         )}
+        <time className="mt-0.5 block text-[11px] text-muted-foreground/70">
+          {timeAgo(notif.created_at)}
+        </time>
       </div>
-
-      {!notif.is_read && (
-        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-      )}
     </button>
   );
 }
 
-// ─── Main component ──────────────────────────────────────────────────────────
+// ─── Group header row ─────────────────────────────────────────────────────────
+
+function GroupHeader({
+  group,
+  expanded,
+  onToggle,
+}: {
+  group: NotificationGroup;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`relative w-full text-left flex items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-primary/5 focus-visible:outline-none ${
+        group.groupUnreadCount > 0 ? 'bg-primary/[0.03]' : ''
+      }`}
+    >
+      {group.groupUnreadCount > 0 && (
+        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+      )}
+
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+        <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+      </span>
+
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-foreground truncate">
+          {group.lead_name ? `Opportunity: ${group.lead_name}` : 'General'}
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          {group.items.length} notification{group.items.length !== 1 ? 's' : ''}
+        </p>
+      </div>
+
+      {group.groupUnreadCount > 0 && (
+        <span className="shrink-0 flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-primary/15 text-primary text-[10px] font-bold px-1 leading-none">
+          {group.groupUnreadCount}
+        </span>
+      )}
+
+      {expanded
+        ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      }
+    </button>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export function NotificationBell() {
   const { user } = useAuth();
-  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications(
-    user?.id
-  );
+  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications(user?.id);
   const [open, setOpen] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const grouped = useMemo(() => buildGroups(notifications), [notifications]);
 
   // Close on outside click
   useEffect(() => {
@@ -137,9 +200,7 @@ export function NotificationBell() {
       if (
         panelRef.current?.contains(e.target as Node) ||
         triggerRef.current?.contains(e.target as Node)
-      ) {
-        return;
-      }
+      ) return;
       setOpen(false);
     }
     document.addEventListener('pointerdown', onPointerDown);
@@ -156,7 +217,13 @@ export function NotificationBell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
-  async function handleCardClick(notif: AppNotification) {
+  function toggleGroup(key: string) {
+    setExpandedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }
+
+  async function handleNotificationClick(notif: AppNotification) {
     if (!notif.is_read) await markAsRead(notif.id);
     setOpen(false);
     if (notif.redirect_url) navigate(notif.redirect_url);
@@ -221,14 +288,31 @@ export function NotificationBell() {
               <div className="flex items-center justify-center py-12">
                 <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               </div>
-            ) : notifications.length === 0 ? (
+            ) : grouped.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
                 <Bell className="h-9 w-9 opacity-20" />
                 <p className="text-sm">No notifications yet</p>
               </div>
             ) : (
-              notifications.slice(0, 10).map((notif) => (
-                <NotificationCard key={notif.id} notif={notif} onClick={handleCardClick} />
+              grouped.map((group) => (
+                <div key={group.key}>
+                  <GroupHeader
+                    group={group}
+                    expanded={expandedKeys.includes(group.key)}
+                    onToggle={() => toggleGroup(group.key)}
+                  />
+                  {expandedKeys.includes(group.key) && (
+                    <div>
+                      {group.items.map((notif) => (
+                        <NotificationRow
+                          key={notif.id}
+                          notif={notif}
+                          onClick={handleNotificationClick}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))
             )}
           </div>
