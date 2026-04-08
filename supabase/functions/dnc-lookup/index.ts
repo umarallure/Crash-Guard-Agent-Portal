@@ -87,6 +87,19 @@ const maskPhone = (phone: string) => {
   return `***-***-${phone.slice(-4)}`;
 };
 
+/** Fetch with a hard timeout so a hung provider never blocks the response. */
+const fetchWithTimeout = (
+  input: string | Request,
+  init?: RequestInit,
+  timeoutMs = 10_000,
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
+};
+
 const normalizePhoneList = (value: unknown) => {
   if (!Array.isArray(value)) return [];
   return value
@@ -134,7 +147,7 @@ const lookupRealValidito = async (phone: string): Promise<ProviderResult> => {
   }
 
   try {
-    const response = await fetch("https://app.realvalidito.com/dnclookup/validate", {
+    const response = await fetchWithTimeout("https://app.realvalidito.com/dnclookup/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -197,7 +210,7 @@ const lookupBlacklistAlliance = async (phone: string): Promise<ProviderResult> =
   try {
     const url = `https://api.blacklistalliance.net/lookup?key=${encodeURIComponent(BLACKLIST_ALLIANCE_API_KEY)}&phone=${encodeURIComponent(phone)}&resp=json`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "GET",
       headers: { accept: "application/json" },
     });
@@ -225,6 +238,7 @@ const lookupBlacklistAlliance = async (phone: string): Promise<ProviderResult> =
     const isDnc =
       result.message === "FederalDNC" ||
       result.message === "StateDNC" ||
+      result.message === "Suppressed" ||
       codes.some((c) => DNC_CODES.has(c));
     const isBlacklisted = result.message === "Blacklisted" || result.scrubs === true;
 
@@ -306,46 +320,54 @@ serve(async (req) => {
       (r): r is ProviderResult => r !== null,
     );
 
-    // ---- Cross-validation logic to eliminate false positives ----
+    // ---- Union logic: flag if ANY successful provider flags it ----
     //
-    // Blacklist Alliance is treated as the authoritative source.
+    // TCPA/DNC violations carry serious legal liability. A missed flag
+    // (false negative) is far more costly than an extra flag (false positive).
+    // Therefore we use a union strategy: if any provider that responded
+    // successfully flags TCPA or DNC, we treat it as flagged.
     //
-    // TCPA:
-    //   - Blacklist Alliance flags it              -> TCPA (trusted)
-    //   - Both providers flag it                   -> TCPA (consensus)
-    //   - Only RealValidito flags it               -> NOT flagged (likely false positive)
-    //   - Only one provider configured & flags it  -> TCPA (no cross-check available)
-    //
-    // DNC:
-    //   - Same logic as TCPA above.
+    // Provider errors are excluded — only successful lookups contribute.
 
-    const rvTcpa = rvResult?.isTcpa ?? false;
-    const baTcpa = baResult?.isTcpa ?? false;
-    const rvDnc = rvResult?.isDnc ?? false;
-    const baDnc = baResult?.isDnc ?? false;
-
-    // Did Blacklist Alliance actually succeed? An error result is not a "clean" result.
+    const rvSucceeded = rvResult !== null && !rvResult.error;
     const baSucceeded = baResult !== null && !baResult.error;
 
-    let isTcpa: boolean;
-    let isDnc: boolean;
+    const rvTcpa = rvSucceeded && (rvResult?.isTcpa ?? false);
+    const baTcpa = baSucceeded && (baResult?.isTcpa ?? false);
+    const rvDnc = rvSucceeded && (rvResult?.isDnc ?? false);
+    const baDnc = baSucceeded && (baResult?.isDnc ?? false);
 
-    if (hasRealValidito && hasBlacklistAlliance && baSucceeded) {
-      // Both configured and both responded: only flag if BA confirms
-      isTcpa = baTcpa;
-      isDnc = baDnc;
-    } else {
-      // Only one provider available, or BA failed — trust whatever succeeded
-      isTcpa = rvTcpa || baTcpa;
-      isDnc = rvDnc || baDnc;
+    const isTcpa = rvTcpa || baTcpa;
+    const isDnc = rvDnc || baDnc;
+
+    // If neither provider returned a successful result, we cannot
+    // confidently say the number is safe — surface an error instead.
+    const noProviderSucceeded = !rvSucceeded && !baSucceeded;
+
+    if (noProviderSucceeded) {
+      const errors = providers.map((p) => `${p.provider}: ${p.error}`).join("; ");
+      console.error("DNC lookup: all providers failed", {
+        phone: maskPhone(mobileNumber),
+        errors,
+      });
+      return jsonResponse({
+        callStatus: "ERROR",
+        message: "DNC screening could not be completed — all providers failed. Do not treat this number as safe.",
+        providers: providers.map((p) => ({
+          provider: p.provider,
+          error: p.error ?? null,
+        })),
+      }, 502);
     }
 
     // Invalid: only RealValidito checks this
-    const isInvalid = rvResult?.isInvalid ?? false;
+    const isInvalid = rvSucceeded && (rvResult?.isInvalid ?? false);
 
-    // Clean: both must agree (or sole provider says clean)
+    // Clean: only if every successful provider agrees AND no flags raised
     const isClean =
-      (rvResult?.isClean ?? true) && (baResult?.isClean ?? true) && !isTcpa && !isDnc && !isInvalid;
+      (!rvSucceeded || (rvResult?.isClean ?? false)) &&
+      (!baSucceeded || (baResult?.isClean ?? false)) &&
+      !isTcpa && !isDnc && !isInvalid;
 
     // ---- Determine call status ----
     let callStatus = "SAFE";
