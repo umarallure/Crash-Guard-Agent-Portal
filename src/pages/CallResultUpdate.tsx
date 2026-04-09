@@ -432,7 +432,7 @@ const callScriptTabs: ScriptTabDefinition[] = [
         eyebrow: "1. Call Opening",
         title: "Set the tone and confirm availability",
         script: [
-          'Hello, thank you for calling Accident Payments. My name is [YOUR NAME]. I am part of the accident intake team.',
+          'Hello, thank you for calling Accident Claims Helpline. My name is [YOUR NAME]. I am part of the accident intake team.',
           "I will ask you a few quick questions about your accident to see how we can assist you with your claim.",
           "This will take about 10-15 minutes. Is now a good time to talk?",
         ],
@@ -724,7 +724,7 @@ const callScriptTabs: ScriptTabDefinition[] = [
           "Preserve all recordings and documentation.",
         ],
         notes: [
-          "Internal use only. This script protects Accident Payments and partner attorneys from fraudulent claims while helping legitimate clients receive excellent service.",
+          "Internal use only. This script protects Accident Claims Helpline and partner attorneys from fraudulent claims while helping legitimate clients receive excellent service.",
         ],
       },
     ],
@@ -1333,7 +1333,7 @@ const CallResultUpdate = () => {
 
                 <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
                   Sir/Ma'am, even if your phone number is on the Federal National or State Do Not Call List, do we still
-                  have your permission to call you and submit your application to Accident Payments via your
+                  have your permission to call you and submit your application to Accident Claims Helpline via your
                   phone number{" "}
                   <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
                     {lead?.phone_number || "on file"}
@@ -1586,9 +1586,9 @@ const CallResultUpdate = () => {
       selectedHandoffAttorneyLabel
         ? `Before we move forward, I want to confirm that the law firm we are partnering you with is ${selectedHandoffAttorneyLabel}.`
         : "Before we move forward, I want to confirm the law firm we are partnering you with for this matter.",
-      "Accident Payments is not the law firm, does not own or control the law firm, and is acting only as an independent intake and referral partner.",
+      "Accident Claims Helpline is not the law firm, does not own or control the law firm, and is acting only as an independent intake and referral partner.",
       `With your permission, we will share the information you provided with ${lawFirmReference} so they can review your matter, contact you directly, and discuss representation and next steps with you.`,
-      `Do you agree to be connected with ${lawFirmReference}, and do you authorize Accident Payments and ${lawFirmReference} to communicate with each other as needed about your case, including follow-up and case-related correspondence?`,
+      `Do you agree to be connected with ${lawFirmReference}, and do you authorize Accident Claims Helpline and ${lawFirmReference} to communicate with each other as needed about your case, including follow-up and case-related correspondence?`,
     ];
   }, [selectedHandoffAttorneyLabel]);
   const defaultRetainerState = useMemo(
