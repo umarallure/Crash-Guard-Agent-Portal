@@ -120,6 +120,12 @@ const extractTemplateStates = (templateName: string) => {
   }).map((state) => state.code);
 };
 
+const getPreferredFirstName = (value: string | null | undefined) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  return normalized.split(/\s+/)[0] || normalized;
+};
+
 interface ScriptTabDefinition {
   value: string;
   label: string;
@@ -765,6 +771,7 @@ const CallResultUpdate = () => {
   const [isContractCollapsed, setIsContractCollapsed] = useState(false);
   const [isDocusignGuideCollapsed, setIsDocusignGuideCollapsed] = useState(false);
   const [isDocumentUploadCollapsed, setIsDocumentUploadCollapsed] = useState(false);
+  const [isMyCasesGuideCollapsed, setIsMyCasesGuideCollapsed] = useState(false);
   const [openScriptSections, setOpenScriptSections] = useState<Record<string, boolean>>({});
   const [linkedScriptSectionEyebrow, setLinkedScriptSectionEyebrow] = useState<string | null>(null);
   const [attorneyFulfillmentMode, setAttorneyFulfillmentMode] = useState<"internal" | "broker">("internal");
@@ -1579,6 +1586,13 @@ const CallResultUpdate = () => {
     attorneyFulfillmentMode === "broker"
       ? selectedSubmittedLawyer?.attorney_name || ""
       : selectedAssignedAttorneyLabel;
+  const handoffLawFirmLabel = selectedHandoffAttorneyLabel || "the receiving law firm";
+  const handoffLawFirmCueLabel = selectedHandoffAttorneyLabel
+    ? selectedHandoffAttorneyLabel
+    : "(The receiving law firm)";
+  const handoffCallerFullName =
+    String(contractRecipientName || lead?.customer_full_name || "").trim() || "the client";
+  const handoffCallerFirstName = getPreferredFirstName(contractRecipientName || lead?.customer_full_name);
   const attorneyDisclosureBullets = useMemo(() => {
     const lawFirmReference = selectedHandoffAttorneyLabel || "the selected law firm";
 
@@ -1591,6 +1605,33 @@ const CallResultUpdate = () => {
       `Do you agree to be connected with ${lawFirmReference}, and do you authorize Accident Claims Helpline and ${lawFirmReference} to communicate with each other as needed about your case, including follow-up and case-related correspondence?`,
     ];
   }, [selectedHandoffAttorneyLabel]);
+  const myCasesHandoffSections = useMemo(
+    () => [
+      {
+        audience: "Say to receiving attorney / firm",
+        tone: "firm" as const,
+        bullets: [
+          `${handoffLawFirmCueLabel}, please open the My Cases section from the lawyer portal to review the case details and notes from today's call.`,
+          `${handoffCallerFullName} is on the phone with me now.`,
+          "The most recent case information, notes, and supporting details are already in My Cases.",
+          "I’m handing the call over to you now.",
+        ],
+      },
+      {
+        audience: "Say to caller",
+        tone: "caller" as const,
+        bullets: [
+          handoffCallerFirstName
+            ? `Mr./Ms. ${handoffCallerFirstName}, thank you for your time today.`
+            : "Thank you for your time today.",
+          `I’m now connecting you with ${handoffLawFirmLabel}.`,
+          "If you need anything else from our team, please feel free to reach out.",
+          "Have a great rest of your day.",
+        ],
+      },
+    ],
+    [handoffCallerFirstName, handoffCallerFullName, handoffLawFirmCueLabel, handoffLawFirmLabel],
+  );
   const defaultRetainerState = useMemo(
     () => String(verifiedFieldValues?.state || lead?.state || "").trim().toUpperCase(),
     [verifiedFieldValues?.state, lead?.state],
@@ -2051,6 +2092,87 @@ const CallResultUpdate = () => {
     </Card>
   );
 
+  const myCasesHandoffGuideCard = (
+    <Card className={scriptGuideCardClass}>
+      <Collapsible open={!isMyCasesGuideCollapsed} onOpenChange={(open) => setIsMyCasesGuideCollapsed(!open)}>
+        <div className={scriptGuideHeaderClass}>
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5">
+            <div className="flex items-center gap-2.5">
+              <FileText className="h-4 w-4 text-slate-200" />
+              <span className="text-sm font-bold tracking-tight text-white">Handoff Script</span>
+            </div>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className={scriptGuideChevronClass}
+                aria-label={isMyCasesGuideCollapsed ? "Expand My Cases handoff script" : "Collapse My Cases handoff script"}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                    !isMyCasesGuideCollapsed ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </div>
+          <p className="px-5 pb-3 text-xs leading-5 text-slate-200/80">
+            Use these bullets right before the final transfer. Read the attorney section first, then close with the
+            caller.
+          </p>
+        </div>
+
+        <CollapsibleContent>
+          <CardContent className="space-y-4 pt-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Receiving firm
+                </div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{handoffLawFirmCueLabel}</div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Caller
+                </div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{handoffCallerFullName}</div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {myCasesHandoffSections.map((section) => (
+                <div
+                  key={section.audience}
+                  className="group/step rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm transition-all duration-200 hover:border-[#4b5666]/35 hover:bg-[linear-gradient(180deg,rgba(96,111,131,0.08)_0%,rgba(255,255,255,0.98)_100%)] hover:shadow-[0_18px_36px_-28px_rgba(30,41,59,0.34)]"
+                >
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={scriptGuideStepBadgeClass}
+                      >
+                        {section.tone === "firm" ? "Attorney" : "Caller"}
+                      </Badge>
+                      <div className="text-sm font-semibold text-foreground">{section.audience}</div>
+                    </div>
+
+                    <ul className="space-y-2 text-sm leading-6 text-foreground">
+                      {section.bullets.map((bullet) => (
+                        <li key={bullet} className="flex gap-2">
+                          <span className="mt-[0.6rem] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-500" />
+                          <span>{bullet}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+
   const brokerAccidentDate = useMemo(() => {
     const rawDate = verifiedFieldValues?.accident_date || lead?.accident_date || "";
     if (!rawDate) return undefined;
@@ -2429,6 +2551,7 @@ const CallResultUpdate = () => {
       {contractCard}
       {docusignGuideCard}
       {documentUploadCard}
+      {myCasesHandoffGuideCard}
     </div>
   );
 
@@ -3025,6 +3148,13 @@ const CallResultUpdate = () => {
                 style={revealTransition(170)}
               >
                 {documentUploadCard}
+              </div>
+              <div
+                ref={revealRef("my-cases-handoff-card")}
+                className={`${revealMotionClass} ${revealClass("my-cases-handoff-card", "translate-y-4")}`}
+                style={revealTransition(210)}
+              >
+                {myCasesHandoffGuideCard}
               </div>
             </section>
 
