@@ -29,7 +29,7 @@ import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard"
 import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale } from "lucide-react";
+import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search } from "lucide-react";
 import { DOCUSIGN_TEMPLATE_IDS } from "@/lib/docusignTemplates";
 import { US_STATES } from "@/lib/us-states";
 import { LEAD_TAG_OPTIONS, getLeadTagToneClass } from "@/lib/leadTags";
@@ -764,6 +764,8 @@ const CallResultUpdate = () => {
   const [dncLookupSummary, setDncLookupSummary] = useState<DncLookupSummary | null>(null);
   const [showTcpaBlockedModal, setShowTcpaBlockedModal] = useState(false);
   const [isDncLookupCollapsed, setIsDncLookupCollapsed] = useState(false);
+  const [phoneCopied, setPhoneCopied] = useState(false);
+  const [dncInputPhone, setDncInputPhone] = useState("");
   const [isDisclaimerCollapsed, setIsDisclaimerCollapsed] = useState(false);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
   const [isAttorneyRecommendationCollapsed, setIsAttorneyRecommendationCollapsed] = useState(false);
@@ -921,20 +923,58 @@ const CallResultUpdate = () => {
 
     if (dncLookupError) {
       return (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>DNC screening could not be completed</AlertTitle>
-          <AlertDescription>{dncLookupError}</AlertDescription>
-        </Alert>
+        <div className="space-y-3">
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>DNC screening could not be completed</AlertTitle>
+            <AlertDescription>{dncLookupError}</AlertDescription>
+          </Alert>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 border-amber-400/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+            onClick={() => {
+              setDncLookupError(null);
+              void runDncLookup(dncInputPhone || undefined);
+            }}
+            disabled={!normalizePhoneForLookup(dncInputPhone) && !screeningPhone}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </div>
       );
     }
 
     if (!dncLookupSummary) {
+      const inputNormalized = normalizePhoneForLookup(dncInputPhone);
       return (
-        <div className="space-y-2 animate-fade-in">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
-          <Skeleton className="h-4 w-3/5" />
+        <div className="space-y-3 animate-fade-in">
+          <p className="text-sm text-muted-foreground">
+            Paste the phone number below and click <strong>Verify</strong> to run DNC / TCPA screening.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              type="tel"
+              placeholder="Paste phone number here"
+              value={dncInputPhone}
+              onChange={(e) => setDncInputPhone(e.target.value)}
+              className="h-9 max-w-[14rem] font-mono text-sm tracking-wide border-amber-300/80 focus-visible:ring-amber-400/60"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-amber-400/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+              onClick={() => void runDncLookup(dncInputPhone)}
+              disabled={!inputNormalized}
+            >
+              <Search className="h-3.5 w-3.5" />
+              Verify
+            </Button>
+          </div>
+          {dncInputPhone && !inputNormalized && (
+            <p className="text-xs text-destructive">Enter a valid 10-digit US phone number.</p>
+          )}
         </div>
       );
     }
@@ -1258,13 +1298,17 @@ const CallResultUpdate = () => {
       setOpenScriptSections((prev) => ({ ...prev, [sectionKey]: true }));
     }
 
-    // Scroll the script panel to the target section
+    // Scroll within the script panel only — never the page itself.
+    // scrollIntoView would scroll ALL ancestor containers (including the window),
+    // which causes a page jump when the script panel isn't in the viewport yet.
     requestAnimationFrame(() => {
       const el = sectionRefs.current[targetIdx];
-      if (el && scriptScrollRef.current) {
-        // Use an instant jump here to avoid passing through intermediate sections
-        // that would otherwise update the linked eyebrow repeatedly.
-        el.scrollIntoView({ behavior: "auto", block: "start" });
+      const container = scriptScrollRef.current;
+      if (el && container) {
+        const containerRect = container.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const nextTop = container.scrollTop + (elRect.top - containerRect.top);
+        container.scrollTop = Math.max(0, nextTop);
       }
     });
 
@@ -2625,50 +2669,37 @@ const CallResultUpdate = () => {
     };
   }, [submissionId, assignedAttorneyId]);
 
-  useEffect(() => {
-    if (!screeningPhone) {
+  const runDncLookup = useCallback(async (manualPhone?: string) => {
+    const phone = manualPhone ? normalizePhoneForLookup(manualPhone) : screeningPhone;
+    if (!phone) {
       setDncLookupSummary(null);
       setDncLookupError(null);
       return;
     }
 
-    let cancelled = false;
+    setDncLookupLoading(true);
+    setDncLookupError(null);
 
-    const runDncLookup = async () => {
-      setDncLookupLoading(true);
-      setDncLookupError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("dnc-lookup", {
+        body: { mobileNumber: phone, leadId: lead?.id ?? null },
+      });
 
-      try {
-        const { data, error } = await supabase.functions.invoke("dnc-lookup", {
-          body: { mobileNumber: screeningPhone, leadId: lead?.id ?? null },
-        });
+      if (error) throw error;
 
-        if (error) throw error;
-        if (cancelled) return;
+      const summary = summarizeDncLookup(data, phone);
+      setDncLookupSummary(summary);
 
-        const summary = summarizeDncLookup(data, screeningPhone);
-        setDncLookupSummary(summary);
-
-        if (summary.isTcpaLitigator) {
-          setShowTcpaBlockedModal(true);
-        }
-      } catch (error) {
-        if (cancelled) return;
-        console.error("DNC lookup failed:", error);
-        setDncLookupSummary(null);
-        setDncLookupError(error instanceof Error ? error.message : "Failed to run DNC screening");
-      } finally {
-        if (!cancelled) {
-          setDncLookupLoading(false);
-        }
+      if (summary.isTcpaLitigator) {
+        setShowTcpaBlockedModal(true);
       }
-    };
-
-    void runDncLookup();
-
-    return () => {
-      cancelled = true;
-    };
+    } catch (error) {
+      console.error("DNC lookup failed:", error);
+      setDncLookupSummary(null);
+      setDncLookupError(error instanceof Error ? error.message : "Failed to run DNC screening");
+    } finally {
+      setDncLookupLoading(false);
+    }
   }, [screeningPhone, lead?.id]);
 
   useEffect(() => {
@@ -3026,9 +3057,30 @@ const CallResultUpdate = () => {
           {/* Lead name + meta */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-1">
-              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                {lead?.customer_full_name || "Unknown Lead"}
-              </h1>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                  {lead?.customer_full_name || "Unknown Lead"}
+                </h1>
+                {(screeningPhone || lead?.phone_number) && (
+                  <div className="flex items-center gap-0 rounded-lg border border-amber-300/80 bg-amber-50/60 shadow-sm">
+                    <div className="px-3 py-1.5 font-mono text-sm font-semibold tracking-wide text-amber-900">
+                      {screeningPhone || lead?.phone_number}
+                    </div>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 border-l border-amber-300/80 px-2.5 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100/80 active:bg-amber-200/60"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(screeningPhone || lead?.phone_number || "");
+                        setPhoneCopied(true);
+                        setTimeout(() => setPhoneCopied(false), 2000);
+                      }}
+                    >
+                      {phoneCopied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      <span className={phoneCopied ? "text-emerald-600" : ""}>{phoneCopied ? "Copied" : "Copy"}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 {submissionId ? <span>Submission ID: <span className="font-mono text-xs">{submissionId}</span></span> : null}
                 {fromCallback ? (
@@ -3084,6 +3136,12 @@ const CallResultUpdate = () => {
               {preCallCards}
             </section>
 
+            <div className={`space-y-8 transition-all duration-500 ${!dncLookupSummary ? "pointer-events-none select-none opacity-30" : "opacity-100"}`} aria-disabled={!dncLookupSummary}>
+              {!dncLookupSummary && (
+                <div className="rounded-lg border border-dashed border-amber-400/60 bg-amber-50/30 px-4 py-3 text-center text-sm font-medium text-amber-800">
+                  Complete the DNC lookup above to unlock the sections below
+                </div>
+              )}
             <section
               ref={(el) => { sectionNavRefs.current["verification"] = el; }}
               className="space-y-4 scroll-mt-6"
@@ -3182,6 +3240,7 @@ const CallResultUpdate = () => {
                 />
               </div>
             </section>
+            </div>
           </div>
         ) : (
           <div className="space-y-8">
