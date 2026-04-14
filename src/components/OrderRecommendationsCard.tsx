@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, Info, InfoIcon, Loader2, MapPin, RefreshCw, Undo2, XCircle } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useAttorneys } from "@/hooks/useAttorneys";
+import { formatStateFilterLabel, getStateMatchToken } from "@/lib/stateFilter";
 
 type LeadOverrides = {
   state?: string | null;
@@ -122,7 +122,7 @@ export const OrderRecommendationsCard = (props: {
       const rawStates = (a as unknown as { licensed_states?: unknown })?.licensed_states;
       const licensedStates = Array.isArray(rawStates)
         ? rawStates
-            .map((s: unknown) => String(s ?? "").trim().toUpperCase())
+            .map((state: unknown) => getStateMatchToken(String(state ?? "")))
             .filter(Boolean)
         : [];
 
@@ -134,6 +134,20 @@ export const OrderRecommendationsCard = (props: {
 
     return map;
   }, [attorneys]);
+
+  const stateFilteredData = useMemo(() => {
+    const leadState = getStateMatchToken(props.leadOverrides?.state);
+    if (!leadState) return data;
+    return data.filter((rec) => {
+      const licensedStates = attorneyMetaById.get(rec.lawyer_id)?.licensedStates ?? [];
+      return licensedStates.length === 0 || licensedStates.includes(leadState);
+    });
+  }, [data, props.leadOverrides?.state, attorneyMetaById]);
+
+  const hiddenStateMismatchCount = useMemo(
+    () => Math.max(0, data.length - stateFilteredData.length),
+    [data.length, stateFilteredData.length],
+  );
 
   useEffect(() => {
     setResolvedLeadId(props.leadId ?? null);
@@ -567,37 +581,30 @@ export const OrderRecommendationsCard = (props: {
   };
 
   const subtitle = useMemo(() => {
-    const state = String(props.leadOverrides?.state ?? "").trim();
-    if (state) return `Matching open orders for ${state.toUpperCase()}`;
+    const state = getStateMatchToken(props.leadOverrides?.state) || formatStateFilterLabel(props.leadOverrides?.state);
+    if (state) return `Matching open orders for ${state}`;
     return "";
   }, [props.leadOverrides?.state]);
   const hideHeader = props.hideHeader === true;
 
   const isHorizontalLayout = props.layout === "horizontal";
-  const topRecommendationOrderId = data[0]?.order_id ?? null;
+  const topRecommendationOrderId = stateFilteredData[0]?.order_id ?? null;
   const minimumHorizontalCards = 4;
-  const horizontalCardShellClass = "flex h-[19.5rem] w-[20rem] shrink-0 flex-col justify-between rounded-[22px] p-4 shadow-sm";
+  const horizontalRailCardClass = "flex h-[17rem] w-[18rem] shrink-0 flex-col";
   const railAnimation = (index: number) =>
     ({
       className: "animate-fade-in-up motion-reduce:animate-none",
       style: { animationDelay: `${Math.min(index, 5) * 70}ms` },
     }) as const;
 
-  const renderStatChip = (label: string, value: string) => (
-    <div className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2.5 py-1 text-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
-      <span className="font-semibold text-muted-foreground">{label}</span>
-      <span className="font-medium text-foreground">{value}</span>
-    </div>
-  );
-
   const renderReasonRow = (reason: string, key: string) => {
     const isMismatchReason = /\bmismatch\b/i.test(reason);
     const Icon = isMismatchReason ? XCircle : CheckCircle2;
 
     return (
-      <div key={key} className="flex gap-2">
-        <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${isMismatchReason ? "text-rose-500" : "text-emerald-600"}`} />
-        <span className="leading-5">{reason}</span>
+      <div key={key} className="flex items-center gap-1.5">
+        <Icon className={`h-3 w-3 shrink-0 ${isMismatchReason ? "text-rose-500" : "text-emerald-600"}`} />
+        <span className="text-xs leading-snug text-muted-foreground">{reason}</span>
       </div>
     );
   };
@@ -605,80 +612,50 @@ export const OrderRecommendationsCard = (props: {
   const renderPlaceholderCard = (slotIndex: number) => (
     <div
       key={`upcoming-${slotIndex}`}
-      className={`${horizontalCardShellClass} self-start overflow-hidden border border-dashed border-border/60 bg-[linear-gradient(180deg,rgba(255,250,246,0.88)_0%,rgba(255,255,255,0.98)_100%)] ${railAnimation(slotIndex).className}`}
+      className={`${horizontalRailCardClass} items-center justify-center rounded-xl border border-dashed border-border/50 bg-muted/20 px-5 py-10 ${railAnimation(slotIndex).className}`}
       style={railAnimation(slotIndex).style}
     >
-      <div className="min-w-0 space-y-2.5">
-        <div className="flex items-start justify-between gap-3">
-          <Skeleton className="h-5 w-16 rounded-full" />
-          <Skeleton className="h-8 w-20 rounded-full" />
-        </div>
-
-        <div className="space-y-1.5 rounded-[18px] border border-border/40 bg-background/75 px-3.5 py-2">
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-24" />
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Skeleton className="h-7 w-24 rounded-full" />
-          <Skeleton className="h-7 w-24 rounded-full" />
-          <Skeleton className="h-7 w-28 rounded-full" />
-        </div>
-
-        <div className="min-h-[5.25rem] rounded-[18px] border border-dashed border-border/60 bg-background/75 px-3 py-1.5">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Incoming Match</div>
-          <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
-            This slot fills automatically when another qualified attorney order becomes available.
-          </div>
-        </div>
-      </div>
-
-      <Skeleton className="h-9 w-full rounded-md" />
+      <div className="h-8 w-8 rounded-full border-2 border-dashed border-border/40" />
+      <span className="mt-3 text-xs text-muted-foreground/70">Awaiting match</span>
     </div>
   );
 
   const renderNoAttorneyCard = () => (
     <div
       key="no-attorney"
-      className={`${horizontalCardShellClass} overflow-hidden border border-dashed border-orange-200/80 bg-[linear-gradient(180deg,rgba(255,248,242,0.96)_0%,rgba(255,255,255,0.98)_100%)] shadow-[0_18px_36px_-28px_rgba(234,117,38,0.28)] ${railAnimation(0).className}`}
+      className={`${horizontalRailCardClass} justify-between rounded-xl border border-dashed border-orange-200/80 bg-[linear-gradient(180deg,rgba(255,248,242,0.96)_0%,rgba(255,255,255,0.98)_100%)] p-4 ${railAnimation(0).className}`}
       style={railAnimation(0).style}
     >
-      <div className="space-y-2.5">
-        <div className="flex items-start justify-between gap-3">
-          <Badge variant="outline" className="rounded-full border-orange-200/80 bg-white/80 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]">
-            No Match
-          </Badge>
-          <div className="rounded-2xl border border-orange-200/70 bg-white/80 px-3 py-2 text-right shadow-sm">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Status</div>
-            <div className="text-sm font-semibold text-foreground">Waiting</div>
-          </div>
+      <div className="space-y-3">
+        <Badge variant="outline" className="rounded-full border-orange-200/80 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-[#a85221]">
+          No Match
+        </Badge>
+
+        <div>
+          <div className="text-sm font-semibold text-foreground">No attorney available</div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {hiddenStateMismatchCount > 0
+              ? `${hiddenStateMismatchCount} ${hiddenStateMismatchCount === 1 ? "order was" : "orders were"} hidden due to state mismatch. Refresh as inventory updates.`
+              : "No open orders match this lead right now. Refresh as inventory updates."}
+          </p>
         </div>
 
-        <div className="rounded-[18px] border border-orange-200/60 bg-white/85 px-3.5 py-3 shadow-sm">
-          <div className="text-base font-semibold text-foreground">No attorney available right now</div>
-          <div className="mt-2 text-sm leading-6 text-muted-foreground">
-            There are no open attorney orders matching this lead at the moment. Refresh again as inventory updates.
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {renderStatChip("Lead State", String(props.leadOverrides?.state ?? "Unknown").trim().toUpperCase() || "Unknown")}
-          {renderStatChip("Matches", "0 open")}
-          {renderStatChip("Next Step", "Refresh")}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="rounded-full border border-border/50 bg-background/80 px-2 py-0.5 font-medium text-muted-foreground">
+            {getStateMatchToken(props.leadOverrides?.state) || formatStateFilterLabel(props.leadOverrides?.state) || "Unknown"}
+          </span>
+          {hiddenStateMismatchCount > 0 ? (
+            <span className="rounded-full border border-orange-200/60 bg-orange-50/80 px-2 py-0.5 font-medium text-[#a85221]">
+              {hiddenStateMismatchCount} hidden
+            </span>
+          ) : null}
         </div>
       </div>
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => void run()}
-        disabled={loading}
-        className="w-full gap-2 rounded-md border-orange-200/80 bg-white/80 text-[#8b451d] hover:bg-orange-50 hover:text-[#6f2f08]"
-      >
-        <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-        Refresh Recommendations
-      </Button>
+      <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-orange-200/60 py-2.5">
+        <div className="h-2 w-2 rounded-full border border-orange-300/80" />
+        <span className="text-xs text-muted-foreground">Awaiting match</span>
+      </div>
     </div>
   );
 
@@ -691,11 +668,10 @@ export const OrderRecommendationsCard = (props: {
     const remaining = Number(rec.remaining) || Math.max(0, Number(rec.quota_total) - Number(rec.quota_filled));
     const isAssigned = props.currentAssignedAttorneyId && props.currentAssignedAttorneyId === rec.lawyer_id;
     const isTopRecommendation = rec.order_id === topRecommendationOrderId;
-    const rank = data.findIndex((item) => item.order_id === rec.order_id) + 1;
+    const rank = stateFilteredData.findIndex((item) => item.order_id === rec.order_id) + 1;
     const rawReasons = Array.isArray(rec.reasons) ? rec.reasons : [];
-    const didLabel = contactNumber || "Not available";
     const licensedStatesLabel = licensedStates.length ? licensedStates.join(", ") : "Not listed";
-    const leadState = String(props.leadOverrides?.state ?? "").trim().toUpperCase();
+    const leadState = getStateMatchToken(props.leadOverrides?.state);
     const stateReason = leadState
       ? `State ${licensedStates.includes(leadState) ? "match" : "mismatch"}: ${leadState}`
       : null;
@@ -713,132 +689,116 @@ export const OrderRecommendationsCard = (props: {
       if (value.startsWith("Expires in ")) return value.replace("Expires in ", "");
       return value;
     })();
-    const selectionToneClass = isAssigned
-      ? "border-[#ea7526] bg-[linear-gradient(180deg,rgba(255,241,230,0.96)_0%,rgba(255,255,255,0.98)_100%)] ring-1 ring-[#ea7526]/80 shadow-[0_20px_40px_-28px_rgba(234,117,38,0.42)]"
+
+    const borderTone = isAssigned
+      ? "border-[#ea7526] ring-1 ring-[#ea7526]/60"
       : isTopRecommendation
-      ? "border-[#f0b184] bg-[linear-gradient(180deg,rgba(255,236,220,0.98)_0%,rgba(255,247,240,0.98)_46%,rgba(255,255,255,0.98)_100%)] shadow-[0_20px_40px_-30px_rgba(234,117,38,0.34)]"
-      : "border-border/60 bg-[linear-gradient(180deg,rgba(255,250,246,0.92)_0%,rgba(255,255,255,0.98)_100%)]";
-    const selectedBadgeClass = "rounded-full bg-[#ea7526] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#ea7526]";
-    const topMatchBadgeClass = "rounded-full bg-[#ea7526] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#ea7526]";
+        ? "border-[#f0b184]"
+        : "border-border/60";
+    const bgTone = isAssigned
+      ? "bg-[linear-gradient(180deg,rgba(255,241,230,0.96)_0%,rgba(255,255,255,0.98)_100%)]"
+      : isTopRecommendation
+        ? "bg-[linear-gradient(180deg,rgba(255,247,240,0.98)_0%,rgba(255,255,255,0.98)_100%)]"
+        : "bg-[linear-gradient(180deg,rgba(255,250,246,0.92)_0%,rgba(255,255,255,0.98)_100%)]";
 
     if (horizontal) {
       return (
         <div
           key={rec.order_id}
-          className={`${horizontalCardShellClass} border transition-all ${selectionToneClass} ${railAnimation(rank - 1).className}`}
+          className={`${horizontalRailCardClass} justify-between rounded-xl border p-4 transition-all ${borderTone} ${bgTone} ${railAnimation(rank - 1).className}`}
           style={railAnimation(rank - 1).style}
         >
-          <div className="min-w-0 space-y-1.5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="rounded-full px-2 py-0 text-[10px] font-semibold">
-                    #{String(rank).padStart(2, "0")}
-                  </Badge>
-                  {isTopRecommendation ? (
-                    <Badge className={topMatchBadgeClass}>
-                      Top Match
-                    </Badge>
-                  ) : null}
-                  {isAssigned ? (
-                    <Badge className={selectedBadgeClass}>
-                      Selected
-                    </Badge>
-                  ) : null}
-                </div>
+          <div className="min-w-0 space-y-3">
+            {/* Badges */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground">#{String(rank).padStart(2, "0")}</span>
+              {isTopRecommendation ? (
+                <Badge className="rounded-full bg-[#ea7526] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#ea7526]">
+                  Top Match
+                </Badge>
+              ) : null}
+              {isAssigned ? (
+                <Badge className="rounded-full bg-[#ea7526] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#ea7526]">
+                  Selected
+                </Badge>
+              ) : null}
+            </div>
 
-                <div className="space-y-1">
-                  <div className="truncate text-base font-semibold leading-tight text-foreground">{attorneyLabel}</div>
-                  <div className="flex items-center gap-1.5 text-sm">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">DID:</span>
-                    <span className="font-mono text-sm text-foreground">{didLabel}</span>
-                  </div>
-                  <div className="pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Licensed States
-                  </div>
-                  <div className="text-sm leading-5 text-foreground">{licensedStatesLabel}</div>
-                </div>
-              </div>
-
-              <div className={`shrink-0 rounded-full border px-2 py-1 text-right shadow-sm ${isAssigned || isTopRecommendation ? "border-[#f0b184] bg-white/90" : "border-border/50 bg-background/85"}`}>
-                <div className="flex items-center gap-1">
-                  <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Score
-                  </span>
-                  <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-foreground">{Math.round(rec.score)}</span>
-                </div>
+            {/* Attorney info */}
+            <div>
+              <div className="truncate text-sm font-semibold text-foreground">{attorneyLabel}</div>
+              <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-mono">{contactNumber || "No DID"}</span>
+                <span className="text-border">|</span>
+                <span>Score {Math.round(rec.score)}</span>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {renderStatChip("Open", String(remaining))}
-              {renderStatChip("Filled", `${Number(rec.quota_filled)}/${Number(rec.quota_total)}`)}
-              {renderStatChip("Expiry", expiryLabel)}
+            {/* States */}
+            <div className="flex items-start gap-1.5">
+              <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/60" />
+              <span className="text-xs leading-snug text-foreground">{licensedStatesLabel}</span>
             </div>
 
-            {(previewReasons.length || criteria) ? (
-              <div className="space-y-2 px-0.5 pt-1">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Match Notes
-                  </div>
-                  {criteria ? (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button className="inline-flex items-center justify-center rounded-full border border-border/60 bg-background p-1 transition-colors hover:bg-muted/50">
-                          <InfoIcon className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-80 text-xs">
-                        <div className="space-y-2">
-                          <div className="font-semibold text-foreground">Attorney Criteria</div>
-                          <div className="whitespace-pre-wrap text-muted-foreground">{criteria}</div>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  ) : null}
-                </div>
+            {/* Meta row */}
+            <div className="flex items-center gap-3 border-t border-border/40 pt-2.5 text-[11px] text-muted-foreground">
+              <span><strong className="text-foreground">{remaining}</strong> open</span>
+              <span><strong className="text-foreground">{Number(rec.quota_filled)}/{Number(rec.quota_total)}</strong> filled</span>
+              <span>{expiryLabel}</span>
+            </div>
 
-                {previewReasons.length ? (
-                  <div className="space-y-1 text-sm text-muted-foreground">
-                    {previewReasons.map((reason, idx) =>
-                      renderReasonRow(reason, `${rec.order_id}-reason-${idx}`)
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-xs leading-5 text-muted-foreground">
-                    Review the attorney criteria details before assigning this lead.
-                  </div>
+            {/* Reasons & criteria */}
+            {previewReasons.length ? (
+              <div className="space-y-1">
+                {previewReasons.map((reason, idx) =>
+                  renderReasonRow(reason, `${rec.order_id}-reason-${idx}`)
                 )}
+              </div>
+            ) : null}
+
+            {criteria ? (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="truncate max-w-[180px]">{criteria.slice(0, 50)}{criteria.length > 50 ? "..." : ""}</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="shrink-0 rounded-full p-0.5 transition-colors hover:bg-muted/50">
+                      <InfoIcon className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 text-xs">
+                    <div className="space-y-1.5">
+                      <div className="font-semibold text-foreground">Attorney Criteria</div>
+                      <div className="whitespace-pre-wrap text-muted-foreground">{criteria}</div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             ) : null}
           </div>
 
-          <div className="mt-1">
-            <Button
-              size="sm"
-              onClick={() => void assign(rec)}
-              disabled={assigningOrderId === rec.order_id}
-              className="w-full gap-2 rounded-md"
-            >
-              {assigningOrderId === rec.order_id ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Assigning...
-                </>
-              ) : isAssigned ? (
-                <>
-                  Selected Attorney
-                  <CheckCircle2 className="h-4 w-4" />
-                </>
-              ) : (
-                <>
-                  Select Attorney
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            onClick={() => void assign(rec)}
+            disabled={assigningOrderId === rec.order_id}
+            className="mt-3 w-full gap-2 rounded-lg"
+          >
+            {assigningOrderId === rec.order_id ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Assigning...
+              </>
+            ) : isAssigned ? (
+              <>
+                Selected Attorney
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              </>
+            ) : (
+              <>
+                Select Attorney
+                <ArrowRight className="h-3.5 w-3.5" />
+              </>
+            )}
+          </Button>
         </div>
       );
     }
@@ -848,42 +808,37 @@ export const OrderRecommendationsCard = (props: {
         key={rec.order_id}
         className={`rounded-xl border p-4 ${railAnimation(rank - 1).className} ${
           isAssigned
-            ? "border-orange-300 bg-orange-50/50"
+            ? "border-[#ea7526] bg-orange-50/50 ring-1 ring-[#ea7526]/40"
             : isTopRecommendation
-            ? "border-emerald-200 bg-emerald-50/40"
-            : "bg-background"
+              ? "border-[#f0b184] bg-orange-50/30"
+              : "border-border/60 bg-background"
         }`}
         style={railAnimation(rank - 1).style}
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
-          <div className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="rounded-full px-2 py-0 text-[10px] font-semibold">
-                #{String(rank).padStart(2, "0")}
-              </Badge>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground">#{String(rank).padStart(2, "0")}</span>
               {isTopRecommendation ? (
-                <Badge className={topMatchBadgeClass}>
+                <Badge className="rounded-full bg-[#ea7526] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#ea7526]">
                   Top Match
                 </Badge>
               ) : null}
-              {isAssigned ? <Badge className={selectedBadgeClass}>Selected</Badge> : null}
+              {isAssigned ? (
+                <Badge className="rounded-full bg-[#ea7526] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#ea7526]">
+                  Selected
+                </Badge>
+              ) : null}
             </div>
 
-            <div className="space-y-1">
-              <div className="truncate text-base font-semibold text-foreground">{attorneyLabel}</div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {contactNumber ? (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="font-semibold text-muted-foreground">DID:</span>
-                    <span className="font-mono text-foreground">{contactNumber}</span>
-                  </span>
-                ) : null}
+            <div>
+              <div className="truncate text-sm font-semibold text-foreground">{attorneyLabel}</div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                {contactNumber ? <span className="font-mono">{contactNumber}</span> : null}
                 {licensedStates.length ? (
                   <span className="inline-flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
-                    <span className="whitespace-normal break-words text-foreground">
-                      {licensedStates.join(", ")}
-                    </span>
+                    {licensedStates.join(", ")}
                   </span>
                 ) : null}
                 <span>{formatExpiry(rec.expires_at)}</span>
@@ -892,7 +847,7 @@ export const OrderRecommendationsCard = (props: {
             </div>
 
             {previewReasons.length ? (
-              <div className="space-y-1 text-sm text-muted-foreground">
+              <div className="space-y-0.5">
                 {previewReasons.map((reason, idx) =>
                   renderReasonRow(reason, `${rec.order_id}-reason-${idx}`)
                 )}
@@ -900,56 +855,48 @@ export const OrderRecommendationsCard = (props: {
             ) : null}
 
             {criteria ? (
-              <div className="rounded-md bg-muted/30 px-3 py-2 text-xs">
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <span className="font-medium text-foreground">Criteria:</span>
-                  <span className="truncate max-w-[320px] text-foreground">
-                    {criteria.slice(0, 70)}
-                    {criteria.length > 70 ? "..." : ""}
-                  </span>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button className="inline-flex items-center justify-center rounded-sm p-0.5 transition-colors hover:bg-muted/50">
-                        <InfoIcon className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-80 text-xs">
-                      <div className="space-y-2">
-                        <div className="font-semibold text-foreground">Attorney Criteria</div>
-                        <div className="whitespace-pre-wrap text-muted-foreground">{criteria}</div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="truncate max-w-[320px]">{criteria.slice(0, 70)}{criteria.length > 70 ? "..." : ""}</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="shrink-0 rounded-full p-0.5 transition-colors hover:bg-muted/50">
+                      <InfoIcon className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 text-xs">
+                    <div className="space-y-1.5">
+                      <div className="font-semibold text-foreground">Attorney Criteria</div>
+                      <div className="whitespace-pre-wrap text-muted-foreground">{criteria}</div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             ) : null}
           </div>
 
-          <div className="flex shrink-0 items-start justify-end gap-2 sm:flex-col sm:items-end">
-            <Button
-              size="sm"
-              onClick={() => void assign(rec)}
-              disabled={assigningOrderId === rec.order_id}
-              className="w-full gap-2 sm:w-auto"
-            >
-              {assigningOrderId === rec.order_id ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Assigning...
-                </>
-              ) : isAssigned ? (
-                <>
-                  Selected
-                  <CheckCircle2 className="h-4 w-4" />
-                </>
-              ) : (
-                <>
-                  Select
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            onClick={() => void assign(rec)}
+            disabled={assigningOrderId === rec.order_id}
+            className="shrink-0 gap-2"
+          >
+            {assigningOrderId === rec.order_id ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Assigning...
+              </>
+            ) : isAssigned ? (
+              <>
+                Selected
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              </>
+            ) : (
+              <>
+                Select
+                <ArrowRight className="h-3.5 w-3.5" />
+              </>
+            )}
+          </Button>
         </div>
       </div>
     );
@@ -1049,7 +996,7 @@ export const OrderRecommendationsCard = (props: {
               )
             ) : null}
 
-            {!loading && hasResolvedRecommendations && data.length === 0 ? (
+            {!loading && hasResolvedRecommendations && stateFilteredData.length === 0 ? (
               isHorizontalLayout ? (
                 <div className="-mx-1 overflow-x-auto pb-2">
                   <div className="flex min-w-max items-start gap-4 px-1">
@@ -1064,18 +1011,18 @@ export const OrderRecommendationsCard = (props: {
               )
             ) : null}
 
-            {!loading && hasResolvedRecommendations && data.length > 0 ? (
+            {!loading && hasResolvedRecommendations && stateFilteredData.length > 0 ? (
               isHorizontalLayout ? (
                 <div className="-mx-1 overflow-x-auto pb-2">
                   <div className="flex min-w-max items-start gap-4 px-1">
-                    {data.map((rec) => renderRecommendationCard(rec, true))}
-                    {Array.from({ length: Math.max(0, minimumHorizontalCards - data.length) }).map((_, idx) =>
+                    {stateFilteredData.map((rec) => renderRecommendationCard(rec, true))}
+                    {Array.from({ length: Math.max(0, minimumHorizontalCards - stateFilteredData.length) }).map((_, idx) =>
                       renderPlaceholderCard(idx)
                     )}
                   </div>
                 </div>
               ) : (
-                data.map((rec) => renderRecommendationCard(rec, false))
+                stateFilteredData.map((rec) => renderRecommendationCard(rec, false))
               )
             ) : null}
           </div>

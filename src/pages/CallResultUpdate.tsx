@@ -126,6 +126,21 @@ const getPreferredFirstName = (value: string | null | undefined) => {
   return normalized.split(/\s+/)[0] || normalized;
 };
 
+const parseLocalDateOnly = (value: string | null | undefined) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return undefined;
+
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
+
 interface ScriptTabDefinition {
   value: string;
   label: string;
@@ -133,6 +148,8 @@ interface ScriptTabDefinition {
   icon: "flow" | "verify" | "docs" | "review";
   sections: ScriptSection[];
 }
+
+type ContractDeliveryMethod = "email" | "sms_only";
 
 const scriptHeaderCheckpoints = [
   { label: "Date", hint: "Verify twice" },
@@ -754,6 +771,8 @@ const CallResultUpdate = () => {
   const [verificationProgress, setVerificationProgress] = useState(0);
   const [currentAssignedAttorneyId, setCurrentAssignedAttorneyId] = useState<string | null>(assignedAttorneyId || null);
   const [contractRecipientEmail, setContractRecipientEmail] = useState("");
+  const [contractRecipientPhone, setContractRecipientPhone] = useState("");
+  const [contractDeliveryMethod, setContractDeliveryMethod] = useState<ContractDeliveryMethod>("email");
   const [sendingContract, setSendingContract] = useState(false);
   const [lastEnvelopeId, setLastEnvelopeId] = useState<string | null>(null);
   const [selectedRetainerState, setSelectedRetainerState] = useState("");
@@ -773,6 +792,7 @@ const CallResultUpdate = () => {
   const [isContractCollapsed, setIsContractCollapsed] = useState(false);
   const [isDocusignGuideCollapsed, setIsDocusignGuideCollapsed] = useState(false);
   const [isDocumentUploadCollapsed, setIsDocumentUploadCollapsed] = useState(false);
+  const [isIntakeFormCollapsed, setIsIntakeFormCollapsed] = useState(false);
   const [isMyCasesGuideCollapsed, setIsMyCasesGuideCollapsed] = useState(false);
   const [openScriptSections, setOpenScriptSections] = useState<Record<string, boolean>>({});
   const [linkedScriptSectionEyebrow, setLinkedScriptSectionEyebrow] = useState<string | null>(null);
@@ -1859,7 +1879,7 @@ const CallResultUpdate = () => {
                   </div>
                 ) : null}
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1">
                     <Label className="text-xs font-medium">Name</Label>
                     <Input
@@ -1872,15 +1892,43 @@ const CallResultUpdate = () => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-medium">Email</Label>
-                    <Input
-                      id="contractRecipientEmail"
-                      type="email"
-                      value={contractRecipientEmail}
-                      onChange={(e) => setContractRecipientEmail(e.target.value)}
-                      placeholder="name@example.com"
-                      className="h-9 text-sm"
-                    />
+                    <Label className="text-xs font-medium">Delivery</Label>
+                    <Select
+                      value={contractDeliveryMethod}
+                      onValueChange={(value) => setContractDeliveryMethod(value as ContractDeliveryMethod)}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="sms_only">Text</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">
+                      {contractDeliveryMethod === "email" ? "Email" : "Phone Number"}
+                    </Label>
+                    {contractDeliveryMethod === "email" ? (
+                      <Input
+                        id="contractRecipientEmail"
+                        type="email"
+                        value={contractRecipientEmail}
+                        onChange={(e) => setContractRecipientEmail(e.target.value)}
+                        placeholder="name@example.com"
+                        className="h-9 text-sm"
+                      />
+                    ) : (
+                      <Input
+                        id="contractRecipientPhone"
+                        type="tel"
+                        value={contractRecipientPhone}
+                        onChange={(e) => setContractRecipientPhone(e.target.value)}
+                        placeholder="(555) 123-4567"
+                        className="h-9 text-sm"
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -1907,7 +1955,9 @@ const CallResultUpdate = () => {
                         Sending...
                       </span>
                     ) : (
-                      "Send Retainer Agreement"
+                      contractDeliveryMethod === "email"
+                        ? "Send Retainer Agreement"
+                        : "Send Retainer by Text"
                     )}
                   </Button>
                 </div>
@@ -2136,6 +2186,46 @@ const CallResultUpdate = () => {
     </Card>
   );
 
+  const intakeFormCard = (
+    <Card className={handoffCardClass}>
+      <Collapsible open={!isIntakeFormCollapsed} onOpenChange={(open) => setIsIntakeFormCollapsed(!open)}>
+        <CardHeader className={uploadHeaderClass}>
+          <div className={handoffHeaderContentClass}>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className={uploadIconClass}>
+                <Scale className="h-4 w-4" />
+              </div>
+              <div className="text-sm font-semibold text-white">Injury Claim Intake</div>
+            </div>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className={uploadChevronClass}
+                aria-label={isIntakeFormCollapsed ? "Expand intake form" : "Collapse intake form"}
+              >
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-300 ease-out ${
+                    !isIntakeFormCollapsed ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </div>
+        </CardHeader>
+        <CollapsibleContent>
+          <div className="h-[600px] overflow-hidden">
+            <iframe
+              src="https://cases.injuryclaimsupport.com/orbit"
+              title="Injury Claim Intake Form"
+              className="h-full w-full border-0"
+              allow="clipboard-write"
+            />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+
   const myCasesHandoffGuideCard = (
     <Card className={scriptGuideCardClass}>
       <Collapsible open={!isMyCasesGuideCollapsed} onOpenChange={(open) => setIsMyCasesGuideCollapsed(!open)}>
@@ -2221,8 +2311,7 @@ const CallResultUpdate = () => {
     const rawDate = verifiedFieldValues?.accident_date || lead?.accident_date || "";
     if (!rawDate) return undefined;
 
-    const parsed = new Date(rawDate);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    return parseLocalDateOnly(rawDate);
   }, [verifiedFieldValues?.accident_date, lead?.accident_date]);
 
   const attorneyRecommendationCard = lead ? (
@@ -2776,6 +2865,18 @@ const CallResultUpdate = () => {
     }
   }, [lead?.customer_full_name]);
 
+  useEffect(() => {
+    if (lead?.email && !contractRecipientEmail) {
+      setContractRecipientEmail(lead.email);
+    }
+  }, [lead?.email, contractRecipientEmail]);
+
+  useEffect(() => {
+    if (lead?.phone_number && !contractRecipientPhone) {
+      setContractRecipientPhone(lead.phone_number);
+    }
+  }, [lead?.phone_number, contractRecipientPhone]);
+
   const refreshRetainerStatusView = useCallback(async () => {
     setRefreshingRetainerStatus(true);
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -2787,6 +2888,10 @@ const CallResultUpdate = () => {
     type SendContractResponse = { envelopeId?: string };
 
     const email = (contractRecipientEmail || "").trim();
+    const normalizedPhone = normalizePhoneForLookup(contractRecipientPhone);
+    const isEmailDelivery = contractDeliveryMethod === "email";
+    const isSmsDelivery = contractDeliveryMethod === "sms_only";
+    const recipientName = (contractRecipientName || "").trim() || email || normalizedPhone;
     if (!submissionId) {
       toast({
         title: "Error",
@@ -2796,10 +2901,19 @@ const CallResultUpdate = () => {
       return;
     }
 
-    if (!email) {
+    if (isEmailDelivery && !email) {
       toast({
         title: "Error",
         description: "Please enter an email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isSmsDelivery && !normalizedPhone) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid 10-digit phone number for text delivery",
         variant: "destructive",
       });
       return;
@@ -2819,8 +2933,11 @@ const CallResultUpdate = () => {
       const response = await supabase.functions.invoke<SendContractResponse>("docusign-send-contract", {
         body: {
           submissionId,
-          recipientEmail: email,
-          recipientName: (contractRecipientName || "").trim() || email,
+          recipientEmail: isEmailDelivery ? email || undefined : undefined,
+          recipientName,
+          recipientPhone: isSmsDelivery ? normalizedPhone || undefined : undefined,
+          recipientPhoneCountryCode: isSmsDelivery ? "1" : undefined,
+          deliveryMethod: contractDeliveryMethod,
           accidentDate: lead?.accident_date || "",
           templateId: selectedTemplateId,
         },
@@ -2834,7 +2951,11 @@ const CallResultUpdate = () => {
 
       toast({
         title: "Contract sent",
-        description: envelopeId ? `Envelope ID: ${envelopeId}` : "Contract email was sent successfully",
+        description: envelopeId
+          ? `Envelope ID: ${envelopeId}`
+          : isEmailDelivery
+            ? "Contract email was sent successfully"
+            : "Contract text message was sent successfully",
       });
     } catch (e: unknown) {
       console.error("Error sending contract:", e);
@@ -3206,6 +3327,13 @@ const CallResultUpdate = () => {
                 style={revealTransition(170)}
               >
                 {documentUploadCard}
+              </div>
+              <div
+                ref={revealRef("intake-form-card")}
+                className={`${revealMotionClass} ${revealClass("intake-form-card", "translate-y-4")}`}
+                style={revealTransition(190)}
+              >
+                {intakeFormCard}
               </div>
               <div
                 ref={revealRef("my-cases-handoff-card")}

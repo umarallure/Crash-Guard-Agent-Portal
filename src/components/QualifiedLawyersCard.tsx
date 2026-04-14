@@ -1,7 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   ArrowRight,
-  Ban,
   CheckCircle2,
   Send,
   XCircle,
@@ -9,8 +8,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useQualifiedLawyers, QualifiedLawyer } from "@/hooks/useQualifiedLawyers";
+import { formatStateFilterLabel, getStateMatchToken } from "@/lib/stateFilter";
 import { toast } from "sonner";
 
 export type SelectedLawyer =
@@ -37,9 +36,8 @@ interface QualifiedLawyersCardProps {
 
 const minimumRailCards = 4;
 const railTrackClass =
-  "flex items-start gap-3.5 overflow-x-auto pb-2 pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent";
-const railCardShellClass =
-  "flex h-[19.5rem] w-[20rem] shrink-0 flex-col justify-between rounded-[22px] border p-4 shadow-sm transition-all";
+  "flex items-start gap-3 overflow-x-auto pb-2 pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent";
+const railCardShellClass = "flex h-[17rem] w-[18rem] shrink-0 flex-col";
 const railAnimation = (index: number) =>
   ({
     className: "animate-fade-in-up motion-reduce:animate-none",
@@ -57,18 +55,41 @@ export const QualifiedLawyersCard = ({
   onLawyerSelect,
   hideHeader = false,
 }: QualifiedLawyersCardProps) => {
-  const { availableLawyers, partiallyMatchedLawyers, loading, error } = useQualifiedLawyers({
+  const { qualifiedLawyers, loading, error } = useQualifiedLawyers({
     state: leadState,
     accidentDate,
     policeReport,
     insuranceDocuments,
     medicalTreatmentProof,
     driverLicense,
+  }, {
+    lawyerType: "broker_lawyer",
   });
 
-  const leadStateLabel = useMemo(() => String(leadState ?? "").trim().toUpperCase(), [leadState]);
+  const leadStateLabel = useMemo(
+    () => getStateMatchToken(leadState) || formatStateFilterLabel(leadState),
+    [leadState],
+  );
 
-  const isNoCoverageSelected = selectedLawyerId === "nocoverage";
+  const brokerEligibleLawyers = useMemo(
+    () => qualifiedLawyers.filter((lawyer) => lawyer.isStateMatch && lawyer.isSolMatch),
+    [qualifiedLawyers],
+  );
+
+  const availableLawyers = useMemo(
+    () => brokerEligibleLawyers.filter((lawyer) => lawyer.allRequirementsMet),
+    [brokerEligibleLawyers],
+  );
+
+  const partiallyMatchedLawyers = useMemo(
+    () => brokerEligibleLawyers.filter((lawyer) => !lawyer.allRequirementsMet),
+    [brokerEligibleLawyers],
+  );
+
+  const excludedLawyers = useMemo(
+    () => qualifiedLawyers.filter((lawyer) => !lawyer.isStateMatch || !lawyer.isSolMatch),
+    [qualifiedLawyers],
+  );
 
   const selectedLawyer =
     selectedLawyerId && selectedLawyerId !== "nocoverage"
@@ -86,61 +107,31 @@ export const QualifiedLawyersCard = ({
     [availableLawyers, partiallyMatchedLawyers],
   );
 
+  useEffect(() => {
+    if (!selectedLawyerId || selectedLawyerId === "nocoverage") return;
+
+    const selectedLawyerStillVisible = brokerRailLawyers.some(({ lawyer }) => lawyer.id === selectedLawyerId);
+    if (!selectedLawyerStillVisible) {
+      onLawyerSelect?.(null);
+    }
+  }, [brokerRailLawyers, onLawyerSelect, selectedLawyerId]);
+
   const handleSelectLawyer = (lawyer: QualifiedLawyer) => {
     onLawyerSelect?.({ ...lawyer, isNoCoverage: false });
     toast.success(`Selected ${lawyer.attorney_name}`);
-  };
-
-  const handleSelectNoCoverage = () => {
-    onLawyerSelect?.({
-      id: "nocoverage",
-      attorney_name: "No Coverage",
-      isNoCoverage: true,
-      allRequirementsMet: false,
-    } as SelectedLawyer);
-    toast.info("Selected: No Coverage");
   };
 
   const handleDeselectLawyer = () => {
     onLawyerSelect?.(null);
   };
 
-  const renderStatChip = (
-    label: string,
-    value: string,
-    tone: "neutral" | "positive" | "negative" = "neutral",
-  ) => {
-    const toneClass =
-      tone === "positive"
-        ? "border-emerald-200/80 bg-emerald-50/85 text-emerald-700"
-        : tone === "negative"
-          ? "border-rose-200/80 bg-rose-50/90 text-rose-700"
-          : "border-slate-200/80 bg-white/88 text-slate-700";
-
-    return (
-      <div
-        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] ${toneClass}`}
-      >
-        <span className="font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</span>
-        <span className="font-medium">{value}</span>
-      </div>
-    );
-  };
-
-  const renderInternalStyleChip = (label: string, value: string) => (
-    <div className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2.5 py-1 text-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
-      <span className="font-semibold text-muted-foreground">{label}</span>
-      <span className="font-medium text-foreground">{value}</span>
-    </div>
-  );
-
   const renderReasonRow = (label: string, positive: boolean, key: string) => {
     const Icon = positive ? CheckCircle2 : XCircle;
 
     return (
-      <div key={key} className="flex items-start gap-2 text-sm text-slate-600">
-        <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${positive ? "text-emerald-600" : "text-rose-500"}`} />
-        <span className="leading-5">{label}</span>
+      <div key={key} className="flex items-center gap-1.5">
+        <Icon className={`h-3 w-3 shrink-0 ${positive ? "text-emerald-600" : "text-rose-500"}`} />
+        <span className="text-xs leading-snug text-slate-600">{label}</span>
       </div>
     );
   };
@@ -213,103 +204,53 @@ export const QualifiedLawyersCard = ({
   const renderPlaceholderCard = (slotIndex: number) => (
     <div
       key={`incoming-lawyer-${slotIndex}`}
-      className={`${railCardShellClass} self-start overflow-hidden border border-dashed border-slate-200/80 bg-[linear-gradient(180deg,rgba(244,246,248,0.96)_0%,rgba(255,255,255,0.98)_100%)] ${railAnimation(slotIndex).className}`}
+      className={`${railCardShellClass} items-center justify-center rounded-xl border border-dashed border-slate-200/80 bg-slate-50/40 px-5 py-10 ${railAnimation(slotIndex).className}`}
       style={railAnimation(slotIndex).style}
     >
-      <div className="min-w-0 space-y-2.5">
-        <div className="flex items-start justify-between gap-3">
-          <Skeleton className="h-5 w-16 rounded-full" />
-          <Skeleton className="h-8 w-20 rounded-full" />
-        </div>
-
-        <div className="space-y-1.5 rounded-[18px] border border-slate-200/60 bg-white/90 px-3.5 py-2">
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-24" />
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Skeleton className="h-7 w-24 rounded-full" />
-          <Skeleton className="h-7 w-24 rounded-full" />
-          <Skeleton className="h-7 w-28 rounded-full" />
-        </div>
-
-        <div className="min-h-[5.25rem] rounded-[18px] border border-dashed border-slate-200/70 bg-white/92 px-3 py-1.5">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Incoming Match
-          </div>
-          <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
-            This slot fills automatically when another qualified broker match becomes available.
-          </div>
-        </div>
-      </div>
-
-      <Skeleton className="h-9 w-full rounded-md" />
+      <div className="h-8 w-8 rounded-full border-2 border-dashed border-slate-200/60" />
+      <span className="mt-3 text-xs text-muted-foreground/70">Awaiting match</span>
     </div>
   );
 
   const renderNoMatchCard = () => {
-    const hasPartialLawyers = partiallyMatchedLawyers.length > 0;
+    const hasExcludedLawyers = excludedLawyers.length > 0;
+
+    const noMatchDescription = hasExcludedLawyers
+      ? "Lawyers were hidden due to state or SOL mismatch."
+      : "No fully matched lawyers for this lead yet.";
 
     return (
       <div
         key="no-lawyer-match"
-        className={`${railCardShellClass} overflow-hidden border border-dashed border-slate-300/80 bg-[linear-gradient(180deg,rgba(243,244,246,0.96)_0%,rgba(255,255,255,0.98)_100%)] shadow-[0_18px_36px_-28px_rgba(31,41,55,0.22)] ${railAnimation(0).className}`}
+        className={`${railCardShellClass} justify-between rounded-xl border border-dashed border-slate-300/80 bg-[linear-gradient(180deg,rgba(243,244,246,0.96)_0%,rgba(255,255,255,0.98)_100%)] p-4 ${railAnimation(0).className}`}
         style={railAnimation(0).style}
       >
-        <div className="space-y-2.5">
-          <div className="flex items-start justify-between gap-3">
-            <Badge className="rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139]">
-              No Exact Match
-            </Badge>
-            <div className="rounded-full border border-slate-200/80 bg-white/90 px-2 py-1 text-right shadow-sm">
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Status
-                </span>
-                <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-foreground">Waiting</span>
-              </div>
-            </div>
+        <div className="space-y-3">
+          <Badge className="rounded-full bg-[#2c3139] px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-[#2c3139]">
+            No Exact Match
+          </Badge>
+
+          <div>
+            <div className="text-sm font-semibold text-foreground">No fully matched lawyers</div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{noMatchDescription}</p>
           </div>
 
-          <div className="rounded-[18px] border border-slate-200/60 bg-white/90 px-3.5 py-3 shadow-sm">
-            <div className="text-base font-semibold text-foreground">
-              No fully matched lawyers are available right now
-            </div>
-            <div className="mt-2 text-sm leading-6 text-muted-foreground">
-              {hasPartialLawyers
-                ? "You can review the broker lawyers in this rail or mark this lead as No Coverage."
-                : "There are no lawyer requirements configured for this lead yet."}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {renderStatChip("Lead State", leadStateLabel || "Unknown")}
-            {renderStatChip("Matches", "0 exact")}
-            {renderStatChip("Partial", String(partiallyMatchedLawyers.length))}
-            {renderStatChip("Next Step", hasPartialLawyers ? "Review" : "Configure")}
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            <span className="rounded-full border border-slate-200/80 bg-white/90 px-2 py-0.5 font-medium text-slate-600">
+              {leadStateLabel || "Unknown"}
+            </span>
+            {hasExcludedLawyers ? (
+              <span className="rounded-full border border-rose-200/80 bg-rose-50/80 px-2 py-0.5 font-medium text-rose-600">
+                {excludedLawyers.length} hidden
+              </span>
+            ) : null}
           </div>
         </div>
 
-        {hasPartialLawyers ? (
-          <Button
-            type="button"
-            variant={isNoCoverageSelected ? "default" : "outline"}
-            className={`w-full rounded-md ${
-              isNoCoverageSelected
-                ? "bg-red-700 text-white hover:bg-red-800"
-                : "border-red-300 bg-white text-red-700 hover:bg-red-50"
-            }`}
-            onClick={handleSelectNoCoverage}
-          >
-            <Ban className="h-4 w-4" />
-            {isNoCoverageSelected ? "No Coverage Selected" : "Select No Coverage"}
-          </Button>
-        ) : (
-          <div className="rounded-md border border-slate-200/90 bg-white/88 px-3 py-2 text-sm text-slate-500">
-            Add or update lawyer requirements to populate this rail.
-          </div>
-        )}
+        <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200/80 py-2.5">
+          <div className="h-2 w-2 rounded-full border border-slate-300/80" />
+          <span className="text-xs text-muted-foreground">Awaiting match</span>
+        </div>
       </div>
     );
   };
@@ -323,92 +264,80 @@ export const QualifiedLawyersCard = ({
       (lawyer.medical_report === "yes" && !lawyer.isMedicalReportMatch) ||
       (lawyer.driver_id === "yes" && !lawyer.isDriverIdMatch);
 
-    const cardToneClass = isSelected
-      ? "border-[#4b5563] bg-[linear-gradient(180deg,rgba(55,65,81,0.12)_0%,rgba(255,255,255,0.98)_100%)] ring-1 ring-[#374151]/70 shadow-[0_20px_40px_-28px_rgba(31,41,55,0.34)]"
+    const borderTone = isSelected
+      ? "border-[#4b5563] ring-1 ring-[#374151]/60"
+      : "border-slate-200/90 hover:border-slate-300";
+    const bgTone = isSelected
+      ? "bg-[linear-gradient(180deg,rgba(55,65,81,0.10)_0%,rgba(255,255,255,0.98)_100%)]"
       : tone === "available"
-        ? "border-slate-200/90 bg-[linear-gradient(180deg,rgba(243,244,246,0.92)_0%,rgba(255,255,255,0.98)_100%)] hover:border-slate-300"
-        : "border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.96)_0%,rgba(255,255,255,0.98)_100%)] hover:border-slate-300";
-
-    const statusBadgeClass =
-      tone === "available"
-        ? "rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139]"
-        : "rounded-full border border-slate-300/90 bg-slate-100 px-2 py-0 text-[10px] font-semibold text-slate-700 hover:bg-slate-100";
-    const selectedBadgeClass = "rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139]";
+        ? "bg-[linear-gradient(180deg,rgba(243,244,246,0.92)_0%,rgba(255,255,255,0.98)_100%)]"
+        : "bg-[linear-gradient(180deg,rgba(248,250,252,0.96)_0%,rgba(255,255,255,0.98)_100%)]";
 
     return (
       <div
         key={lawyer.id}
-        className={`${railCardShellClass} border ${cardToneClass} ${railAnimation(rank - 1).className}`}
+        className={`${railCardShellClass} justify-between rounded-xl border p-4 transition-all ${borderTone} ${bgTone} ${railAnimation(rank - 1).className}`}
         style={railAnimation(rank - 1).style}
       >
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="rounded-full px-2 py-0 text-[10px] font-semibold">
-                  #{String(rank).padStart(2, "0")}
-                </Badge>
-                <Badge className={statusBadgeClass}>{tone === "available" ? "Ready" : "Needs Review"}</Badge>
-                {isSelected ? (
-                  <Badge className={selectedBadgeClass}>
-                    Selected
-                  </Badge>
-                ) : null}
-              </div>
+        <div className="min-w-0 space-y-3">
+          {/* Badges */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-semibold text-muted-foreground">#{String(rank).padStart(2, "0")}</span>
+            <Badge className={
+              tone === "available"
+                ? "rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139]"
+                : "rounded-full border border-slate-300/90 bg-slate-100 px-2 py-0 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+            }>
+              {tone === "available" ? "Ready" : "Needs Review"}
+            </Badge>
+            {isSelected ? (
+              <Badge className="rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139]">
+                Selected
+              </Badge>
+            ) : null}
+          </div>
 
-              <div className="space-y-1">
-                <div className="line-clamp-2 text-base font-semibold leading-tight text-foreground">
-                  {lawyer.attorney_name}
-                </div>
-                <div className="flex items-center gap-1.5 text-sm">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">DID:</span>
-                  <span className="font-mono text-sm text-foreground">{lawyer.did_number || "Not listed"}</span>
-                </div>
-                <div className="pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Licensed States
-                </div>
-                <div className="text-[13px] leading-5 text-foreground">
-                  {lawyer.states?.length ? lawyer.states.join(", ") : "Not listed"}
-                </div>
-              </div>
+          {/* Attorney info */}
+          <div>
+            <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
+              {lawyer.attorney_name}
             </div>
-
-            <div className={`shrink-0 rounded-full border px-2 py-1 text-right shadow-sm ${isSelected ? "border-slate-300/90 bg-white/92" : "border-slate-200/80 bg-white/88"}`}>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  SOL
-                </span>
-                <span className={`text-[9.5px] font-bold uppercase tracking-[0.14em] ${lawyer.isSolMatch ? "text-foreground" : "text-rose-600"}`}>
-                  {getSolChipLabel(lawyer)}
-                </span>
-              </div>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-mono">{lawyer.did_number || "No DID"}</span>
+              <span className="text-slate-300">|</span>
+              <span className={`font-medium ${lawyer.isSolMatch ? "text-foreground" : "text-rose-600"}`}>
+                SOL: {getSolChipLabel(lawyer)}
+              </span>
             </div>
           </div>
 
-          <div className="flex min-h-[2rem] flex-wrap gap-2">
-            {renderInternalStyleChip("Docs", needsDocs ? "Needs Review" : "Ready")}
+          {/* States */}
+          <div className="text-xs leading-snug text-foreground">
+            {lawyer.states?.length ? lawyer.states.join(", ") : "No states listed"}
           </div>
 
-          <div className="space-y-2 px-0.5 pt-1">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Match Notes
-            </div>
-            <div className="space-y-1 text-sm text-muted-foreground">
-              {notes.length ? (
-                notes.map((note, index) =>
-                  renderReasonRow(note.label, note.positive, `${lawyer.id}-${note.label}-${index}`),
-                )
+          {/* Docs + match notes */}
+          <div className="space-y-1.5 border-t border-slate-200/60 pt-2.5">
+            <div className="flex items-center gap-1.5">
+              {needsDocs ? (
+                <XCircle className="h-3 w-3 shrink-0 text-rose-500" />
               ) : (
-                <div className="text-xs leading-5 text-muted-foreground">Ready for submission review.</div>
+                <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-600" />
               )}
+              <span className="text-xs text-slate-600">
+                Docs {needsDocs ? "need review" : "ready"}
+              </span>
             </div>
+            {notes.map((note, index) =>
+              renderReasonRow(note.label, note.positive, `${lawyer.id}-${note.label}-${index}`),
+            )}
           </div>
         </div>
 
         <Button
           type="button"
           onClick={() => (isSelected ? handleDeselectLawyer() : handleSelectLawyer(lawyer))}
-          className={`mt-1 w-full rounded-md ${
+          className={`mt-3 w-full rounded-lg ${
             isSelected
               ? "bg-slate-700 text-white hover:bg-slate-800"
               : "bg-[#2c3139] text-white hover:bg-[#1f242b]"
@@ -417,12 +346,12 @@ export const QualifiedLawyersCard = ({
           {isSelected ? (
             <>
               Selected Lawyer
-              <CheckCircle2 className="h-4 w-4" />
+              <CheckCircle2 className="h-3.5 w-3.5" />
             </>
           ) : (
             <>
               Select Lawyer
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-3.5 w-3.5" />
             </>
           )}
         </Button>
@@ -523,24 +452,6 @@ export const QualifiedLawyersCard = ({
           </div>
         ) : null}
 
-        {isNoCoverageSelected ? (
-          <div className="flex flex-col gap-3 rounded-[20px] border border-red-200 bg-red-50/90 p-3.5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
-              <Ban className="h-4.5 w-4.5" />
-              Selected: No Coverage
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleDeselectLawyer}
-              className="rounded-md border-red-200 bg-white text-red-700 hover:bg-red-50"
-            >
-              Deselect
-            </Button>
-          </div>
-        ) : null}
-
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -561,12 +472,6 @@ export const QualifiedLawyersCard = ({
             availableLawyers.length === 0,
           )}
         </div>
-
-        {availableLawyers.length === 0 && partiallyMatchedLawyers.length === 0 ? (
-          <div className="rounded-[18px] border border-slate-200/90 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-            No lawyer requirements are configured yet for this lead flow.
-          </div>
-        ) : null}
       </div>
     </div>
   );
