@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
+import { addMonths, differenceInCalendarMonths, endOfDay, isAfter, startOfDay } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
+import { getStateMatchToken } from "@/lib/stateFilter";
+
+type LawyerRequirementType = "broker_lawyer" | "internal_lawyer";
 
 interface LawyerRequirement {
   id: string;
   attorney_id: string | null;
   attorney_name: string;
+  lawyer_type: LawyerRequirementType | null;
   doc_requirement: boolean;
   sol: string | null;
   states: string[];
@@ -25,52 +30,48 @@ interface LeadVerificationData {
   driverLicense?: boolean | string;
 }
 
-const calculateMonthsSinceAccident = (accidentDate: Date): number => {
-  const now = new Date();
-  const months = (now.getFullYear() - accidentDate.getFullYear()) * 12 +
-    (now.getMonth() - accidentDate.getMonth());
-  return months;
+interface UseQualifiedLawyersOptions {
+  lawyerType?: LawyerRequirementType;
+}
+
+const getSolLimitMonths = (sol: string | null): number | null => {
+  switch (sol) {
+    case "6month":
+      return 6;
+    case "12month":
+      return 12;
+    case "24month":
+      return 24;
+    default:
+      return null;
+  }
+};
+
+const getSolExpiryDate = (accidentDate: Date | undefined, sol: string | null): Date | null => {
+  if (!accidentDate) return null;
+
+  const solLimitMonths = getSolLimitMonths(sol);
+  if (solLimitMonths === null) return null;
+
+  return endOfDay(addMonths(startOfDay(accidentDate), solLimitMonths));
 };
 
 const isSolValid = (accidentDate: Date | undefined, sol: string | null): boolean => {
-  if (!accidentDate || !sol) return true;
-  
-  const monthsSinceAccident = calculateMonthsSinceAccident(accidentDate);
-  
-  switch (sol) {
-    case "6month":
-      return monthsSinceAccident <= 6;
-    case "12month":
-      return monthsSinceAccident <= 12;
-    case "24month":
-      return monthsSinceAccident <= 24;
-    default:
-      return true;
-  }
+  const expiryDate = getSolExpiryDate(accidentDate, sol);
+  if (!expiryDate) return true;
+
+  return !isAfter(startOfDay(new Date()), expiryDate);
 };
 
 const getSolStatus = (accidentDate: Date | undefined, sol: string | null): { valid: boolean; monthsRemaining?: number } => {
-  if (!accidentDate || !sol) return { valid: true };
-  
-  const monthsSinceAccident = calculateMonthsSinceAccident(accidentDate);
-  let maxMonths = 0;
-  
-  switch (sol) {
-    case "6month":
-      maxMonths = 6;
-      break;
-    case "12month":
-      maxMonths = 12;
-      break;
-    case "24month":
-      maxMonths = 24;
-      break;
-    default:
-      return { valid: true };
-  }
-  
-  const monthsRemaining = maxMonths - monthsSinceAccident;
-  return { valid: monthsRemaining >= 0, monthsRemaining };
+  const expiryDate = getSolExpiryDate(accidentDate, sol);
+  if (!expiryDate) return { valid: true };
+
+  const today = startOfDay(new Date());
+  const valid = !isAfter(today, expiryDate);
+  const monthsRemaining = Math.max(0, differenceInCalendarMonths(expiryDate, today));
+
+  return { valid, monthsRemaining };
 };
 
 export interface QualifiedLawyer extends LawyerRequirement {
@@ -85,10 +86,14 @@ export interface QualifiedLawyer extends LawyerRequirement {
   solStatus?: { valid: boolean; monthsRemaining?: number };
 }
 
-export const useQualifiedLawyers = (verificationData: LeadVerificationData) => {
+export const useQualifiedLawyers = (
+  verificationData: LeadVerificationData,
+  options: UseQualifiedLawyersOptions = {},
+) => {
   const [lawyers, setLawyers] = useState<LawyerRequirement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { lawyerType } = options;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabaseAny = supabase as any;
@@ -96,11 +101,18 @@ export const useQualifiedLawyers = (verificationData: LeadVerificationData) => {
   useEffect(() => {
     const fetchLawyers = async () => {
       setLoading(true);
+      setError(null);
       try {
-        const { data, error: fetchError } = await supabaseAny
+        let query = supabaseAny
           .from("lawyer_requirements")
           .select("*")
           .order("attorney_name");
+
+        if (lawyerType) {
+          query = query.eq("lawyer_type", lawyerType);
+        }
+
+        const { data, error: fetchError } = await query;
 
         if (fetchError) throw fetchError;
         setLawyers(data || []);
@@ -113,10 +125,10 @@ export const useQualifiedLawyers = (verificationData: LeadVerificationData) => {
     };
 
     fetchLawyers();
-  }, []);
+  }, [lawyerType]);
 
   const qualifiedLawyers = useMemo((): QualifiedLawyer[] => {
-    const leadState = verificationData.state?.toUpperCase();
+    const leadState = getStateMatchToken(verificationData.state);
     const accidentDate = verificationData.accidentDate;
     const normalizeBool = (val: boolean | string | undefined): boolean => {
       if (typeof val === "boolean") return val;
@@ -130,7 +142,9 @@ export const useQualifiedLawyers = (verificationData: LeadVerificationData) => {
     const leadDriverId = normalizeBool(verificationData.driverLicense);
 
     return lawyers.map((lawyer) => {
-      const lawyerStates = (lawyer.states || []).map((s: string) => s.toUpperCase());
+      const lawyerStates = (lawyer.states || [])
+        .map((state) => getStateMatchToken(state))
+        .filter(Boolean);
       const isStateMatch = !leadState || lawyerStates.length === 0 || lawyerStates.includes(leadState);
 
       const solStatus = getSolStatus(accidentDate, lawyer.sol);

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeStateToken } from "../_shared/state.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -31,10 +32,6 @@ type Recommendation = {
   score: number;
   reasons: string[];
 };
-
-function normState(v: unknown) {
-  return String(v ?? "").trim().toUpperCase();
-}
 
 function boolOrNull(v: unknown): boolean | null {
   if (v === true) return true;
@@ -202,7 +199,7 @@ serve(async (req) => {
     ...(inputLead as unknown as Record<string, unknown>), // live overrides win
   };
 
-  const leadState = normState(mergedLead.state);
+  const leadState = normalizeStateToken(mergedLead.state);
   console.log("[recommend-open-orders] mergedLead.state normalized:", leadState);
 
   if (!leadState) {
@@ -243,7 +240,7 @@ serve(async (req) => {
     let score = 0;
 
     const targets = Array.isArray(o.target_states) ? o.target_states : [];
-    const targetSet = new Set(targets.map((s: any) => normState(s)).filter(Boolean));
+    const targetSet = new Set(targets.map((state: unknown) => normalizeStateToken(state)).filter(Boolean));
 
     if (leadState) {
       const stateMatch = targetSet.has(leadState);

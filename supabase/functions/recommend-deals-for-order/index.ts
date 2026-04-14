@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeStateToken } from "../_shared/state.ts";
 
 declare const Deno: {
   env: {
@@ -58,10 +59,6 @@ function isQualifiedStage(status: unknown) {
   const normalized = String(status ?? "").trim().toLowerCase();
   if (!normalized) return false;
   return normalized.startsWith("qualified_");
-}
-
-function normState(v: unknown) {
-  return String(v ?? "").trim().toUpperCase();
 }
 
 function boolOrNull(v: unknown): boolean | null {
@@ -178,7 +175,7 @@ serve(async (req: Request) => {
   const order = orderRow as unknown as OrderRow;
 
   const targets = Array.isArray(order.target_states) ? order.target_states : [];
-  const targetSet = new Set(targets.map((s) => normState(s)).filter(Boolean));
+  const targetSet = new Set(targets.map((state) => normalizeStateToken(state)).filter(Boolean));
 
   const { data: deals, error: dealsError } = await supabase
     .from("daily_deal_flow")
@@ -226,7 +223,7 @@ serve(async (req: Request) => {
 
     reasons.push("Qualified stage");
 
-    const state = normState(d.state);
+    const state = normalizeStateToken(d.state);
     if (targetSet.size && state) {
       if (targetSet.has(state)) {
         score += 60;

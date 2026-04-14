@@ -22,7 +22,7 @@ const STATE_BY_NAME = new Map(
   US_STATES.map((state) => [state.name.toLowerCase(), state])
 );
 
-const getStateMatchToken = (value?: string | null): string => {
+export const getStateMatchToken = (value?: string | null): string => {
   const trimmed = (value || "").trim();
   if (!trimmed) return "";
 
