@@ -784,6 +784,7 @@ const CallResultUpdate = () => {
   const [showTcpaBlockedModal, setShowTcpaBlockedModal] = useState(false);
   const [isDncLookupCollapsed, setIsDncLookupCollapsed] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
+  const [handoffDidCopied, setHandoffDidCopied] = useState(false);
   const [dncInputPhone, setDncInputPhone] = useState("");
   const [isDisclaimerCollapsed, setIsDisclaimerCollapsed] = useState(false);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
@@ -1232,11 +1233,15 @@ const CallResultUpdate = () => {
   // intermediate scroll events (especially during smooth scroll) to bounce the verification panel back.
   const suppressLinkedScriptSyncRef = useRef(false);
   const suppressLinkedScriptSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handoffDidCopyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (suppressLinkedScriptSyncTimeoutRef.current) {
         clearTimeout(suppressLinkedScriptSyncTimeoutRef.current);
+      }
+      if (handoffDidCopyResetRef.current) {
+        clearTimeout(handoffDidCopyResetRef.current);
       }
     };
   }, []);
@@ -1653,6 +1658,20 @@ const CallResultUpdate = () => {
     attorneyFulfillmentMode === "broker"
       ? selectedSubmittedLawyer?.attorney_name || ""
       : selectedAssignedAttorneyLabel;
+  const selectedBrokerAttorneyDid =
+    selectedSubmittedLawyer &&
+    !selectedSubmittedLawyer.isNoCoverage &&
+    "did_number" in selectedSubmittedLawyer
+      ? selectedSubmittedLawyer.did_number?.trim() || ""
+      : "";
+  const selectedInternalAttorneyDid = assignedAttorneyProfile?.direct_phone?.trim() || "";
+  const selectedHandoffAttorneyDid =
+    attorneyFulfillmentMode === "broker" ? selectedBrokerAttorneyDid : selectedInternalAttorneyDid;
+  const selectedHandoffAttorneyDidHelperText = selectedHandoffAttorneyDid
+    ? "Keep this number ready before you read the handoff script."
+    : selectedHandoffAttorneyLabel
+      ? "This law firm is selected, but no DID is listed yet."
+      : "Select an attorney above and the transfer DID will populate here.";
   const handoffLawFirmLabel = selectedHandoffAttorneyLabel || "the receiving law firm";
   const handoffLawFirmCueLabel = selectedHandoffAttorneyLabel
     ? selectedHandoffAttorneyLabel
@@ -1660,6 +1679,44 @@ const CallResultUpdate = () => {
   const handoffCallerFullName =
     String(contractRecipientName || lead?.customer_full_name || "").trim() || "the client";
   const handoffCallerFirstName = getPreferredFirstName(contractRecipientName || lead?.customer_full_name);
+
+  useEffect(() => {
+    setHandoffDidCopied(false);
+    if (handoffDidCopyResetRef.current) {
+      clearTimeout(handoffDidCopyResetRef.current);
+      handoffDidCopyResetRef.current = null;
+    }
+  }, [selectedHandoffAttorneyDid]);
+
+  const handleCopyHandoffDid = useCallback(async () => {
+    if (!selectedHandoffAttorneyDid) return;
+
+    try {
+      await navigator.clipboard.writeText(selectedHandoffAttorneyDid);
+      setHandoffDidCopied(true);
+
+      if (handoffDidCopyResetRef.current) {
+        clearTimeout(handoffDidCopyResetRef.current);
+      }
+
+      handoffDidCopyResetRef.current = setTimeout(() => {
+        setHandoffDidCopied(false);
+        handoffDidCopyResetRef.current = null;
+      }, 2000);
+
+      toast({
+        title: "Copied",
+        description: "Attorney DID copied to clipboard",
+      });
+    } catch (error) {
+      toast({
+        title: "Copy failed",
+        description: "Unable to copy attorney DID",
+        variant: "destructive",
+      });
+    }
+  }, [selectedHandoffAttorneyDid, toast]);
+
   const attorneyDisclosureBullets = useMemo(() => {
     const lawFirmReference = selectedHandoffAttorneyLabel || "the selected law firm";
 
@@ -2226,6 +2283,63 @@ const CallResultUpdate = () => {
           </div>
         </CollapsibleContent>
       </Collapsible>
+    </Card>
+  );
+
+  const handoffDidCard = (
+    <Card className="mx-auto w-full max-w-[22rem] overflow-hidden border-[#d7dee6] shadow-sm">
+      <CardContent className="space-y-3.5 px-4 py-4 text-center">
+        <div className="space-y-1">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Transfer DID
+          </div>
+          <div className="truncate text-sm font-semibold text-foreground">
+            {selectedHandoffAttorneyLabel || "Select an attorney above"}
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center gap-3">
+          <div
+            className={`w-full rounded-xl border px-3 py-2.5 ${
+              selectedHandoffAttorneyDid
+                ? "border-[#c9d7e6] bg-[linear-gradient(180deg,rgba(237,243,249,0.82)_0%,rgba(255,255,255,0.98)_100%)]"
+                : "border-dashed border-border/70 bg-background/85"
+            }`}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Ready to dial
+            </div>
+            <div className="mt-1 truncate font-mono text-base font-semibold text-slate-950">
+              {selectedHandoffAttorneyDid || "DID pending"}
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void handleCopyHandoffDid()}
+            disabled={!selectedHandoffAttorneyDid}
+            className="h-10 rounded-lg border-slate-300 bg-white/92 px-3.5 text-slate-700 shadow-sm hover:border-slate-400 hover:bg-white disabled:border-slate-200 disabled:bg-white/70 disabled:text-slate-400"
+          >
+            {handoffDidCopied ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="text-emerald-600">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                <span>Copy</span>
+              </>
+            )}
+          </Button>
+        </div>
+
+        <p className="text-xs leading-5 text-muted-foreground">
+          {selectedHandoffAttorneyDidHelperText}
+        </p>
+      </CardContent>
     </Card>
   );
 
@@ -3337,6 +3451,25 @@ const CallResultUpdate = () => {
                 style={revealTransition(190)}
               >
                 {intakeFormCard}
+              </div>
+              <div
+                ref={revealRef("handoff-did-card")}
+                className={`${revealMotionClass} ${revealClass("handoff-did-card", "translate-y-4")}`}
+                style={revealTransition(200)}
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="h-5 w-px bg-border/60" />
+                    <div className="h-2 w-2 rounded-full border border-border/60 bg-muted/40" />
+                    <div className="h-5 w-px bg-border/60" />
+                  </div>
+                  {handoffDidCard}
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="h-5 w-px bg-border/60" />
+                    <div className="h-2 w-2 rounded-full border border-border/60 bg-muted/40" />
+                    <div className="h-5 w-px bg-border/60" />
+                  </div>
+                </div>
               </div>
               <div
                 ref={revealRef("my-cases-handoff-card")}
