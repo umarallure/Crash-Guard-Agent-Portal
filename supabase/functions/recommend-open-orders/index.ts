@@ -32,6 +32,13 @@ type Recommendation = {
   reasons: string[];
 };
 
+type AttorneyProfileRow = {
+  id: string;
+  user_id: string;
+  account_type: string | null;
+  licensed_states: string[] | null;
+};
+
 const US_STATES = [
   { code: "AL", name: "Alabama" },
   { code: "AK", name: "Alaska" },
@@ -278,13 +285,18 @@ serve(async (req) => {
   };
 
   const leadState = normalizeStateToken(mergedLead.state);
+  const leadSummary = {
+    state: leadState || null,
+    submission_id: (mergedLead.submission_id as string | null) ?? inputLead.submission_id ?? null,
+    lead_id: (mergedLead.id as string | null) ?? inputLead.lead_id ?? null,
+  };
   console.log("[recommend-open-orders] mergedLead.state normalized:", leadState);
 
   if (!leadState) {
     console.log("[recommend-open-orders] Lead state not provided; falling back to expiry/quota scoring");
   }
 
-  // 3) Fetch OPEN orders
+  // 3) Fetch OPEN orders and resolve the linked attorney profiles before applying account-type filters.
   console.log("[recommend-open-orders] Fetch candidate orders...");
   const { data: orders, error: ordersError } = await supabase
     .from("orders")
@@ -302,7 +314,63 @@ serve(async (req) => {
 
   console.log("[recommend-open-orders] Orders fetched:", orders?.length ?? 0);
 
-  // 4) Filter candidates by remaining quota (state match is scored, not required)
+  const orderLawyerIds = Array.from(
+    new Set(
+      (orders ?? [])
+        .map((order: any) => String(order?.lawyer_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const attorneyProfilesByLawyerId = new Map<string, AttorneyProfileRow>();
+
+  if (orderLawyerIds.length) {
+    console.log("[recommend-open-orders] Resolve attorney profiles for order owners:", orderLawyerIds.length);
+
+    const [byUserIdResult, byProfileIdResult] = await Promise.all([
+      supabase
+        .from("attorney_profiles")
+        .select("id,user_id,account_type,licensed_states")
+        .in("user_id", orderLawyerIds),
+      supabase
+        .from("attorney_profiles")
+        .select("id,user_id,account_type,licensed_states")
+        .in("id", orderLawyerIds),
+    ]);
+
+    if (byUserIdResult.error) {
+      console.log("[recommend-open-orders] attorney_profiles by user_id fetch error:", byUserIdResult.error);
+      return new Response(JSON.stringify({ error: byUserIdResult.error.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (byProfileIdResult.error) {
+      console.log("[recommend-open-orders] attorney_profiles by id fetch error:", byProfileIdResult.error);
+      return new Response(JSON.stringify({ error: byProfileIdResult.error.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    for (const profile of [
+      ...((byUserIdResult.data ?? []) as AttorneyProfileRow[]),
+      ...((byProfileIdResult.data ?? []) as AttorneyProfileRow[]),
+    ]) {
+      const profileId = String(profile.id ?? "").trim();
+      const userId = String(profile.user_id ?? "").trim();
+
+      if (profileId) {
+        attorneyProfilesByLawyerId.set(profileId, profile);
+      }
+      if (userId) {
+        attorneyProfilesByLawyerId.set(userId, profile);
+      }
+    }
+  }
+
+  // 4) Filter candidates by remaining quota
   const candidates = (orders ?? []).filter((o: any) => {
     const remaining = Number(o.quota_total) - Number(o.quota_filled);
     return Number.isFinite(remaining) && remaining > 0;
@@ -317,17 +385,54 @@ serve(async (req) => {
     const reasons: string[] = [];
     let score = 0;
 
-    const targets = Array.isArray(o.target_states) ? o.target_states : [];
-    const targetSet = new Set(targets.map((state: unknown) => normalizeStateToken(state)).filter(Boolean));
+    const lawyerId = String(o.lawyer_id ?? "").trim();
+    const attorneyProfile = lawyerId ? attorneyProfilesByLawyerId.get(lawyerId) ?? null : null;
+
+    if (!attorneyProfile) {
+      console.log("[recommend-open-orders] Skip order because no attorney profile was resolved:", {
+        order_id: o.id,
+        lawyer_id: lawyerId,
+      });
+      continue;
+    }
+
+    if (attorneyProfile.account_type !== "internal_lawyer") {
+      console.log("[recommend-open-orders] Skip order because attorney is not internal:", {
+        order_id: o.id,
+        lawyer_id: lawyerId,
+        account_type: attorneyProfile.account_type,
+      });
+      continue;
+    }
+
+    const licensedStateSet = new Set(
+      (Array.isArray(attorneyProfile.licensed_states) ? attorneyProfile.licensed_states : [])
+        .map((state: unknown) => normalizeStateToken(state))
+        .filter(Boolean)
+    );
 
     if (leadState) {
-      const stateMatch = targetSet.has(leadState);
-      if (stateMatch) {
-        reasons.push(`State match: ${leadState}`);
-        score += 60;
-      } else {
-        reasons.push(`State mismatch: ${leadState}`);
+      if (!licensedStateSet.size) {
+        console.log("[recommend-open-orders] Skip order because attorney has no licensed_states configured:", {
+          order_id: o.id,
+          lawyer_id: lawyerId,
+          lead_state: leadState,
+        });
+        continue;
       }
+
+      if (!licensedStateSet.has(leadState)) {
+        console.log("[recommend-open-orders] Skip order due to state mismatch:", {
+          order_id: o.id,
+          lawyer_id: lawyerId,
+          lead_state: leadState,
+          licensed_states: Array.from(licensedStateSet),
+        });
+        continue;
+      }
+
+      reasons.push(`Licensed state match: ${leadState}`);
+      score += 60;
     }
 
     const crit = matchesCriteria(o.criteria, mergedLead);
@@ -380,11 +485,7 @@ serve(async (req) => {
 
   return new Response(
     JSON.stringify({
-      lead: {
-        state: leadState || null,
-        submission_id: (mergedLead.submission_id as string | null) ?? inputLead.submission_id ?? null,
-        lead_id: (mergedLead.id as string | null) ?? inputLead.lead_id ?? null,
-      },
+      lead: leadSummary,
       recommendations: filtered.slice(0, limit),
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -1639,7 +1639,10 @@ const CallResultUpdate = () => {
   );
 
   const assignedAttorneyProfile = currentAssignedAttorneyId
-    ? attorneys.find((attorney) => attorney.user_id === currentAssignedAttorneyId)
+    ? attorneys.find(
+        (attorney) =>
+          attorney.user_id === currentAssignedAttorneyId || attorney.id === currentAssignedAttorneyId
+      )
     : null;
   const selectedAssignedAttorneyLabel =
     assignedAttorneyProfile?.full_name?.trim() ||

@@ -80,7 +80,7 @@ export const OrderRecommendationsCard = (props: {
 }) => {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { attorneys } = useAttorneys();
+  const { attorneys } = useAttorneys({ accountType: "internal_lawyer" });
 
   const [resolvedLeadId, setResolvedLeadId] = useState<string | null>(props.leadId ?? null);
   const [loadingLead, setLoadingLead] = useState(false);
@@ -101,6 +101,9 @@ export const OrderRecommendationsCard = (props: {
     for (const a of attorneys) {
       const label = (a.full_name || "").trim() || (a.primary_email || "").trim() || a.user_id;
       map.set(a.user_id, label);
+      if (a.id) {
+        map.set(a.id, label);
+      }
     }
     return map;
   }, [attorneys]);
@@ -129,25 +132,18 @@ export const OrderRecommendationsCard = (props: {
       const rawCriteria = (a as unknown as { criteria?: unknown })?.criteria;
       const criteria = typeof rawCriteria === "string" ? rawCriteria.trim() || null : null;
 
-      map.set(a.user_id, { contactNumber, licensedStates, criteria });
+      const meta = { contactNumber, licensedStates, criteria };
+      map.set(a.user_id, meta);
+      if (a.id) {
+        map.set(a.id, meta);
+      }
     }
 
     return map;
   }, [attorneys]);
 
-  const stateFilteredData = useMemo(() => {
-    const leadState = getStateMatchToken(props.leadOverrides?.state);
-    if (!leadState) return data;
-    return data.filter((rec) => {
-      const licensedStates = attorneyMetaById.get(rec.lawyer_id)?.licensedStates ?? [];
-      return licensedStates.length === 0 || licensedStates.includes(leadState);
-    });
-  }, [data, props.leadOverrides?.state, attorneyMetaById]);
-
-  const hiddenStateMismatchCount = useMemo(
-    () => Math.max(0, data.length - stateFilteredData.length),
-    [data.length, stateFilteredData.length],
-  );
+  const stateFilteredData = data;
+  const hiddenStateMismatchCount = 0;
 
   useEffect(() => {
     setResolvedLeadId(props.leadId ?? null);
@@ -671,18 +667,7 @@ export const OrderRecommendationsCard = (props: {
     const rank = stateFilteredData.findIndex((item) => item.order_id === rec.order_id) + 1;
     const rawReasons = Array.isArray(rec.reasons) ? rec.reasons : [];
     const licensedStatesLabel = licensedStates.length ? licensedStates.join(", ") : "Not listed";
-    const leadState = getStateMatchToken(props.leadOverrides?.state);
-    const stateReason = leadState
-      ? `State ${licensedStates.includes(leadState) ? "match" : "mismatch"}: ${leadState}`
-      : null;
-    const previewReasons = (
-      stateReason
-        ? [
-            stateReason,
-            ...rawReasons.filter((reason) => !/\bstate\s+(match|mismatch)\b/i.test(reason)),
-          ]
-        : rawReasons
-    ).slice(0, 2);
+    const previewReasons = rawReasons.slice(0, 2);
     const expiryLabel = (() => {
       const value = formatExpiry(rec.expires_at);
       if (value === "Expires today") return "Today";
