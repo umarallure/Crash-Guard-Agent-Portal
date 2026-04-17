@@ -30,7 +30,6 @@ import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search } from "lucide-react";
-import { DOCUSIGN_TEMPLATE_IDS } from "@/lib/docusignTemplates";
 import { US_STATES } from "@/lib/us-states";
 import { LEAD_TAG_OPTIONS, getLeadTagToneClass } from "@/lib/leadTags";
 
@@ -109,6 +108,21 @@ type ContractTemplateOption = {
   id: string;
   name: string;
   states: string[];
+  attorneyIds: string[];
+  requirementIds: string[];
+  priority: number;
+  isDefault: boolean;
+};
+
+type DocusignTemplateMappingRow = {
+  attorney_id: string | null;
+  lawyer_requirement_id: string | null;
+  state_code: string | null;
+  template_id: string;
+  template_name: string | null;
+  is_default: boolean | null;
+  priority: number | null;
+  is_active: boolean | null;
 };
 
 const extractTemplateStates = (templateName: string) => {
@@ -118,6 +132,66 @@ const extractTemplateStates = (templateName: string) => {
     const codePattern = new RegExp(`(^|[^A-Z])${code}([^A-Z]|$)`);
     return codePattern.test(upperTemplateName) || upperTemplateName.includes(name.toUpperCase());
   }).map((state) => state.code);
+};
+
+const normalizeTemplateStateCode = (value: string | null | undefined) => {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (!normalized || normalized === "ALL") return null;
+  return normalized;
+};
+
+const buildContractTemplatesFromMappings = (
+  mappings: DocusignTemplateMappingRow[],
+): ContractTemplateOption[] => {
+  const templatesById = new Map<string, ContractTemplateOption>();
+
+  for (const mapping of mappings) {
+    const templateId = String(mapping.template_id || "").trim();
+    if (!templateId) continue;
+    if (mapping.is_active === false) continue;
+
+    const existing = templatesById.get(templateId);
+    const stateCode = normalizeTemplateStateCode(mapping.state_code);
+    const attorneyId = String(mapping.attorney_id || "").trim();
+    const requirementId = String(mapping.lawyer_requirement_id || "").trim();
+    const templateName = String(mapping.template_name || "").trim() || templateId;
+    const priority = Number.isFinite(Number(mapping.priority)) ? Number(mapping.priority) : 999;
+    const isDefault = mapping.is_default === true;
+
+    if (!existing) {
+      templatesById.set(templateId, {
+        id: templateId,
+        name: templateName,
+        states: stateCode ? [stateCode] : [],
+        attorneyIds: attorneyId ? [attorneyId] : [],
+        requirementIds: requirementId ? [requirementId] : [],
+        priority,
+        isDefault,
+      });
+      continue;
+    }
+
+    if (!existing.name || existing.name === existing.id) {
+      existing.name = templateName;
+    }
+    if (stateCode && !existing.states.includes(stateCode)) {
+      existing.states.push(stateCode);
+    }
+    if (attorneyId && !existing.attorneyIds.includes(attorneyId)) {
+      existing.attorneyIds.push(attorneyId);
+    }
+    if (requirementId && !existing.requirementIds.includes(requirementId)) {
+      existing.requirementIds.push(requirementId);
+    }
+    existing.priority = Math.min(existing.priority, priority);
+    existing.isDefault = existing.isDefault || isDefault;
+  }
+
+  return Array.from(templatesById.values()).sort((a, b) =>
+    Number(b.isDefault) - Number(a.isDefault) ||
+    a.priority - b.priority ||
+    a.name.localeCompare(b.name)
+  );
 };
 
 const getPreferredFirstName = (value: string | null | undefined) => {
@@ -804,6 +878,7 @@ const CallResultUpdate = () => {
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [contractRecipientName, setContractRecipientName] = useState("");
+  const [contractTemplateError, setContractTemplateError] = useState<string | null>(null);
 
   const { toast } = useToast();
   const { attorneys } = useAttorneys();
@@ -1664,7 +1739,39 @@ const CallResultUpdate = () => {
     "did_number" in selectedSubmittedLawyer
       ? selectedSubmittedLawyer.did_number?.trim() || ""
       : "";
+  const selectedBrokerAttorneyLookupIds =
+    selectedSubmittedLawyer &&
+    !selectedSubmittedLawyer.isNoCoverage &&
+    "attorney_id" in selectedSubmittedLawyer
+      ? Array.from(
+          new Set(
+            [
+              String(selectedSubmittedLawyer.attorney_id || "").trim(),
+              String(selectedSubmittedLawyer.id || "").trim(),
+            ].filter(Boolean),
+          ),
+        )
+      : [];
+  const selectedBrokerRequirementLookupIds =
+    selectedSubmittedLawyer && !selectedSubmittedLawyer.isNoCoverage
+      ? Array.from(new Set([String(selectedSubmittedLawyer.id || "").trim()].filter(Boolean)))
+      : [];
   const selectedInternalAttorneyDid = assignedAttorneyProfile?.direct_phone?.trim() || "";
+  const selectedInternalAttorneyLookupIds = Array.from(
+    new Set(
+      [
+        String(currentAssignedAttorneyId || "").trim(),
+        String(assignedAttorneyProfile?.id || "").trim(),
+        String(assignedAttorneyProfile?.user_id || "").trim(),
+      ].filter(Boolean),
+    ),
+  );
+  const selectedHandoffAttorneyLookupIds =
+    attorneyFulfillmentMode === "broker"
+      ? selectedBrokerAttorneyLookupIds
+      : selectedInternalAttorneyLookupIds;
+  const selectedHandoffRequirementLookupIds =
+    attorneyFulfillmentMode === "broker" ? selectedBrokerRequirementLookupIds : [];
   const selectedHandoffAttorneyDid =
     attorneyFulfillmentMode === "broker" ? selectedBrokerAttorneyDid : selectedInternalAttorneyDid;
   const selectedHandoffAttorneyDidHelperText = selectedHandoffAttorneyDid
@@ -1763,11 +1870,37 @@ const CallResultUpdate = () => {
   const selectedRetainerStateName =
     US_STATES.find((state) => state.code === selectedRetainerState)?.name || selectedRetainerState;
   const filteredContractTemplates = useMemo(() => {
-    if (!selectedRetainerState) return contractTemplates;
-    return contractTemplates.filter(
+    const scopedTemplates =
+      selectedHandoffAttorneyLookupIds.length || selectedHandoffRequirementLookupIds.length
+        ? contractTemplates.filter((template) => {
+            const isGlobalTemplate =
+              template.attorneyIds.length === 0 && template.requirementIds.length === 0;
+
+            if (isGlobalTemplate) {
+              return true;
+            }
+
+            const matchesAttorney = template.attorneyIds.some((attorneyId) =>
+              selectedHandoffAttorneyLookupIds.includes(attorneyId),
+            );
+            const matchesRequirement = template.requirementIds.some((requirementId) =>
+              selectedHandoffRequirementLookupIds.includes(requirementId),
+            );
+
+            return matchesAttorney || matchesRequirement;
+          })
+        : contractTemplates;
+
+    if (!selectedRetainerState) return scopedTemplates;
+    return scopedTemplates.filter(
       (template) => template.states.length === 0 || template.states.includes(selectedRetainerState),
     );
-  }, [contractTemplates, selectedRetainerState]);
+  }, [
+    contractTemplates,
+    selectedHandoffAttorneyLookupIds,
+    selectedHandoffRequirementLookupIds,
+    selectedRetainerState,
+  ]);
   const retainerProgress = useMemo(() => {
     const hasBeenSent = Boolean(lastEnvelopeId);
     const hasBeenViewed = false;
@@ -1936,6 +2069,12 @@ const CallResultUpdate = () => {
                 {!loadingTemplates && selectedRetainerState && filteredContractTemplates.length === 0 ? (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     No templates are currently available for {selectedRetainerStateName}. Choose a different state to continue.
+                  </div>
+                ) : null}
+
+                {!loadingTemplates && contractTemplateError ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {contractTemplateError}
                   </div>
                 ) : null}
 
@@ -2939,27 +3078,125 @@ const CallResultUpdate = () => {
     seedVerifiedFields();
   }, [verificationSessionId]);
 
-  // Fetch template names from DocuSign and seed recipient name from lead
+  // Load contract templates from mappings first, then fall back to live DocuSign lookups.
   useEffect(() => {
-    if (!DOCUSIGN_TEMPLATE_IDS.length) return;
-    setLoadingTemplates(true);
-    Promise.all(
-      DOCUSIGN_TEMPLATE_IDS.map(async (id) => {
-        try {
-          const res = await supabase.functions.invoke<{ name?: string }>("docusign-send-contract", {
-            body: { templateId: id, recipientEmail: "noop@example.com", debug: true },
-          });
-          return { id, name: res.data?.name || id, states: extractTemplateStates(res.data?.name || id) };
-        } catch {
-          return { id, name: id, states: extractTemplateStates(id) };
+    let cancelled = false;
+
+    const loadContractTemplates = async () => {
+      setLoadingTemplates(true);
+      setContractTemplateError(null);
+
+      try {
+        const supabaseUntyped = supabase as unknown as {
+          from: (table: string) => {
+            select: (columns: string) => {
+              eq: (column: string, value: boolean) => {
+                order: (
+                  column: string,
+                  opts: { ascending: boolean; nullsFirst?: boolean }
+                ) => {
+                  order: (
+                    column: string,
+                    opts: { ascending: boolean; nullsFirst?: boolean }
+                  ) => Promise<{ data: unknown[] | null; error: { message?: string } | null }>;
+                };
+              };
+            };
+          };
+        };
+
+        const { data: mappingRows, error: mappingError } = await supabaseUntyped
+          .from("docusign_template_mappings")
+          .select(
+            "attorney_id,lawyer_requirement_id,state_code,template_id,template_name,is_default,priority,is_active",
+          )
+          .eq("is_active", true)
+          .order("priority", { ascending: true, nullsFirst: true })
+          .order("template_name", { ascending: true, nullsFirst: true });
+
+        if (!mappingError && Array.isArray(mappingRows) && mappingRows.length > 0) {
+          const mappedTemplates = buildContractTemplatesFromMappings(
+            mappingRows as DocusignTemplateMappingRow[],
+          );
+
+          if (!cancelled) {
+            setContractTemplates(mappedTemplates);
+          }
+          return;
         }
-      })
-    ).then((templates) => {
-      const uniqueTemplates = Array.from(
-        new Map(templates.map((template) => [template.id, template])).values(),
-      );
-      setContractTemplates(uniqueTemplates);
-    }).finally(() => setLoadingTemplates(false));
+
+        const fallbackTemplateIds = mappingError
+          ? []
+          : Array.from(
+              new Set(
+                ((mappingRows ?? []) as DocusignTemplateMappingRow[])
+                  .map((mapping) => String(mapping.template_id || "").trim())
+                  .filter(Boolean),
+              ),
+            );
+
+        if (!fallbackTemplateIds.length) {
+          if (!cancelled) {
+            setContractTemplates([]);
+            setContractTemplateError(
+              mappingError?.message || "No active DocuSign template mappings were found.",
+            );
+          }
+          return;
+        }
+
+        const templates = await Promise.all(
+          fallbackTemplateIds.map(async (id) => {
+            const fallbackName = id;
+            try {
+              const res = await supabase.functions.invoke<{ name?: string }>("docusign-send-contract", {
+                body: { templateId: id, recipientEmail: "noop@example.com", debug: true },
+              });
+
+              if (res.error) {
+                throw res.error;
+              }
+
+              const resolvedName = String(res.data?.name || "").trim() || fallbackName;
+              return {
+                id,
+                name: resolvedName,
+                states: extractTemplateStates(resolvedName),
+                attorneyIds: [],
+                requirementIds: [],
+                priority: 999,
+                isDefault: false,
+              } satisfies ContractTemplateOption;
+            } catch {
+              return {
+                id,
+                name: fallbackName,
+                states: extractTemplateStates(fallbackName),
+                attorneyIds: [],
+                requirementIds: [],
+                priority: 999,
+                isDefault: false,
+              } satisfies ContractTemplateOption;
+            }
+          }),
+        );
+
+        if (!cancelled) {
+          setContractTemplates(templates);
+          setContractTemplateError("Template names could not be resolved from DocuSign. Showing raw template IDs.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingTemplates(false);
+        }
+      }
+    };
+
+    void loadContractTemplates();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -3056,6 +3293,7 @@ const CallResultUpdate = () => {
           recipientPhoneCountryCode: isSmsDelivery ? "1" : undefined,
           deliveryMethod: contractDeliveryMethod,
           accidentDate: lead?.accident_date || "",
+          accidentAddress: verifiedFieldValues?.accident_location || lead?.accident_location || "",
           templateId: selectedTemplateId,
         },
       });

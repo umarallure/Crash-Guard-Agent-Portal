@@ -9,6 +9,7 @@ type SendTemplateRequest = {
   recipientPhoneCountryCode?: string;
   recipientName?: string;
   accidentDate?: string;
+  accidentAddress?: string;
   templateId?: string;
   deliveryMethod?: ContractDeliveryMethod;
   debug?: boolean;
@@ -31,28 +32,23 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const {
-  DOCUSIGN_INTEGRATION_KEY,
-  DOCUSIGN_USER_ID,
-  DOCUSIGN_ACCOUNT_ID,
-  DOCUSIGN_PRIVATE_KEY_PEM,
-  DOCUSIGN_API_BASE_URL,
-  DOCUSIGN_AUTH_BASE_URL: DOCUSIGN_AUTH_BASE_URL_ENV,
-} = Deno.env.toObject();
-
-const docusignApiBaseUrl = (DOCUSIGN_API_BASE_URL || "").toLowerCase();
-const isDocusignDemoEnvironment =
-  docusignApiBaseUrl.includes("demo.") ||
-  docusignApiBaseUrl.includes("-d.") ||
-  docusignApiBaseUrl.includes("account-d.");
-
-const DOCUSIGN_AUTH_BASE_URL =
-  DOCUSIGN_AUTH_BASE_URL_ENV ||
-  (isDocusignDemoEnvironment
-    ? "https://account-d.docusign.com"
-    : "https://account.docusign.com");
+const DOCUSIGN_AUTH_BASE_URL = "https://account.docusign.com";
 const DEFAULT_PHONE_COUNTRY_CODE = "1";
 const TEMPLATE_ROLE_NAME = "Client";
+const DEFAULT_ENVELOPE_SUBJECT = "Retainer agreement ready for signature";
+const DEFAULT_ENVELOPE_BLURB =
+  "Please review and sign your retainer agreement using the secure DocuSign link.";
+
+type DocusignConfig = {
+  integrationKey: string;
+  userId: string;
+  accountId: string;
+  privateKeyPem: string;
+  apiBaseUrl: string;
+  authBaseUrl: string;
+};
+
+type PrivateKeyFormat = "pkcs1" | "pkcs8";
 
 function logInfo(msg: string, data?: unknown) {
   console.log(`[INFO] ${msg}`, data ?? "");
@@ -69,11 +65,200 @@ function base64UrlEncode(input: string | Uint8Array) {
     .replace(/\//g, "_");
 }
 
-function getPrivateKeyBytes(): Uint8Array {
-  const raw = (DOCUSIGN_PRIVATE_KEY_PEM || "").trim();
+function getRequiredEnv(name: string) {
+  const value = Deno.env.get(name)?.trim() || "";
+  if (!value) {
+    throw new Error(`${name} is missing`);
+  }
+
+  return value;
+}
+
+function normalizeApiBaseUrl(rawValue: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawValue);
+  } catch {
+    throw new Error("DOCUSIGN_API_BASE_URL must be a valid https URL");
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error("DOCUSIGN_API_BASE_URL must use https");
+  }
+
+  if (parsed.pathname && parsed.pathname !== "/") {
+    throw new Error("DOCUSIGN_API_BASE_URL must not include a path such as /restapi");
+  }
+
+  if (parsed.search || parsed.hash) {
+    throw new Error("DOCUSIGN_API_BASE_URL must not include query params or fragments");
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === "account.docusign.com" || hostname === "account-d.docusign.com") {
+    throw new Error("DOCUSIGN_API_BASE_URL must point to your eSignature base URI, not the DocuSign OAuth host");
+  }
+
+  return parsed.origin;
+}
+
+function getDocusignConfig(): DocusignConfig {
+  return {
+    integrationKey: getRequiredEnv("DOCUSIGN_INTEGRATION_KEY"),
+    userId: getRequiredEnv("DOCUSIGN_USER_ID"),
+    accountId: getRequiredEnv("DOCUSIGN_ACCOUNT_ID"),
+    privateKeyPem: getRequiredEnv("DOCUSIGN_PRIVATE_KEY_PEM"),
+    apiBaseUrl: normalizeApiBaseUrl(getRequiredEnv("DOCUSIGN_API_BASE_URL")),
+    authBaseUrl: DOCUSIGN_AUTH_BASE_URL,
+  };
+}
+
+function concatBytes(...arrays: Uint8Array[]) {
+  const totalLength = arrays.reduce((sum, array) => sum + array.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const array of arrays) {
+    result.set(array, offset);
+    offset += array.length;
+  }
+
+  return result;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (!Number.isInteger(length) || length < 0) {
+    throw new Error("Invalid DER length");
+  }
+
+  if (length < 0x80) {
+    return Uint8Array.of(length);
+  }
+
+  const bytes: number[] = [];
+  let remaining = length;
+
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
+}
+
+function readDerElement(bytes: Uint8Array, offset: number) {
+  const tag = bytes[offset];
+  if (tag === undefined) {
+    throw new Error("Invalid DER: missing tag");
+  }
+
+  const firstLengthByte = bytes[offset + 1];
+  if (firstLengthByte === undefined) {
+    throw new Error("Invalid DER: missing length");
+  }
+
+  let length = 0;
+  let lengthBytesRead = 1;
+
+  if ((firstLengthByte & 0x80) === 0) {
+    length = firstLengthByte;
+  } else {
+    const lengthByteCount = firstLengthByte & 0x7f;
+    if (lengthByteCount === 0 || lengthByteCount > 4) {
+      throw new Error("Invalid DER: unsupported length encoding");
+    }
+
+    if (offset + 1 + lengthByteCount >= bytes.length) {
+      throw new Error("Invalid DER: truncated length");
+    }
+
+    lengthBytesRead += lengthByteCount;
+    for (let i = 0; i < lengthByteCount; i += 1) {
+      length = (length << 8) | bytes[offset + 2 + i];
+    }
+  }
+
+  const valueOffset = offset + 1 + lengthBytesRead;
+  const nextOffset = valueOffset + length;
+
+  if (nextOffset > bytes.length) {
+    throw new Error("Invalid DER: element overruns buffer");
+  }
+
+  return {
+    tag,
+    length,
+    valueOffset,
+    nextOffset,
+  };
+}
+
+function detectPrivateKeyFormat(derBytes: Uint8Array): PrivateKeyFormat {
+  const outerSequence = readDerElement(derBytes, 0);
+  if (outerSequence.tag !== 0x30) {
+    throw new Error("Invalid private key DER: expected SEQUENCE");
+  }
+
+  const version = readDerElement(derBytes, outerSequence.valueOffset);
+  if (version.tag !== 0x02) {
+    throw new Error("Invalid private key DER: expected version INTEGER");
+  }
+
+  const nextElement = readDerElement(derBytes, version.nextOffset);
+  if (nextElement.tag === 0x30) {
+    return "pkcs8";
+  }
+
+  if (nextElement.tag === 0x02) {
+    return "pkcs1";
+  }
+
+  throw new Error("Unsupported private key DER structure");
+}
+
+function wrapPkcs1PrivateKey(pkcs1Bytes: Uint8Array): Uint8Array {
+  const version = Uint8Array.of(0x02, 0x01, 0x00);
+  const rsaEncryptionAlgorithmIdentifier = Uint8Array.of(
+    0x30,
+    0x0d,
+    0x06,
+    0x09,
+    0x2a,
+    0x86,
+    0x48,
+    0x86,
+    0xf7,
+    0x0d,
+    0x01,
+    0x01,
+    0x01,
+    0x05,
+    0x00,
+  );
+  const privateKeyOctetString = concatBytes(
+    Uint8Array.of(0x04),
+    encodeDerLength(pkcs1Bytes.length),
+    pkcs1Bytes,
+  );
+  const pkcs8Body = concatBytes(version, rsaEncryptionAlgorithmIdentifier, privateKeyOctetString);
+
+  return concatBytes(Uint8Array.of(0x30), encodeDerLength(pkcs8Body.length), pkcs8Body);
+}
+
+function getPrivateKeyBytes(privateKeyPem: string): Uint8Array {
+  const raw = privateKeyPem.trim();
   if (!raw) throw new Error("DOCUSIGN_PRIVATE_KEY_PEM is missing");
 
   const normalized = raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw;
+  if (normalized.includes("-----BEGIN ENCRYPTED PRIVATE KEY-----")) {
+    throw new Error("DOCUSIGN_PRIVATE_KEY_PEM must be an unencrypted private key");
+  }
+
+  const declaredFormat: PrivateKeyFormat | null = normalized.includes("-----BEGIN RSA PRIVATE KEY-----")
+    ? "pkcs1"
+    : normalized.includes("-----BEGIN PRIVATE KEY-----")
+      ? "pkcs8"
+      : null;
   const base64Key = normalized
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
@@ -85,7 +270,10 @@ function getPrivateKeyBytes(): Uint8Array {
     throw new Error("DOCUSIGN_PRIVATE_KEY_PEM had no base64 content after stripping headers");
   }
 
-  return Uint8Array.from(atob(base64Key), (char) => char.charCodeAt(0));
+  const derBytes = Uint8Array.from(atob(base64Key), (char) => char.charCodeAt(0));
+  const detectedFormat = declaredFormat ?? detectPrivateKeyFormat(derBytes);
+
+  return detectedFormat === "pkcs1" ? wrapPkcs1PrivateKey(derBytes) : derBytes;
 }
 
 function asTrimmedString(value: unknown) {
@@ -129,6 +317,13 @@ function maskPhone(value: string) {
   return `${"*".repeat(Math.max(0, value.length - 4))}${value.slice(-4)}`;
 }
 
+function normalizeTabLookupKey(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+}
+
 function buildTemplateRole(args: {
   deliveryMethod: ContractDeliveryMethod;
   recipientEmail: string;
@@ -163,34 +358,62 @@ function buildTemplateRole(args: {
   };
 }
 
-async function createJwt(): Promise<string> {
+async function createJwt(config: DocusignConfig): Promise<string> {
   const header = { alg: "RS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
   const payload = {
-    iss: DOCUSIGN_INTEGRATION_KEY,
-    sub: DOCUSIGN_USER_ID,
-    aud: DOCUSIGN_AUTH_BASE_URL.replace(/^https?:\/\//, ""),
+    iss: config.integrationKey,
+    sub: config.userId,
+    aud: config.authBaseUrl.replace(/^https?:\/\//, ""),
     scope: "signature impersonation",
     iat: now,
     exp: now + 3600,
   };
 
   const data = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(payload))}`;
-  const keyBytes = getPrivateKeyBytes();
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    keyBytes,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+  const keyBytes = getPrivateKeyBytes(config.privateKeyPem);
+  let key: CryptoKey;
+
+  try {
+    key = await crypto.subtle.importKey(
+      "pkcs8",
+      keyBytes,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+  } catch (error) {
+    logError("Failed to import DocuSign private key", error);
+    throw new Error(
+      "DOCUSIGN_PRIVATE_KEY_PEM could not be parsed. Use an unencrypted BEGIN PRIVATE KEY or BEGIN RSA PRIVATE KEY value.",
+    );
+  }
+
   const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(data));
   return `${data}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
-async function getAccessToken() {
-  const assertion = await createJwt();
-  const res = await fetch(`${DOCUSIGN_AUTH_BASE_URL}/oauth/token`, {
+function getPublicErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Internal error";
+  }
+
+  const message = error.message || "Internal error";
+  if (
+    message.startsWith("DOCUSIGN_") ||
+    message.startsWith("Token exchange failed:") ||
+    message.includes("private key") ||
+    message.includes("eSignature base URI")
+  ) {
+    return message;
+  }
+
+  return "Internal error";
+}
+
+async function getAccessToken(config: DocusignConfig) {
+  const assertion = await createJwt(config);
+  const res = await fetch(`${config.authBaseUrl}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -230,6 +453,7 @@ serve(async (req) => {
   const recipientEmail = asTrimmedString(body.recipientEmail);
   const recipientName = asTrimmedString(body.recipientName) || "Signer";
   const accidentDate = asTrimmedString(body.accidentDate);
+  const accidentAddress = asTrimmedString(body.accidentAddress);
   const recipientPhoneCountryCode = normalizeCountryCode(body.recipientPhoneCountryCode);
   const recipientPhone = normalizePhoneNumber(body.recipientPhone, recipientPhoneCountryCode);
   const deliveryMethod = resolveDeliveryMethod(body.deliveryMethod, recipientEmail, recipientPhone);
@@ -256,8 +480,9 @@ serve(async (req) => {
   }
 
   try {
-    const accessToken = await getAccessToken();
-    const baseUrl = `${DOCUSIGN_API_BASE_URL}/restapi/v2.1/accounts/${DOCUSIGN_ACCOUNT_ID}`;
+    const config = getDocusignConfig();
+    const accessToken = await getAccessToken(config);
+    const baseUrl = `${config.apiBaseUrl}/restapi/v2.1/accounts/${config.accountId}`;
     const authHeaders = {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
@@ -285,6 +510,8 @@ serve(async (req) => {
 
     const createPayload = {
       templateId,
+      emailSubject: DEFAULT_ENVELOPE_SUBJECT,
+      emailBlurb: DEFAULT_ENVELOPE_BLURB,
       templateRoles: [
         buildTemplateRole({
           deliveryMethod,
@@ -301,6 +528,7 @@ serve(async (req) => {
       templateId,
       deliveryMethod,
       templateRoleName: TEMPLATE_ROLE_NAME,
+      emailSubject: DEFAULT_ENVELOPE_SUBJECT,
     });
 
     const createRes = await fetch(`${baseUrl}/envelopes`, {
@@ -329,16 +557,30 @@ serve(async (req) => {
     const prefillTextTabs = tabsData?.prefillTabs?.textTabs || [];
 
     if (prefillTextTabs.length > 0) {
-      const valuesToSet: Record<string, string> = {
-        recipientName,
-        accidentDate,
-      };
+      const valuesToSet = new Map<string, string>([
+        ["recipientname", recipientName],
+        ["clientname", recipientName],
+        ["fullname", recipientName],
+        ["accidentdate", accidentDate],
+        ["dateofaccident", accidentDate],
+        ["accidentaddress", accidentAddress],
+        ["accidentlocation", accidentAddress],
+      ]);
 
       const updatedTabs = prefillTextTabs.map((tab: Record<string, unknown>) => {
-        const label = tab.tabLabel as string;
-        if (label in valuesToSet) {
-          return { ...tab, value: valuesToSet[label] };
+        const lookupKeys = [
+          normalizeTabLookupKey(tab.tabLabel),
+          normalizeTabLookupKey(tab.dataLabel),
+          normalizeTabLookupKey(tab.name),
+        ].filter(Boolean);
+
+        for (const key of lookupKeys) {
+          const matchedValue = valuesToSet.get(key);
+          if (matchedValue !== undefined) {
+            return { ...tab, value: matchedValue };
+          }
         }
+
         return tab;
       });
 
@@ -388,6 +630,6 @@ serve(async (req) => {
     });
   } catch (error) {
     logError("Unexpected error", error);
-    return new Response("Internal error", { status: 500, headers: corsHeaders });
+    return new Response(getPublicErrorMessage(error), { status: 500, headers: corsHeaders });
   }
 });
