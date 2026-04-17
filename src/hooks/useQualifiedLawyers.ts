@@ -237,9 +237,12 @@ export const useQualifiedLawyers = (
         const effectiveLawyerType =
           attorneyProfile?.account_type ?? normalizeLawyerType(lawyer.lawyer_type) ?? null;
 
-        const effectiveStates = Array.isArray(attorneyProfile?.licensed_states)
-          ? attorneyProfile.licensed_states.map((state) => String(state))
-          : [];
+        const effectiveStates = attorneyProfile
+          ? (Array.isArray(attorneyProfile.licensed_states)
+              ? attorneyProfile.licensed_states
+              : []
+            ).map((state) => String(state))
+          : (Array.isArray(lawyer.states) ? lawyer.states : []).map((state) => String(state));
 
         const effectiveAttorneyName =
           attorneyProfile?.full_name?.trim() ||

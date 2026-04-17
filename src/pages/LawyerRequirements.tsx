@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAttorneys, type AttorneyProfile } from "@/hooks/useAttorneys";
 import { US_STATES } from "@/lib/us-states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -72,6 +73,9 @@ interface DocusignTemplateMapping {
 }
 
 type LawyerTypeFilter = "all" | "broker_lawyer" | "internal_lawyer";
+type AttorneyAccountType = Exclude<LawyerTypeFilter, "all">;
+
+const UNLINKED_ATTORNEY_VALUE = "__manual_unlinked__";
 
 const FILTER_META: Record<
   LawyerTypeFilter,
@@ -153,6 +157,19 @@ const getAvatarColor = (_name: string, type: string | null) => {
   return "bg-slate-100 text-slate-600";
 };
 
+const isAttorneyAccountType = (value: string | null | undefined): value is AttorneyAccountType =>
+  value === "broker_lawyer" || value === "internal_lawyer";
+
+const formatAttorneyOptionLabel = (attorney: AttorneyProfile) => {
+  const name = String(attorney.full_name || "").trim();
+  const email = String(attorney.primary_email || "").trim();
+  const phone = String(attorney.direct_phone || "").trim();
+  const label = name || email || attorney.user_id;
+  const details = [email && email !== label ? email : "", phone].filter(Boolean);
+
+  return details.length ? `${label} (${details.join(" | ")})` : label;
+};
+
 export default function LawyerRequirements() {
   const [requirements, setRequirements] = useState<LawyerRequirement[]>([]);
   const [templateMappings, setTemplateMappings] = useState<DocusignTemplateMapping[]>([]);
@@ -179,6 +196,15 @@ export default function LawyerRequirements() {
     did_number: "",
     submission_link: "",
   });
+  const linkedAttorneyType = isAttorneyAccountType(formData.lawyer_type) ? formData.lawyer_type : undefined;
+  const { attorneys: attorneyProfiles, loading: attorneyProfilesLoading } = useAttorneys(
+    linkedAttorneyType ? { accountType: linkedAttorneyType } : {},
+  );
+  const selectedAttorneyProfile =
+    attorneyProfiles.find(
+      (attorney) =>
+        attorney.user_id === formData.attorney_id || String(attorney.id || "").trim() === formData.attorney_id,
+    ) || null;
 
   useEffect(() => {
     loadRequirements();
@@ -543,6 +569,14 @@ export default function LawyerRequirements() {
                           >
                             {templateCount} template{templateCount !== 1 ? "s" : ""}
                           </Badge>
+                          {!reqs[0]?.attorney_id ? (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-200 bg-amber-50 text-amber-700"
+                            >
+                              Profile Unlinked
+                            </Badge>
+                          ) : null}
                         </div>
 
                         {/* Quick-glance summary */}
@@ -865,7 +899,11 @@ export default function LawyerRequirements() {
                 <Select
                   value={formData.lawyer_type}
                   onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, lawyer_type: value }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      lawyer_type: value,
+                      attorney_id: prev.lawyer_type === value ? prev.attorney_id : "",
+                    }))
                   }
                 >
                   <SelectTrigger id="lawyer_type">
@@ -880,6 +918,47 @@ export default function LawyerRequirements() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="linked_attorney_profile">Linked Attorney Profile</Label>
+                <Select
+                  value={formData.attorney_id || UNLINKED_ATTORNEY_VALUE}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      attorney_id: value === UNLINKED_ATTORNEY_VALUE ? "" : value,
+                    }))
+                  }
+                  disabled={!linkedAttorneyType}
+                >
+                  <SelectTrigger id="linked_attorney_profile">
+                    <SelectValue
+                      placeholder={
+                        linkedAttorneyType ? "Select an attorney profile" : "Select lawyer type first"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UNLINKED_ATTORNEY_VALUE}>Unlinked / manual entry</SelectItem>
+                    {formData.attorney_id && !selectedAttorneyProfile ? (
+                      <SelectItem value={formData.attorney_id}>
+                        Missing profile ({formData.attorney_id})
+                      </SelectItem>
+                    ) : null}
+                    {attorneyProfiles.map((attorney) => (
+                      <SelectItem key={attorney.user_id} value={attorney.user_id}>
+                        {formatAttorneyOptionLabel(attorney)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {linkedAttorneyType
+                    ? attorneyProfilesLoading
+                      ? "Loading matching attorney profiles..."
+                      : "Link the requirement to an attorney profile so recommendations use profile coverage."
+                    : "Choose broker or internal first to load matching attorney profiles."}
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="did_number">DID Number</Label>
                 <Input
