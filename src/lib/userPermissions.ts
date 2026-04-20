@@ -37,12 +37,23 @@ export const isCenterUser = async (userId: string | undefined): Promise<boolean>
 
   try {
     const { supabase } = await import('@/integrations/supabase/client');
-    const { data, error } = await supabase
+    const supabaseUntyped = supabase as unknown as {
+      from: (table: string) => {
+        select: (columns: string) => {
+          eq: (column: string, value: boolean) => {
+            or: (filter: string) => {
+              maybeSingle: () => Promise<{ data: { id?: string | null } | null; error: unknown }>;
+            };
+          };
+        };
+      };
+    };
+    const { data, error } = await supabaseUntyped
       .from('centers')
       .select('id')
-      .eq('user_id', userId)
       .eq('is_active', true)
-      .single();
+      .or(`user_id.eq.${userId},admin_user_id.eq.${userId}`)
+      .maybeSingle();
 
     return !error && !!data;
   } catch (error) {

@@ -112,6 +112,15 @@ type ContractTemplateOption = {
   requirementIds: string[];
   priority: number;
   isDefault: boolean;
+  mappings: ContractTemplateMappingScope[];
+};
+
+type ContractTemplateMappingScope = {
+  attorneyId: string;
+  requirementId: string;
+  stateCode: string | null;
+  priority: number;
+  isDefault: boolean;
 };
 
 type DocusignTemplateMappingRow = {
@@ -167,6 +176,15 @@ const buildContractTemplatesFromMappings = (
         requirementIds: requirementId ? [requirementId] : [],
         priority,
         isDefault,
+        mappings: [
+          {
+            attorneyId,
+            requirementId,
+            stateCode,
+            priority,
+            isDefault,
+          },
+        ],
       });
       continue;
     }
@@ -182,6 +200,23 @@ const buildContractTemplatesFromMappings = (
     }
     if (requirementId && !existing.requirementIds.includes(requirementId)) {
       existing.requirementIds.push(requirementId);
+    }
+    const hasMatchingScope = existing.mappings.some(
+      (mapping) =>
+        mapping.attorneyId === attorneyId &&
+        mapping.requirementId === requirementId &&
+        mapping.stateCode === stateCode &&
+        mapping.priority === priority &&
+        mapping.isDefault === isDefault,
+    );
+    if (!hasMatchingScope) {
+      existing.mappings.push({
+        attorneyId,
+        requirementId,
+        stateCode,
+        priority,
+        isDefault,
+      });
     }
     existing.priority = Math.min(existing.priority, priority);
     existing.isDefault = existing.isDefault || isDefault;
@@ -214,6 +249,111 @@ const parseLocalDateOnly = (value: string | null | undefined) => {
   const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 };
+
+type ContractTemplateMatchRank = {
+  templateId: string;
+  matchScopeRank: number;
+  matchStateRank: number;
+  defaultRank: number;
+  priority: number;
+  name: string;
+};
+
+const getContractTemplateBestRank = (
+  template: ContractTemplateOption,
+  options: {
+    attorneyIds: string[];
+    requirementIds: string[];
+    stateCode: string;
+  },
+): ContractTemplateMatchRank | null => {
+  const selectedAttorneyIds = options.attorneyIds;
+  const selectedRequirementIds = options.requirementIds;
+  const selectedStateCode = options.stateCode;
+
+  let bestRank: ContractTemplateMatchRank | null = null;
+
+  for (const mapping of template.mappings) {
+    const hasScopedAttorney = Boolean(mapping.attorneyId);
+    const hasScopedRequirement = Boolean(mapping.requirementId);
+    const matchesRequirement =
+      hasScopedRequirement && selectedRequirementIds.includes(mapping.requirementId);
+    const matchesAttorney = hasScopedAttorney && selectedAttorneyIds.includes(mapping.attorneyId);
+    const isGlobalScope = !hasScopedAttorney && !hasScopedRequirement;
+
+    if (selectedAttorneyIds.length || selectedRequirementIds.length) {
+      if (!matchesRequirement && !matchesAttorney && !isGlobalScope) {
+        continue;
+      }
+    }
+
+    const normalizedStateCode = normalizeTemplateStateCode(mapping.stateCode);
+    const isGlobalState = !normalizedStateCode;
+    const matchesState = Boolean(selectedStateCode) && normalizedStateCode === selectedStateCode;
+
+    if (selectedStateCode && !matchesState && !isGlobalState) {
+      continue;
+    }
+
+    const rank: ContractTemplateMatchRank = {
+      templateId: template.id,
+      matchScopeRank: matchesRequirement ? 3 : matchesAttorney ? 2 : 1,
+      matchStateRank: selectedStateCode ? (matchesState ? 2 : 1) : 1,
+      defaultRank: mapping.isDefault ? 1 : 0,
+      priority: mapping.priority,
+      name: template.name,
+    };
+
+    if (!bestRank) {
+      bestRank = rank;
+      continue;
+    }
+
+    if (rank.matchScopeRank !== bestRank.matchScopeRank) {
+      if (rank.matchScopeRank > bestRank.matchScopeRank) {
+        bestRank = rank;
+      }
+      continue;
+    }
+
+    if (rank.matchStateRank !== bestRank.matchStateRank) {
+      if (rank.matchStateRank > bestRank.matchStateRank) {
+        bestRank = rank;
+      }
+      continue;
+    }
+
+    if (rank.defaultRank !== bestRank.defaultRank) {
+      if (rank.defaultRank > bestRank.defaultRank) {
+        bestRank = rank;
+      }
+      continue;
+    }
+
+    if (rank.priority !== bestRank.priority) {
+      if (rank.priority < bestRank.priority) {
+        bestRank = rank;
+      }
+      continue;
+    }
+
+    if (rank.name.localeCompare(bestRank.name) < 0) {
+      bestRank = rank;
+    }
+  }
+
+  return bestRank;
+};
+
+const compareContractTemplateRanks = (
+  left: ContractTemplateMatchRank,
+  right: ContractTemplateMatchRank,
+) =>
+  right.matchScopeRank - left.matchScopeRank ||
+  right.matchStateRank - left.matchStateRank ||
+  right.defaultRank - left.defaultRank ||
+  left.priority - right.priority ||
+  left.name.localeCompare(right.name);
 
 interface ScriptTabDefinition {
   value: string;
@@ -1870,37 +2010,34 @@ const CallResultUpdate = () => {
   const selectedRetainerStateName =
     US_STATES.find((state) => state.code === selectedRetainerState)?.name || selectedRetainerState;
   const filteredContractTemplates = useMemo(() => {
-    const scopedTemplates =
-      selectedHandoffAttorneyLookupIds.length || selectedHandoffRequirementLookupIds.length
-        ? contractTemplates.filter((template) => {
-            const isGlobalTemplate =
-              template.attorneyIds.length === 0 && template.requirementIds.length === 0;
+    const rankedTemplates = contractTemplates
+      .map((template) => ({
+        template,
+        rank: getContractTemplateBestRank(template, {
+          attorneyIds: selectedHandoffAttorneyLookupIds,
+          requirementIds: selectedHandoffRequirementLookupIds,
+          stateCode: selectedRetainerState,
+        }),
+      }))
+      .filter(
+        (
+          item,
+        ): item is {
+          template: ContractTemplateOption;
+          rank: ContractTemplateMatchRank;
+        } => Boolean(item.rank),
+      )
+      .sort((left, right) => compareContractTemplateRanks(left.rank, right.rank))
+      .map((item) => item.template);
 
-            if (isGlobalTemplate) {
-              return true;
-            }
-
-            const matchesAttorney = template.attorneyIds.some((attorneyId) =>
-              selectedHandoffAttorneyLookupIds.includes(attorneyId),
-            );
-            const matchesRequirement = template.requirementIds.some((requirementId) =>
-              selectedHandoffRequirementLookupIds.includes(requirementId),
-            );
-
-            return matchesAttorney || matchesRequirement;
-          })
-        : contractTemplates;
-
-    if (!selectedRetainerState) return scopedTemplates;
-    return scopedTemplates.filter(
-      (template) => template.states.length === 0 || template.states.includes(selectedRetainerState),
-    );
+    return rankedTemplates;
   }, [
     contractTemplates,
     selectedHandoffAttorneyLookupIds,
     selectedHandoffRequirementLookupIds,
     selectedRetainerState,
   ]);
+  const preferredContractTemplateId = filteredContractTemplates[0]?.id ?? "";
   const retainerProgress = useMemo(() => {
     const hasBeenSent = Boolean(lastEnvelopeId);
     const hasBeenViewed = false;
@@ -3166,6 +3303,15 @@ const CallResultUpdate = () => {
                 requirementIds: [],
                 priority: 999,
                 isDefault: false,
+                mappings: [
+                  {
+                    attorneyId: "",
+                    requirementId: "",
+                    stateCode: null,
+                    priority: 999,
+                    isDefault: false,
+                  },
+                ],
               } satisfies ContractTemplateOption;
             } catch {
               return {
@@ -3176,6 +3322,15 @@ const CallResultUpdate = () => {
                 requirementIds: [],
                 priority: 999,
                 isDefault: false,
+                mappings: [
+                  {
+                    attorneyId: "",
+                    requirementId: "",
+                    stateCode: null,
+                    priority: 999,
+                    isDefault: false,
+                  },
+                ],
               } satisfies ContractTemplateOption;
             }
           }),
@@ -3206,12 +3361,8 @@ const CallResultUpdate = () => {
   }, [defaultRetainerState, selectedRetainerState]);
 
   useEffect(() => {
-    setSelectedTemplateId((currentTemplateId) =>
-      filteredContractTemplates.some((template) => template.id === currentTemplateId)
-        ? currentTemplateId
-        : filteredContractTemplates[0]?.id ?? "",
-    );
-  }, [filteredContractTemplates]);
+    setSelectedTemplateId(preferredContractTemplateId);
+  }, [preferredContractTemplateId]);
 
   useEffect(() => {
     if (lead?.customer_full_name && !contractRecipientName) {

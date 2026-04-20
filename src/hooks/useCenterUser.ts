@@ -27,11 +27,23 @@ export const useCenterUser = () => {
       }
 
       try {
-        const { data, error } = await supabase
+        const supabaseUntyped = supabase as unknown as {
+          from: (table: string) => {
+            select: (columns: string) => {
+              eq: (column: string, value: boolean) => {
+                or: (filter: string) => {
+                  maybeSingle: () => Promise<{ data: CenterInfo | null; error: unknown }>;
+                };
+              };
+            };
+          };
+        };
+
+        const { data, error } = await supabaseUntyped
           .from('centers')
           .select('*')
-          .eq('user_id', user.id)
           .eq('is_active', true)
+          .or(`user_id.eq.${user.id},admin_user_id.eq.${user.id}`)
           .maybeSingle();
 
         if (error || !data) {
