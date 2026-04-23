@@ -52,6 +52,27 @@ interface CloserPortalRow {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const NEW_TRANSFER_SOURCE_STATUSES = ["new_transfer", "transfer_api"];
+const ALL_FILTER_VALUE = "__ALL__";
+const CLOSER_PORTAL_TIME_ZONE = "Europe/Budapest";
+const CLOSER_PORTAL_DAY_ROLLOVER_HOUR = 3;
+
+const closerPortalDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: CLOSER_PORTAL_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
+type CloserPortalTimeFilter = "today" | "yesterday" | "all";
+
+const DEFAULT_CLOSER_PORTAL_TIME_FILTER: CloserPortalTimeFilter = "today";
+const CLOSER_PORTAL_TIME_FILTER_LABELS: Record<CloserPortalTimeFilter, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  all: "All Time",
+};
 
 const CLOSER_STAGE_KEYS = {
   newTransfer: "new_transfer",
@@ -81,6 +102,68 @@ const getColumnInfo = (label: string): ColumnInfo => {
   return { description: `Leads currently in the "${label}" stage of the closer pipeline.` };
 };
 
+const shiftDateKey = (dateKey: string, deltaDays: number) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);
+};
+
+const getCloserPortalDateParts = (input: Date | number | string) => {
+  const date = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const parts = closerPortalDateTimeFormatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  const hour = parts.find((part) => part.type === "hour")?.value;
+
+  if (!year || !month || !day || !hour) {
+    return null;
+  }
+
+  return {
+    dateKey: `${year}-${month}-${day}`,
+    hour: Number(hour),
+  };
+};
+
+const getCloserPortalOperationalDateKey = (input: Date | number | string) => {
+  const parts = getCloserPortalDateParts(input);
+  if (!parts) {
+    return null;
+  }
+
+  return parts.hour < CLOSER_PORTAL_DAY_ROLLOVER_HOUR
+    ? shiftDateKey(parts.dateKey, -1)
+    : parts.dateKey;
+};
+
+const matchesTimeFilter = (
+  record: CloserPortalRow,
+  timeFilter: CloserPortalTimeFilter,
+  todayDateKey: string,
+  yesterdayDateKey: string
+) => {
+  if (timeFilter === "all") {
+    return true;
+  }
+
+  const recordDateKey = getCloserPortalOperationalDateKey(record.created_at ?? "");
+  if (!recordDateKey) {
+    return false;
+  }
+
+  if (timeFilter === "yesterday") {
+    return recordDateKey === yesterdayDateKey;
+  }
+
+  return recordDateKey === todayDateKey;
+};
+
 const CloserPortalPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -95,9 +178,9 @@ const CloserPortalPage = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const LAST_24H_MS = 24 * 60 * 60 * 1000;
-  const [leadVendorFilter, setLeadVendorFilter] = useState("__ALL__");
-  const [statusFilter, setStatusFilter] = useState("__ALL__");
+  const [timeFilter, setTimeFilter] = useState<CloserPortalTimeFilter>(DEFAULT_CLOSER_PORTAL_TIME_FILTER);
+  const [leadVendorFilter, setLeadVendorFilter] = useState(ALL_FILTER_VALUE);
+  const [statusFilter, setStatusFilter] = useState(ALL_FILTER_VALUE);
   const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
@@ -105,6 +188,14 @@ const CloserPortalPage = () => {
   const [timeTick, setTimeTick] = useState(() => Date.now());
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
   const { unblockedStateCodes } = useSalesMapCoverageStates();
+  const currentOperationalDateKey = useMemo(
+    () => getCloserPortalOperationalDateKey(timeTick) ?? "",
+    [timeTick]
+  );
+  const previousOperationalDateKey = useMemo(
+    () => (currentOperationalDateKey ? shiftDateKey(currentOperationalDateKey, -1) : ""),
+    [currentOperationalDateKey]
+  );
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -252,13 +343,16 @@ const CloserPortalPage = () => {
   const applyFilters = (records: CloserPortalRow[]) => {
     let filtered = records;
 
-    const cutoff = Date.now() - LAST_24H_MS;
-    filtered = filtered.filter((record) => {
-      const ts = record.created_at ? new Date(record.created_at).getTime() : NaN;
-      return !Number.isNaN(ts) && ts >= cutoff;
-    });
+    filtered = filtered.filter((record) =>
+      matchesTimeFilter(
+        record,
+        timeFilter,
+        currentOperationalDateKey,
+        previousOperationalDateKey
+      )
+    );
 
-    if (leadVendorFilter !== "__ALL__") {
+    if (leadVendorFilter !== ALL_FILTER_VALUE) {
       filtered = filtered.filter((record) => (record.lead_vendor || "") === leadVendorFilter);
     }
 
@@ -266,7 +360,7 @@ const CloserPortalPage = () => {
       filtered = filtered.filter((record) => (record.tag || "") === tagFilter);
     }
 
-    if (statusFilter !== "__ALL__") {
+    if (statusFilter !== ALL_FILTER_VALUE) {
       filtered = filtered.filter((record) => deriveCloserStageKey(record) === statusFilter);
     }
 
@@ -448,12 +542,12 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, leadVendorFilter, statusFilter, tagFilter, selectedStates, searchTerm, timeTick, activeSessionIds]);
+  }, [activeSessionIds, data, leadVendorFilter, searchTerm, selectedStates, statusFilter, tagFilter, timeFilter, timeTick]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
     void fetchData();
-  }, [closerStagesLoading]);
+  }, [closerStagesLoading, currentOperationalDateKey]);
 
   const leadsByStage = useMemo(() => {
     const grouped = new Map<string, CloserPortalRow[]>();
@@ -482,6 +576,21 @@ const CloserPortalPage = () => {
 
   const handleRefresh = () => {
     void fetchData(true);
+  };
+
+  const hasActiveFilters =
+    timeFilter !== DEFAULT_CLOSER_PORTAL_TIME_FILTER ||
+    statusFilter !== ALL_FILTER_VALUE ||
+    selectedStates.length > 0 ||
+    leadVendorFilter !== ALL_FILTER_VALUE ||
+    tagFilter !== ALL_LEAD_TAGS_VALUE;
+
+  const resetFilters = () => {
+    setTimeFilter(DEFAULT_CLOSER_PORTAL_TIME_FILTER);
+    setStatusFilter(ALL_FILTER_VALUE);
+    setSelectedStates([]);
+    setLeadVendorFilter(ALL_FILTER_VALUE);
+    setTagFilter(ALL_LEAD_TAGS_VALUE);
   };
 
   const handleView = (row: CloserPortalRow) => {
@@ -749,13 +858,16 @@ const CloserPortalPage = () => {
               >
                 <SlidersHorizontal className="mr-2 h-4 w-4" />
                 Filters
-                {(statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+                {hasActiveFilters && (
                   <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
                 )}
               </Button>
 
               <div className="flex-1" />
 
+              <Badge variant="outline" className="px-3 py-1 shrink-0">
+                {CLOSER_PORTAL_TIME_FILTER_LABELS[timeFilter]}
+              </Badge>
               <Badge variant="secondary" className="px-3 py-1 tabular-nums shrink-0">
                 {filteredData.length} records
               </Badge>
@@ -773,15 +885,10 @@ const CloserPortalPage = () => {
                     <div className="flex items-center gap-2">
                       <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm font-semibold text-foreground">Filters</span>
-                      {(statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
+                      {hasActiveFilters && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setStatusFilter("__ALL__");
-                            setSelectedStates([]);
-                            setLeadVendorFilter("__ALL__");
-                            setTagFilter(ALL_LEAD_TAGS_VALUE);
-                          }}
+                          onClick={resetFilters}
                           className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
                         >
                           <X className="h-3 w-3" />
@@ -798,7 +905,26 @@ const CloserPortalPage = () => {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Time Period</label>
+                      <Select
+                        value={timeFilter}
+                        onValueChange={(value) => setTimeFilter(value as CloserPortalTimeFilter)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Today" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="today">Today</SelectItem>
+                            <SelectItem value="yesterday">Yesterday</SelectItem>
+                            <SelectItem value="all">All Time</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Vendor</label>
                       <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
@@ -807,7 +933,7 @@ const CloserPortalPage = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            <SelectItem value="__ALL__">All Vendors</SelectItem>
+                            <SelectItem value={ALL_FILTER_VALUE}>All Vendors</SelectItem>
                             {leadVendorOptions.map((vendor) => (
                               <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
                             ))}
@@ -841,7 +967,7 @@ const CloserPortalPage = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            <SelectItem value="__ALL__">All Stages</SelectItem>
+                            <SelectItem value={ALL_FILTER_VALUE}>All Stages</SelectItem>
                             {kanbanStages.map((stage) => (
                               <SelectItem key={stage.key} value={stage.key}>{stage.label}</SelectItem>
                             ))}
@@ -864,6 +990,10 @@ const CloserPortalPage = () => {
                       />
                     </div>
                   </div>
+
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Time Period follows the closer portal day, which resets daily at 3 AM Europe/Budapest time.
+                  </p>
                 </CardContent>
               </Card>
             )}
