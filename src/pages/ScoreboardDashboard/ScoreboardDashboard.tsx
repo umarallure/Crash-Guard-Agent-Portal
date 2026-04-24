@@ -948,7 +948,7 @@ const ScoreboardDashboard = () => {
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">
                       {activityType === 'inbound' ? 'No Coverage (Inbound)' : 'No Coverage (Followup)'}
                     </p>
-                    <p className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mt-2">{metrics.noCoverage}</p>
+                    <p className="text-3xl sm:text-4xl font-bold text-foreground dark:text-gray-100 mt-2">{metrics.noCoverage}</p>
                     <p className={`text-xs mt-1 font-medium ${
                       metrics.noCoverageChange < 0 ? 'text-green-600 dark:text-green-400' :
                       metrics.noCoverageChange > 0 ? 'text-red-600 dark:text-red-400' :

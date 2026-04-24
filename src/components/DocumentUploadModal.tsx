@@ -66,7 +66,7 @@ export function DocumentUploadModal({
               Submission ID
             </label>
             <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-              <code className="text-sm font-mono text-gray-900">{submissionId}</code>
+              <code className="text-sm font-mono text-foreground">{submissionId}</code>
             </div>
           </div>
 

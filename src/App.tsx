@@ -25,6 +25,7 @@ import LeadDetailsPage from "./pages/LeadDetails/LeadDetailsPage";
 import TransferPortalPage from "./pages/TransferPortalPage";
 import SubmissionPortalPage from "./pages/SubmissionPortalPage";
 import CloserPortalPage from "./pages/CloserPortalPage";
+import TaskManagementPage from "./pages/TaskManagement";
 import RetainersKanbanPage from "./pages/RetainersKanbanPage";
 import BulkLookupPage from "./pages/BulkLookupPage";
 import SalesMapPage from "./pages/SalesMapPage";
@@ -41,6 +42,7 @@ import RetentionTasksView from "./pages/RetentionTasksView";
 import AdminAnalytics from "./pages/AdminAnalytics";
 import { AgentsPage, VendorsPage, DailyPage, CarriersPage } from "./pages/AdminAnalytics/pages";
 import ScoreboardDashboard from "./pages/ScoreboardDashboard";
+import CloserScoreboardPage from "./pages/CloserScoreboard";
 import NotFound from "./pages/NotFound";
 import UserManagement from "./pages/UserManagement";
 import LawyerRequirements from "./pages/LawyerRequirements";
@@ -274,6 +276,16 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
+            <Route
+              path="/task-management"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Task Management">
+                    <TaskManagementPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
             <Route path="/reports" element={<NotFound />} />
             <Route 
               path="/bulk-lookup" 
@@ -385,15 +397,25 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/scoreboard-dashboard" 
+            <Route
+              path="/scoreboard-dashboard"
               element={
                 <ProtectedRoute>
                   <AppShell title="Score Board">
                     <ScoreboardDashboard />
                   </AppShell>
                 </ProtectedRoute>
-              } 
+              }
+            />
+            <Route
+              path="/closer-scoreboard"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Closer Scoreboard">
+                    <CloserScoreboardPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
             />
             <Route 
               path="/aloware-dialer" 
