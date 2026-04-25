@@ -32,6 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search } from "lucide-react";
 import { US_STATES } from "@/lib/us-states";
 import { LEAD_TAG_OPTIONS, getLeadTagToneClass } from "@/lib/leadTags";
+import { getStateMatchToken } from "@/lib/stateFilter";
 
 interface Lead {
   id: string;
@@ -248,6 +249,11 @@ const parseLocalDateOnly = (value: string | null | undefined) => {
 
   const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
+
+const getKnownStateToken = (value: string | null | undefined) => {
+  const token = getStateMatchToken(value);
+  return US_STATES.some((state) => state.code === token) ? token : "";
 };
 
 type ContractTemplateMatchRank = {
@@ -1879,39 +1885,49 @@ const CallResultUpdate = () => {
     "did_number" in selectedSubmittedLawyer
       ? selectedSubmittedLawyer.did_number?.trim() || ""
       : "";
-  const selectedBrokerAttorneyLookupIds =
-    selectedSubmittedLawyer &&
-    !selectedSubmittedLawyer.isNoCoverage &&
-    "attorney_id" in selectedSubmittedLawyer
-      ? Array.from(
-          new Set(
-            [
-              String(selectedSubmittedLawyer.attorney_id || "").trim(),
-              String(selectedSubmittedLawyer.id || "").trim(),
-            ].filter(Boolean),
-          ),
-        )
-      : [];
-  const selectedBrokerRequirementLookupIds =
-    selectedSubmittedLawyer && !selectedSubmittedLawyer.isNoCoverage
-      ? Array.from(new Set([String(selectedSubmittedLawyer.id || "").trim()].filter(Boolean)))
-      : [];
-  const selectedInternalAttorneyDid = assignedAttorneyProfile?.direct_phone?.trim() || "";
-  const selectedInternalAttorneyLookupIds = Array.from(
-    new Set(
-      [
-        String(currentAssignedAttorneyId || "").trim(),
-        String(assignedAttorneyProfile?.id || "").trim(),
-        String(assignedAttorneyProfile?.user_id || "").trim(),
-      ].filter(Boolean),
-    ),
+  const selectedBrokerAttorneyLookupIds = useMemo(
+    () =>
+      selectedSubmittedLawyer &&
+      !selectedSubmittedLawyer.isNoCoverage &&
+      "attorney_id" in selectedSubmittedLawyer
+        ? Array.from(new Set([String(selectedSubmittedLawyer.attorney_id || "").trim()].filter(Boolean)))
+        : [],
+    [selectedSubmittedLawyer],
   );
-  const selectedHandoffAttorneyLookupIds =
-    attorneyFulfillmentMode === "broker"
-      ? selectedBrokerAttorneyLookupIds
-      : selectedInternalAttorneyLookupIds;
-  const selectedHandoffRequirementLookupIds =
-    attorneyFulfillmentMode === "broker" ? selectedBrokerRequirementLookupIds : [];
+  const selectedBrokerRequirementLookupIds = useMemo(
+    () =>
+      selectedSubmittedLawyer &&
+      !selectedSubmittedLawyer.isNoCoverage &&
+      "requirement_id" in selectedSubmittedLawyer
+        ? Array.from(new Set([String(selectedSubmittedLawyer.requirement_id || "").trim()].filter(Boolean)))
+        : [],
+    [selectedSubmittedLawyer],
+  );
+  const selectedInternalAttorneyDid = assignedAttorneyProfile?.direct_phone?.trim() || "";
+  const selectedInternalAttorneyLookupIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            String(currentAssignedAttorneyId || "").trim(),
+            String(assignedAttorneyProfile?.id || "").trim(),
+            String(assignedAttorneyProfile?.user_id || "").trim(),
+          ].filter(Boolean),
+        ),
+      ),
+    [assignedAttorneyProfile?.id, assignedAttorneyProfile?.user_id, currentAssignedAttorneyId],
+  );
+  const selectedHandoffAttorneyLookupIds = useMemo(
+    () =>
+      attorneyFulfillmentMode === "broker"
+        ? selectedBrokerAttorneyLookupIds
+        : selectedInternalAttorneyLookupIds,
+    [attorneyFulfillmentMode, selectedBrokerAttorneyLookupIds, selectedInternalAttorneyLookupIds],
+  );
+  const selectedHandoffRequirementLookupIds = useMemo(
+    () => (attorneyFulfillmentMode === "broker" ? selectedBrokerRequirementLookupIds : []),
+    [attorneyFulfillmentMode, selectedBrokerRequirementLookupIds],
+  );
   const selectedHandoffAttorneyDid =
     attorneyFulfillmentMode === "broker" ? selectedBrokerAttorneyDid : selectedInternalAttorneyDid;
   const selectedHandoffAttorneyDidHelperText = selectedHandoffAttorneyDid
@@ -2701,11 +2717,16 @@ const CallResultUpdate = () => {
   );
 
   const brokerAccidentDate = useMemo(() => {
-    const rawDate = verifiedFieldValues?.accident_date || lead?.accident_date || "";
-    if (!rawDate) return undefined;
+    const verifiedDate = parseLocalDateOnly(verifiedFieldValues?.accident_date);
+    if (verifiedDate) return verifiedDate;
 
-    return parseLocalDateOnly(rawDate);
+    return parseLocalDateOnly(lead?.accident_date);
   }, [verifiedFieldValues?.accident_date, lead?.accident_date]);
+
+  const brokerLeadState = useMemo(
+    () => getKnownStateToken(verifiedFieldValues?.state) || getKnownStateToken(lead?.state),
+    [verifiedFieldValues?.state, lead?.state],
+  );
 
   const attorneyRecommendationCard = lead ? (
     <Card className="overflow-hidden border-[#f2d5c1] shadow-sm">
@@ -2786,6 +2807,7 @@ const CallResultUpdate = () => {
                   leadId={lead.id}
                   leadOverrides={{
                     state: lead.state,
+                    accident_date: verifiedFieldValues?.accident_date || lead.accident_date || null,
                     insured: lead.insured ?? null,
                     prior_attorney_involved: lead.prior_attorney_involved ?? null,
                   }}
@@ -2797,7 +2819,9 @@ const CallResultUpdate = () => {
                 />
               ) : (
                 <QualifiedLawyersCard
-                  leadState={verifiedFieldValues?.state || lead.state}
+                  leadId={lead.id}
+                  submissionId={submissionId}
+                  leadState={brokerLeadState}
                   accidentDate={brokerAccidentDate}
                   policeReport={verifiedFieldValues?.police_report}
                   insuranceDocuments={verifiedFieldValues?.insurance_documents}

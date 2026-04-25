@@ -31,6 +31,7 @@ import BulkLookupPage from "./pages/BulkLookupPage";
 import SalesMapPage from "./pages/SalesMapPage";
 import OrderFulfillmentPage from "./pages/OrderFulfillmentPage";
 import OrderFulfillmentAssignPage from "./pages/OrderFulfillmentAssignPage";
+import AttorneyRecommendationsPage from "./pages/AttorneyRecommendationsPage";
 import DealFlowLookup from "./pages/DealFlowLookup";
 import AgentLicensing from "./pages/AgentLicensing";
 import { AgentEligibilityPage } from "./pages/AgentEligibilityPage";
@@ -113,6 +114,17 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Fulfill Order">
                     <OrderFulfillmentAssignPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/attorney-recommendations"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Attorney Recommendations">
+                    <AttorneyRecommendationsPage />
                   </AppShell>
                 </ProtectedRoute>
               }
