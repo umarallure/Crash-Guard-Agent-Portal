@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -8,9 +8,35 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQualifiedLawyers, QualifiedLawyer } from "@/hooks/useQualifiedLawyers";
+import { getAttorneyRecommendations, type AttorneyRecommendation } from "@/lib/attorneyRecommendations";
 import { formatStateFilterLabel, getStateMatchToken } from "@/lib/stateFilter";
 import { toast } from "sonner";
+
+export type QualifiedLawyer = {
+  id: string;
+  requirement_id: string;
+  attorney_id: string | null;
+  attorney_name: string;
+  lawyer_type: "broker_lawyer";
+  doc_requirement: boolean;
+  sol: string | null;
+  states: string[];
+  police_report: string | null;
+  insurance_report: string | null;
+  medical_report: string | null;
+  driver_id: string | null;
+  did_number: string | null;
+  submission_link: string | null;
+  isStateMatch: boolean;
+  isSolMatch: boolean;
+  isPoliceReportMatch: boolean;
+  isInsuranceReportMatch: boolean;
+  isMedicalReportMatch: boolean;
+  isDriverIdMatch: boolean;
+  isDocRequirementMatch: boolean;
+  allRequirementsMet: boolean;
+  solStatus?: { valid: boolean; monthsRemaining?: number };
+};
 
 export type SelectedLawyer =
   | (QualifiedLawyer & { isNoCoverage?: false })
@@ -22,6 +48,8 @@ export type SelectedLawyer =
     };
 
 interface QualifiedLawyersCardProps {
+  leadId?: string | null;
+  submissionId?: string | null;
   leadState?: string;
   accidentDate?: Date;
   policeReport?: boolean | string;
@@ -44,7 +72,52 @@ const railAnimation = (index: number) =>
     style: { animationDelay: `${Math.min(index, 5) * 70}ms` },
   }) as const;
 
+const formatDateOnly = (date?: Date) => {
+  if (!date || !Number.isFinite(date.getTime())) return null;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toQualifiedLawyer = (recommendation: AttorneyRecommendation): QualifiedLawyer => {
+  const reasons = new Set(recommendation.reasons);
+  const requirement = recommendation.requirement;
+
+  return {
+    id: recommendation.requirementId ?? recommendation.id,
+    requirement_id: recommendation.requirementId ?? recommendation.id,
+    attorney_id: recommendation.attorneyUserId,
+    attorney_name: recommendation.attorneyName,
+    lawyer_type: "broker_lawyer",
+    doc_requirement: requirement?.docRequirement ?? false,
+    sol: recommendation.sol.sol,
+    states: recommendation.coverageStates,
+    police_report: requirement?.policeReport ?? "no",
+    insurance_report: requirement?.insuranceReport ?? "no",
+    medical_report: requirement?.medicalReport ?? "no",
+    driver_id: requirement?.driverId ?? "no",
+    did_number: recommendation.didNumber,
+    submission_link: recommendation.submissionLink,
+    isStateMatch: recommendation.stateMatch,
+    isSolMatch: recommendation.solMatch,
+    isPoliceReportMatch: !reasons.has("Police report required"),
+    isInsuranceReportMatch: !reasons.has("Insurance documents required"),
+    isMedicalReportMatch: !reasons.has("Medical proof required"),
+    isDriverIdMatch: !reasons.has("Driver ID required"),
+    isDocRequirementMatch: !reasons.has("At least one document required"),
+    allRequirementsMet: recommendation.isMatch,
+    solStatus: {
+      valid: recommendation.sol.ok,
+      monthsRemaining: recommendation.sol.monthsRemaining ?? undefined,
+    },
+  };
+};
+
 export const QualifiedLawyersCard = ({
+  leadId,
+  submissionId,
   leadState,
   accidentDate,
   policeReport,
@@ -55,20 +128,62 @@ export const QualifiedLawyersCard = ({
   onLawyerSelect,
   hideHeader = false,
 }: QualifiedLawyersCardProps) => {
-  const { qualifiedLawyers, loading, error } = useQualifiedLawyers({
-    state: leadState,
-    accidentDate,
-    policeReport,
-    insuranceDocuments,
-    medicalTreatmentProof,
-    driverLicense,
-  }, {
-    lawyerType: "broker_lawyer",
-  });
+  const [qualifiedLawyers, setQualifiedLawyers] = useState<QualifiedLawyer[]>([]);
+  const [resolvedLeadState, setResolvedLeadState] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRecommendations = async () => {
+      const normalizedState = getStateMatchToken(leadState);
+      const hasLeadLookup = Boolean(String(leadId || "").trim() || String(submissionId || "").trim());
+      if (!normalizedState && !hasLeadLookup) {
+        setQualifiedLawyers([]);
+        setResolvedLeadState("");
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await getAttorneyRecommendations({
+          leadId,
+          submissionId,
+          state: normalizedState,
+          accidentDate: formatDateOnly(accidentDate),
+          policeReport,
+          insuranceDocuments,
+          medicalTreatmentProof,
+          driverLicense,
+        });
+
+        if (cancelled) return;
+        setResolvedLeadState(result.leadState);
+        setQualifiedLawyers(result.broker.map(toQualifiedLawyer));
+      } catch (err) {
+        if (cancelled) return;
+        setQualifiedLawyers([]);
+        setResolvedLeadState("");
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void loadRecommendations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accidentDate, driverLicense, insuranceDocuments, leadId, leadState, medicalTreatmentProof, policeReport, submissionId]);
 
   const leadStateLabel = useMemo(
-    () => getStateMatchToken(leadState) || formatStateFilterLabel(leadState),
-    [leadState],
+    () => resolvedLeadState || getStateMatchToken(leadState) || formatStateFilterLabel(leadState),
+    [leadState, resolvedLeadState],
   );
 
   const brokerEligibleLawyers = useMemo(
@@ -476,5 +591,3 @@ export const QualifiedLawyersCard = ({
     </div>
   );
 };
-
-type QualifiedLawyersCardPropsProps = QualifiedLawyersCardProps;

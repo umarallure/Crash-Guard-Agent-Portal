@@ -9,10 +9,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useAttorneys } from "@/hooks/useAttorneys";
+import { getAttorneyRecommendations, type AttorneyRecommendation } from "@/lib/attorneyRecommendations";
 import { formatStateFilterLabel, getStateMatchToken } from "@/lib/stateFilter";
 
 type LeadOverrides = {
   state?: string | null;
+  accident_date?: string | null;
   insured?: boolean | null;
   prior_attorney_involved?: boolean | null;
   currently_represented?: boolean | null;
@@ -22,24 +24,18 @@ type LeadOverrides = {
 };
 
 type Recommendation = {
-  order_id: string;
+  order_id: string | null;
   lawyer_id: string;
+  attorney_name: string | null;
+  did_number: string | null;
+  coverage_source: "orders" | "licensed_states";
+  coverage_states: string[];
   expires_at: string;
   quota_total: number;
   quota_filled: number;
   remaining: number;
   score: number;
   reasons: string[];
-};
-
-type RecommendResponse = {
-  lead?: {
-    state?: string | null;
-    submission_id?: string | null;
-    lead_id?: string | null;
-  };
-  recommendations?: Recommendation[];
-  error?: string;
 };
 
 type SupabaseRpcUntyped = {
@@ -49,11 +45,23 @@ type SupabaseRpcUntyped = {
   ) => Promise<{ data: unknown; error: { message?: string } | null }>;
 };
 
+type SupabaseQueryBuilderUntyped = {
+  select: (columns?: string, options?: Record<string, unknown>) => SupabaseQueryBuilderUntyped;
+  eq: (column: string, value: unknown) => SupabaseQueryBuilderUntyped;
+  order: (column: string, options?: { ascending?: boolean }) => SupabaseQueryBuilderUntyped;
+  limit: (count: number) => SupabaseQueryBuilderUntyped;
+  maybeSingle: () => Promise<{ data: unknown; error: { message?: string } | null }>;
+  delete: () => SupabaseQueryBuilderUntyped;
+  update: (values: Record<string, unknown>) => SupabaseQueryBuilderUntyped;
+};
+
 type SupabaseFromUntyped = {
-  from: (table: string) => any;
+  from: (table: string) => SupabaseQueryBuilderUntyped;
 };
 
 const formatExpiry = (iso: string) => {
+  if (!iso) return "No order";
+
   try {
     const expiresAt = new Date(iso).getTime();
     const now = Date.now();
@@ -66,6 +74,63 @@ const formatExpiry = (iso: string) => {
   } catch {
     return iso;
   }
+};
+
+const toInternalRecommendationRows = (recommendations: AttorneyRecommendation[]): Recommendation[] => {
+  const rows = recommendations
+    .filter((recommendation) => recommendation.isMatch)
+    .flatMap((recommendation) => {
+      const lawyerId = recommendation.attorneyUserId ?? "";
+      if (!lawyerId) return [];
+
+      if (recommendation.openOrders.length > 0) {
+        return recommendation.openOrders.map((order) => ({
+          order_id: order.id,
+          lawyer_id: lawyerId,
+          attorney_name: recommendation.attorneyName,
+          did_number: recommendation.didNumber,
+          coverage_source: "orders" as const,
+          coverage_states: order.target_states,
+          expires_at: order.expires_at,
+          quota_total: order.quota_total,
+          quota_filled: order.quota_filled,
+          remaining: order.remaining,
+          score: recommendation.score + Math.min(10, order.remaining),
+          reasons: [
+            ...recommendation.reasons,
+            `Remaining quota: ${order.remaining}`,
+          ],
+        }));
+      }
+
+      if (recommendation.coverageSource !== "licensed_states") return [];
+
+      return [
+        {
+          order_id: null,
+          lawyer_id: lawyerId,
+          attorney_name: recommendation.attorneyName,
+          did_number: recommendation.didNumber,
+          coverage_source: "licensed_states" as const,
+          coverage_states: recommendation.coverageStates,
+          expires_at: "",
+          quota_total: 0,
+          quota_filled: 0,
+          remaining: 0,
+          score: recommendation.score,
+          reasons: recommendation.reasons,
+        },
+      ];
+    });
+
+  rows.sort(
+    (a, b) =>
+      b.score - a.score ||
+      Number(Boolean(b.order_id)) - Number(Boolean(a.order_id)) ||
+      String(a.attorney_name || a.lawyer_id).localeCompare(String(b.attorney_name || b.lawyer_id))
+  );
+
+  return rows;
 };
 
 export const OrderRecommendationsCard = (props: {
@@ -200,7 +265,7 @@ export const OrderRecommendationsCard = (props: {
     void refreshDealFlowStatus();
   }, [refreshDealFlowStatus]);
 
-  const fetchLeadIdIfNeeded = async () => {
+  const fetchLeadIdIfNeeded = useCallback(async () => {
     if (resolvedLeadId) return resolvedLeadId;
     if (!props.submissionId) return null;
 
@@ -224,9 +289,10 @@ export const OrderRecommendationsCard = (props: {
     } finally {
       setLoadingLead(false);
     }
-  };
+  }, [props.submissionId, resolvedLeadId]);
 
   const leadOverrideState = props.leadOverrides?.state ?? null;
+  const leadOverrideAccidentDate = props.leadOverrides?.accident_date ?? null;
   const leadOverrideInsured = props.leadOverrides?.insured ?? null;
   const leadOverridePriorAttorneyInvolved = props.leadOverrides?.prior_attorney_involved ?? null;
   const leadOverrideCurrentlyRepresented = props.leadOverrides?.currently_represented ?? null;
@@ -234,39 +300,13 @@ export const OrderRecommendationsCard = (props: {
   const leadOverrideReceivedMedicalTreatment = props.leadOverrides?.received_medical_treatment ?? null;
   const leadOverrideAccidentLastTwelveMonths = props.leadOverrides?.accident_last_12_months ?? null;
 
-  const payload = useMemo(() => {
-    return {
-      lead: {
-        submission_id: props.submissionId,
-        lead_id: resolvedLeadId,
-        state: leadOverrideState,
-        insured: leadOverrideInsured,
-        prior_attorney_involved: leadOverridePriorAttorneyInvolved,
-        currently_represented: leadOverrideCurrentlyRepresented,
-        is_injured: leadOverrideIsInjured,
-        received_medical_treatment: leadOverrideReceivedMedicalTreatment,
-        accident_last_12_months: leadOverrideAccidentLastTwelveMonths,
-      },
-      limit: 8,
-    };
-  }, [
-    props.submissionId,
-    resolvedLeadId,
-    leadOverrideState,
-    leadOverrideInsured,
-    leadOverridePriorAttorneyInvolved,
-    leadOverrideCurrentlyRepresented,
-    leadOverrideIsInjured,
-    leadOverrideReceivedMedicalTreatment,
-    leadOverrideAccidentLastTwelveMonths,
-  ]);
-
   const requestSignature = useMemo(
     () =>
       JSON.stringify({
         submissionId: props.submissionId,
         leadId: resolvedLeadId,
         state: leadOverrideState,
+        accidentDate: leadOverrideAccidentDate,
         insured: leadOverrideInsured,
         priorAttorneyInvolved: leadOverridePriorAttorneyInvolved,
         currentlyRepresented: leadOverrideCurrentlyRepresented,
@@ -278,6 +318,7 @@ export const OrderRecommendationsCard = (props: {
       props.submissionId,
       resolvedLeadId,
       leadOverrideState,
+      leadOverrideAccidentDate,
       leadOverrideInsured,
       leadOverridePriorAttorneyInvolved,
       leadOverrideCurrentlyRepresented,
@@ -291,21 +332,15 @@ export const OrderRecommendationsCard = (props: {
     setLoading(true);
     setError(null);
     try {
-      await fetchLeadIdIfNeeded();
-
-      const { data: fnData, error: fnError } = await supabase.functions.invoke("recommend-open-orders", {
-        body: payload,
+      const leadId = await fetchLeadIdIfNeeded();
+      const recommendationsResult = await getAttorneyRecommendations({
+        submissionId: props.submissionId,
+        leadId,
+        state: leadOverrideState,
+        accidentDate: leadOverrideAccidentDate,
       });
 
-      if (fnError) {
-        setError(fnError.message);
-        setData([]);
-        return;
-      }
-
-      const parsed = (fnData ?? {}) as RecommendResponse;
-      const recs = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
-      setData(recs);
+      setData(toInternalRecommendationRows(recommendationsResult.internal).slice(0, 8));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setData([]);
@@ -313,7 +348,7 @@ export const OrderRecommendationsCard = (props: {
       setLoading(false);
       setHasResolvedRecommendations(true);
     }
-  }, [payload]);
+  }, [fetchLeadIdIfNeeded, leadOverrideAccidentDate, leadOverrideState, props.submissionId]);
 
   useEffect(() => {
     if (dealFlowStatus !== "eligible") {
@@ -536,33 +571,66 @@ export const OrderRecommendationsCard = (props: {
       return;
     }
 
-    setAssigningOrderId(rec.order_id);
+    const assigningKey = rec.order_id ?? rec.lawyer_id;
+    setAssigningOrderId(assigningKey);
     try {
-      const supabaseRpc = supabase as unknown as SupabaseRpcUntyped;
-      const { error: rpcError } = await supabaseRpc.rpc("assign_lead_to_order", {
-        p_order_id: rec.order_id,
-        p_lead_id: leadId,
-        p_agent_id: user.id,
-        p_submission_id: props.submissionId,
-      });
-
-      if (rpcError) {
-        toast({
-          title: "Assignment failed",
-          description: rpcError.message,
-          variant: "destructive",
+      if (rec.order_id) {
+        const supabaseRpc = supabase as unknown as SupabaseRpcUntyped;
+        const { error: rpcError } = await supabaseRpc.rpc("assign_lead_to_order", {
+          p_order_id: rec.order_id,
+          p_lead_id: leadId,
+          p_agent_id: user.id,
+          p_submission_id: props.submissionId,
         });
-        return;
+
+        if (rpcError) {
+          toast({
+            title: "Assignment failed",
+            description: rpcError.message,
+            variant: "destructive",
+          });
+          return;
+        }
+      } else {
+        let rowId = dealFlowRowId;
+        if (!rowId) {
+          const { data: dealRow, error: dealError } = await supabase
+            .from("daily_deal_flow")
+            .select("id")
+            .eq("submission_id", props.submissionId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (dealError || !dealRow) {
+            throw new Error("Unable to resolve the Daily Deal Flow entry to assign.");
+          }
+
+          rowId = String((dealRow as { id?: string | null }).id ?? "");
+        }
+
+        if (!rowId) {
+          throw new Error("Unable to resolve the Daily Deal Flow entry to assign.");
+        }
+
+        const { error: assignError } = await supabase
+          .from("daily_deal_flow")
+          .update({ assigned_attorney_id: rec.lawyer_id } as unknown as Record<string, unknown>)
+          .eq("id", rowId);
+
+        if (assignError) {
+          throw assignError;
+        }
       }
 
       toast({
         title: "Assigned",
-        description: `Lead assigned to ${attorneyById.get(rec.lawyer_id) || rec.lawyer_id}`,
+        description: `Lead assigned to ${rec.attorney_name || attorneyById.get(rec.lawyer_id) || rec.lawyer_id}`,
       });
 
-      setAssignedAttorneyName(attorneyById.get(rec.lawyer_id) || rec.lawyer_id);
+      setAssignedAttorneyName(rec.attorney_name || attorneyById.get(rec.lawyer_id) || rec.lawyer_id);
       setDealFlowStatus("already_assigned");
-      props.onAssigned?.({ orderId: rec.order_id, lawyerId: rec.lawyer_id });
+      props.onAssigned?.({ orderId: rec.order_id ?? "", lawyerId: rec.lawyer_id });
 
       void refreshDealFlowStatus();
     } catch (e) {
@@ -584,7 +652,9 @@ export const OrderRecommendationsCard = (props: {
   const hideHeader = props.hideHeader === true;
 
   const isHorizontalLayout = props.layout === "horizontal";
-  const topRecommendationOrderId = stateFilteredData[0]?.order_id ?? null;
+  const topRecommendationOrderId = stateFilteredData[0]
+    ? stateFilteredData[0].order_id ?? stateFilteredData[0].lawyer_id
+    : null;
   const minimumHorizontalCards = 4;
   const horizontalRailCardClass = "flex h-[17rem] w-[18rem] shrink-0 flex-col";
   const railAnimation = (index: number) =>
@@ -656,15 +726,16 @@ export const OrderRecommendationsCard = (props: {
   );
 
   const renderRecommendationCard = (rec: Recommendation, horizontal: boolean) => {
-    const attorneyLabel = attorneyById.get(rec.lawyer_id) || rec.lawyer_id;
+    const recommendationKey = rec.order_id ?? rec.lawyer_id;
+    const attorneyLabel = rec.attorney_name || attorneyById.get(rec.lawyer_id) || rec.lawyer_id;
     const attorneyMeta = attorneyMetaById.get(rec.lawyer_id);
-    const contactNumber = attorneyMeta?.contactNumber ?? null;
-    const licensedStates = attorneyMeta?.licensedStates ?? [];
+    const contactNumber = rec.did_number || attorneyMeta?.contactNumber || null;
+    const licensedStates = rec.coverage_states.length ? rec.coverage_states : attorneyMeta?.licensedStates ?? [];
     const criteria = attorneyMeta?.criteria ?? null;
     const remaining = Number(rec.remaining) || Math.max(0, Number(rec.quota_total) - Number(rec.quota_filled));
     const isAssigned = props.currentAssignedAttorneyId && props.currentAssignedAttorneyId === rec.lawyer_id;
-    const isTopRecommendation = rec.order_id === topRecommendationOrderId;
-    const rank = stateFilteredData.findIndex((item) => item.order_id === rec.order_id) + 1;
+    const isTopRecommendation = recommendationKey === topRecommendationOrderId;
+    const rank = stateFilteredData.findIndex((item) => (item.order_id ?? item.lawyer_id) === recommendationKey) + 1;
     const rawReasons = Array.isArray(rec.reasons) ? rec.reasons : [];
     const licensedStatesLabel = licensedStates.length ? licensedStates.join(", ") : "Not listed";
     const previewReasons = rawReasons.slice(0, 2);
@@ -689,7 +760,7 @@ export const OrderRecommendationsCard = (props: {
     if (horizontal) {
       return (
         <div
-          key={rec.order_id}
+          key={recommendationKey}
           className={`${horizontalRailCardClass} justify-between rounded-xl border p-4 transition-all ${borderTone} ${bgTone} ${railAnimation(rank - 1).className}`}
           style={railAnimation(rank - 1).style}
         >
@@ -727,16 +798,25 @@ export const OrderRecommendationsCard = (props: {
 
             {/* Meta row */}
             <div className="flex items-center gap-3 border-t border-border/40 pt-2.5 text-[11px] text-muted-foreground">
-              <span><strong className="text-foreground">{remaining}</strong> open</span>
-              <span><strong className="text-foreground">{Number(rec.quota_filled)}/{Number(rec.quota_total)}</strong> filled</span>
-              <span>{expiryLabel}</span>
+              {rec.order_id ? (
+                <>
+                  <span><strong className="text-foreground">{remaining}</strong> open</span>
+                  <span><strong className="text-foreground">{Number(rec.quota_filled)}/{Number(rec.quota_total)}</strong> filled</span>
+                  <span>{expiryLabel}</span>
+                </>
+              ) : (
+                <>
+                  <span><strong className="text-foreground">License</strong> fallback</span>
+                  <span>No open order</span>
+                </>
+              )}
             </div>
 
             {/* Reasons & criteria */}
             {previewReasons.length ? (
               <div className="space-y-1">
                 {previewReasons.map((reason, idx) =>
-                  renderReasonRow(reason, `${rec.order_id}-reason-${idx}`)
+                  renderReasonRow(reason, `${recommendationKey}-reason-${idx}`)
                 )}
               </div>
             ) : null}
@@ -764,10 +844,10 @@ export const OrderRecommendationsCard = (props: {
           <Button
             size="sm"
             onClick={() => void assign(rec)}
-            disabled={assigningOrderId === rec.order_id}
+            disabled={assigningOrderId === recommendationKey}
             className="mt-3 w-full gap-2 rounded-lg"
           >
-            {assigningOrderId === rec.order_id ? (
+            {assigningOrderId === recommendationKey ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Assigning...
@@ -790,7 +870,7 @@ export const OrderRecommendationsCard = (props: {
 
     return (
       <div
-        key={rec.order_id}
+        key={recommendationKey}
         className={`rounded-xl border p-4 ${railAnimation(rank - 1).className} ${
           isAssigned
             ? "border-[#ea7526] bg-orange-50/50 ring-1 ring-[#ea7526]/40"
@@ -826,15 +906,21 @@ export const OrderRecommendationsCard = (props: {
                     {licensedStates.join(", ")}
                   </span>
                 ) : null}
-                <span>{formatExpiry(rec.expires_at)}</span>
-                <span>{remaining} open</span>
+                {rec.order_id ? (
+                  <>
+                    <span>{formatExpiry(rec.expires_at)}</span>
+                    <span>{remaining} open</span>
+                  </>
+                ) : (
+                  <span>License fallback</span>
+                )}
               </div>
             </div>
 
             {previewReasons.length ? (
               <div className="space-y-0.5">
                 {previewReasons.map((reason, idx) =>
-                  renderReasonRow(reason, `${rec.order_id}-reason-${idx}`)
+                  renderReasonRow(reason, `${recommendationKey}-reason-${idx}`)
                 )}
               </div>
             ) : null}
@@ -862,10 +948,10 @@ export const OrderRecommendationsCard = (props: {
           <Button
             size="sm"
             onClick={() => void assign(rec)}
-            disabled={assigningOrderId === rec.order_id}
+            disabled={assigningOrderId === recommendationKey}
             className="shrink-0 gap-2"
           >
-            {assigningOrderId === rec.order_id ? (
+            {assigningOrderId === recommendationKey ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Assigning...

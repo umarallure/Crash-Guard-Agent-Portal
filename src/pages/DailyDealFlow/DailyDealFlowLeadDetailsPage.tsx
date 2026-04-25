@@ -946,6 +946,7 @@ const DailyDealFlowLeadDetailsPage = () => {
                       leadId={null}
                       leadOverrides={{
                         state: record.state ?? null,
+                        accident_date: record.accident_date ?? null,
                         insured: record.insured ?? null,
                         prior_attorney_involved: record.prior_attorney_involved ?? null,
                         currently_represented: record.currently_represented ?? null,

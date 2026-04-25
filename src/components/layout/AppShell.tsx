@@ -19,6 +19,10 @@ import {
   Phone,
   MessageSquare,
   Tag,
+  Award,
+  CalendarDays,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -37,6 +41,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
 import { useLicensedAgent } from '@/hooks/useLicensedAgent';
 import { useCenterUser } from '@/hooks/useCenterUser';
+import { useTheme } from '@/hooks/useTheme';
 import { canAccessNavigation, isRestrictedUser } from '@/lib/userPermissions';
 import { NotificationBell } from '@/components/NotificationBell';
 
@@ -69,6 +74,7 @@ const AppShell = ({
   const { user, signOut } = useAuth();
   const { isLicensedAgent, loading: licensedLoading } = useLicensedAgent();
   const { isCenterUser, loading: centerLoading } = useCenterUser();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const locationState = (location.state as { activeNav?: string } | null) || null;
@@ -198,11 +204,15 @@ const AppShell = ({
         // Check if user has admin role in app_users table
         const { data, error } = await (supabase as any)
           .from('app_users')
-          .select('role')
+          .select('role, is_super_admin')
           .eq('user_id', user.id)
           .single();
 
-        const nextIsAdmin = !error && data && (data.role === 'admin' || data.role === 'super_admin');
+        const nextIsAdmin = !error && data && (
+          data.role === 'admin' ||
+          data.role === 'super_admin' ||
+          data.is_super_admin === true
+        );
         setIsAdmin(!!nextIsAdmin);
         try {
           localStorage.setItem(`cg_is_admin:${user.id}`, nextIsAdmin ? '1' : '0');
@@ -228,6 +238,18 @@ const AppShell = ({
         to: '/scoreboard-dashboard',
         icon: <TrendingUp className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
+      },
+      {
+        label: 'Closer Scoreboard',
+        to: '/closer-scoreboard',
+        icon: <Award className="h-4 w-4 text-current" />,
+        show: isAdmin && canAccessAgentPages,
+      },
+      {
+        label: 'Task Management',
+        to: '/task-management',
+        icon: <CalendarDays className="h-4 w-4 text-current" />,
+        show: isAdmin && canAccessAgentPages,
       },
       {
         label: 'Closer Portal',
@@ -452,6 +474,17 @@ const AppShell = ({
               </div>
 
               <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                  title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                  onClick={toggleTheme}
+                >
+                  {theme === 'dark'
+                    ? <Sun className="h-4 w-4" />
+                    : <Moon className="h-4 w-4" />}
+                </Button>
                 <NotificationBell />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

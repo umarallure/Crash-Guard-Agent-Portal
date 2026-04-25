@@ -246,25 +246,25 @@ export const AppFixBankingForm = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="font-medium text-gray-700">Bank Name:</span>
-                    <p className="text-gray-900">{existingBankDetails.bank_name || 'Not provided'}</p>
+                    <p className="text-foreground">{existingBankDetails.bank_name || 'Not provided'}</p>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">Account Owner:</span>
-                    <p className="text-gray-900">{existingBankDetails.account_owner || 'Not provided'}</p>
+                    <p className="text-foreground">{existingBankDetails.account_owner || 'Not provided'}</p>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">Routing Number:</span>
-                    <p className="text-gray-900">{existingBankDetails.routing_number || 'Not provided'}</p>
+                    <p className="text-foreground">{existingBankDetails.routing_number || 'Not provided'}</p>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">Account Number:</span>
-                    <p className="text-gray-900">
+                    <p className="text-foreground">
                       {existingBankDetails.account_number || 'Not provided'}
                     </p>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">Account Type:</span>
-                    <p className="text-gray-900 capitalize">
+                    <p className="text-foreground capitalize">
                       {existingBankDetails.account_type || 'Not provided'}
                     </p>
                   </div>

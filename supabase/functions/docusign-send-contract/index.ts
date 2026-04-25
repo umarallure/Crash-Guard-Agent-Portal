@@ -1,9 +1,11 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type ContractDeliveryMethod = "email" | "sms_only";
 
 type SendTemplateRequest = {
   submissionId?: string;
+  leadId?: string;
   recipientEmail?: string;
   recipientPhone?: string;
   recipientPhoneCountryCode?: string;
@@ -24,6 +26,22 @@ type TemplateRole = {
     countryCode: string;
     number: string;
   };
+};
+
+type RetainerAgreementPayload = {
+  envelope_id: string;
+  submission_id: string;
+  lead_id?: string | null;
+  template_id: string;
+  recipient_name: string;
+  recipient_email?: string | null;
+  recipient_phone?: string | null;
+  delivery_method: ContractDeliveryMethod;
+  status: "sent";
+  sent_at: string;
+  last_event: string;
+  last_event_at: string;
+  last_synced_at: string;
 };
 
 const corsHeaders = {
@@ -111,6 +129,10 @@ function getDocusignConfig(): DocusignConfig {
     apiBaseUrl: normalizeApiBaseUrl(getRequiredEnv("DOCUSIGN_API_BASE_URL")),
     authBaseUrl: DOCUSIGN_AUTH_BASE_URL,
   };
+}
+
+function getSupabaseAdmin() {
+  return createClient(getRequiredEnv("SUPABASE_URL"), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
 }
 
 function concatBytes(...arrays: Uint8Array[]) {
@@ -358,6 +380,37 @@ function buildTemplateRole(args: {
   };
 }
 
+function buildEnvelopeCustomFields(args: { submissionId: string; leadId: string }) {
+  const textCustomFields = [
+    {
+      name: "submission_id",
+      value: args.submissionId,
+      show: "false",
+    },
+  ];
+
+  if (args.leadId) {
+    textCustomFields.push({
+      name: "lead_id",
+      value: args.leadId,
+      show: "false",
+    });
+  }
+
+  return { textCustomFields };
+}
+
+async function persistSentRetainerAgreement(payload: RetainerAgreementPayload) {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("retainer_agreements")
+    .upsert(payload, { onConflict: "envelope_id" });
+
+  if (error) {
+    throw new Error(error.message || "Failed to persist retainer agreement");
+  }
+}
+
 async function createJwt(config: DocusignConfig): Promise<string> {
   const header = { alg: "RS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
@@ -450,6 +503,8 @@ serve(async (req) => {
   }
 
   const templateId = asTrimmedString(body.templateId);
+  const submissionId = asTrimmedString(body.submissionId);
+  const leadId = asTrimmedString(body.leadId);
   const recipientEmail = asTrimmedString(body.recipientEmail);
   const recipientName = asTrimmedString(body.recipientName) || "Signer";
   const accidentDate = asTrimmedString(body.accidentDate);
@@ -461,6 +516,10 @@ serve(async (req) => {
 
   if (!templateId) {
     return new Response("templateId is required", { status: 400, headers: corsHeaders });
+  }
+
+  if (!submissionId) {
+    return new Response("submissionId is required", { status: 400, headers: corsHeaders });
   }
 
   if (!debug) {
@@ -521,6 +580,7 @@ serve(async (req) => {
           recipientPhoneCountryCode,
         }),
       ],
+      customFields: buildEnvelopeCustomFields({ submissionId, leadId }),
       status: "created",
     };
 
@@ -623,7 +683,30 @@ serve(async (req) => {
       return new Response(sendText, { status: sendRes.status, headers: corsHeaders });
     }
 
-    const result = JSON.stringify({ envelopeId, status: "sent", deliveryMethod });
+    let trackingPersisted = true;
+    try {
+      const sentAt = new Date().toISOString();
+      await persistSentRetainerAgreement({
+        envelope_id: envelopeId,
+        submission_id: submissionId,
+        lead_id: leadId || null,
+        template_id: templateId,
+        recipient_name: recipientName,
+        recipient_email: deliveryMethod === "email" ? recipientEmail || null : null,
+        recipient_phone: deliveryMethod === "sms_only" ? recipientPhone || null : null,
+        delivery_method: deliveryMethod,
+        status: "sent",
+        sent_at: sentAt,
+        last_event: "envelope-sent",
+        last_event_at: sentAt,
+        last_synced_at: sentAt,
+      });
+    } catch (error) {
+      trackingPersisted = false;
+      logError("Envelope sent but retainer agreement tracking failed", error);
+    }
+
+    const result = JSON.stringify({ envelopeId, status: "sent", deliveryMethod, trackingPersisted });
     return new Response(result, {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

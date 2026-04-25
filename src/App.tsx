@@ -25,11 +25,13 @@ import LeadDetailsPage from "./pages/LeadDetails/LeadDetailsPage";
 import TransferPortalPage from "./pages/TransferPortalPage";
 import SubmissionPortalPage from "./pages/SubmissionPortalPage";
 import CloserPortalPage from "./pages/CloserPortalPage";
+import TaskManagementPage from "./pages/TaskManagement";
 import RetainersKanbanPage from "./pages/RetainersKanbanPage";
 import BulkLookupPage from "./pages/BulkLookupPage";
 import SalesMapPage from "./pages/SalesMapPage";
 import OrderFulfillmentPage from "./pages/OrderFulfillmentPage";
 import OrderFulfillmentAssignPage from "./pages/OrderFulfillmentAssignPage";
+import AttorneyRecommendationsPage from "./pages/AttorneyRecommendationsPage";
 import DealFlowLookup from "./pages/DealFlowLookup";
 import AgentLicensing from "./pages/AgentLicensing";
 import { AgentEligibilityPage } from "./pages/AgentEligibilityPage";
@@ -41,6 +43,7 @@ import RetentionTasksView from "./pages/RetentionTasksView";
 import AdminAnalytics from "./pages/AdminAnalytics";
 import { AgentsPage, VendorsPage, DailyPage, CarriersPage } from "./pages/AdminAnalytics/pages";
 import ScoreboardDashboard from "./pages/ScoreboardDashboard";
+import CloserScoreboardPage from "./pages/CloserScoreboard";
 import NotFound from "./pages/NotFound";
 import UserManagement from "./pages/UserManagement";
 import LawyerRequirements from "./pages/LawyerRequirements";
@@ -111,6 +114,17 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Fulfill Order">
                     <OrderFulfillmentAssignPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/attorney-recommendations"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Attorney Recommendations">
+                    <AttorneyRecommendationsPage />
                   </AppShell>
                 </ProtectedRoute>
               }
@@ -274,6 +288,16 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
+            <Route
+              path="/task-management"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Task Management">
+                    <TaskManagementPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
             <Route path="/reports" element={<NotFound />} />
             <Route 
               path="/bulk-lookup" 
@@ -385,15 +409,25 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/scoreboard-dashboard" 
+            <Route
+              path="/scoreboard-dashboard"
               element={
                 <ProtectedRoute>
                   <AppShell title="Score Board">
                     <ScoreboardDashboard />
                   </AppShell>
                 </ProtectedRoute>
-              } 
+              }
+            />
+            <Route
+              path="/closer-scoreboard"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Closer Scoreboard">
+                    <CloserScoreboardPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
             />
             <Route 
               path="/aloware-dialer" 
