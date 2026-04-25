@@ -29,7 +29,7 @@ import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard"
 import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search } from "lucide-react";
+import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search, Download } from "lucide-react";
 import { US_STATES } from "@/lib/us-states";
 import { LEAD_TAG_OPTIONS, getLeadTagToneClass } from "@/lib/leadTags";
 import { getStateMatchToken } from "@/lib/stateFilter";
@@ -370,6 +370,61 @@ interface ScriptTabDefinition {
 }
 
 type ContractDeliveryMethod = "email" | "sms_only";
+type RetainerEnvelopeStatus = "not_sent" | "sent" | "viewed" | "signed" | "declined" | "voided" | "unknown";
+
+type RetainerStoredDocument = {
+  bucket: string;
+  path: string;
+  filename: string | null;
+  contentType: string | null;
+};
+
+type RetainerAgreementRow = {
+  id: string;
+  envelope_id: string;
+  submission_id: string | null;
+  lead_id: string | null;
+  template_id: string | null;
+  recipient_name: string | null;
+  recipient_email: string | null;
+  recipient_phone: string | null;
+  delivery_method: ContractDeliveryMethod | null;
+  status: RetainerEnvelopeStatus;
+  sent_at: string | null;
+  viewed_at: string | null;
+  signed_at: string | null;
+  declined_at: string | null;
+  voided_at: string | null;
+  last_synced_at: string | null;
+  document_bucket: string | null;
+  document_storage_path: string | null;
+  document_file_name: string | null;
+  document_content_type: string | null;
+  document_size: number | null;
+  document_stored_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type SupabaseRetainerClient = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        order: (
+          column: string,
+          options: { ascending: boolean },
+        ) => {
+          limit: (count: number) => {
+            maybeSingle: () => Promise<{ data: RetainerAgreementRow | null; error: { message?: string } | null }>;
+          };
+        };
+      };
+    };
+  };
+};
+
+const RETAINER_AGREEMENT_SELECT_COLUMNS =
+  "id,envelope_id,submission_id,lead_id,template_id,recipient_name,recipient_email,recipient_phone,delivery_method,status,sent_at,viewed_at,signed_at,declined_at,voided_at,last_synced_at,document_bucket,document_storage_path,document_file_name,document_content_type,document_size,document_stored_at,created_at,updated_at";
 
 const scriptHeaderCheckpoints = [
   { label: "Date", hint: "Verify twice" },
@@ -383,6 +438,45 @@ const normalizePhoneForLookup = (value: string | null | undefined) => {
   if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
   if (digits.length === 10) return digits;
   return "";
+};
+
+const normalizeRetainerEnvelopeStatus = (value: unknown): RetainerEnvelopeStatus => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["sent", "viewed", "signed", "declined", "voided"].includes(normalized)) {
+    return normalized as RetainerEnvelopeStatus;
+  }
+  if (normalized === "completed") return "signed";
+  if (normalized === "delivered") return "viewed";
+  if (normalized === "created") return "sent";
+  return "unknown";
+};
+
+const getRetainerStatusLabel = (status: RetainerEnvelopeStatus) => {
+  switch (status) {
+    case "not_sent":
+      return "Not Sent";
+    case "sent":
+      return "Sent";
+    case "viewed":
+      return "Viewed";
+    case "signed":
+      return "Signed";
+    case "declined":
+      return "Declined";
+    case "voided":
+      return "Voided";
+    default:
+      return "Unknown";
+  }
+};
+
+const sanitizeDownloadFilename = (value: string | null | undefined) => {
+  const cleaned = String(value || "")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned || "signed-retainer.pdf";
 };
 
 const isLookupRecord = (value: unknown): value is Record<string, unknown> => {
@@ -995,9 +1089,13 @@ const CallResultUpdate = () => {
   const [contractDeliveryMethod, setContractDeliveryMethod] = useState<ContractDeliveryMethod>("email");
   const [sendingContract, setSendingContract] = useState(false);
   const [lastEnvelopeId, setLastEnvelopeId] = useState<string | null>(null);
+  const [retainerEnvelopeStatus, setRetainerEnvelopeStatus] = useState<RetainerEnvelopeStatus>("not_sent");
+  const [retainerStoredDocument, setRetainerStoredDocument] = useState<RetainerStoredDocument | null>(null);
   const [selectedRetainerState, setSelectedRetainerState] = useState("");
   const [refreshingRetainerStatus, setRefreshingRetainerStatus] = useState(false);
+  const [downloadingRetainerDocument, setDownloadingRetainerDocument] = useState(false);
   const [retainerStatusLastCheckedAt, setRetainerStatusLastCheckedAt] = useState<string | null>(null);
+  const [retainerStatusError, setRetainerStatusError] = useState<string | null>(null);
   const [dncLookupLoading, setDncLookupLoading] = useState(false);
   const [dncLookupError, setDncLookupError] = useState<string | null>(null);
   const [dncLookupSummary, setDncLookupSummary] = useState<DncLookupSummary | null>(null);
@@ -2056,8 +2154,8 @@ const CallResultUpdate = () => {
   const preferredContractTemplateId = filteredContractTemplates[0]?.id ?? "";
   const retainerProgress = useMemo(() => {
     const hasBeenSent = Boolean(lastEnvelopeId);
-    const hasBeenViewed = false;
-    const hasBeenSigned = false;
+    const hasBeenViewed = retainerEnvelopeStatus === "viewed" || retainerEnvelopeStatus === "signed";
+    const hasBeenSigned = retainerEnvelopeStatus === "signed";
     const currentStepIndex = hasBeenSigned ? 3 : hasBeenViewed ? 2 : hasBeenSent ? 1 : 0;
     const steps = [
       {
@@ -2080,14 +2178,17 @@ const CallResultUpdate = () => {
 
     return {
       currentStepIndex,
-      currentStepLabel: steps[currentStepIndex]?.label ?? steps[0].label,
+      currentStepLabel:
+        retainerEnvelopeStatus === "declined" || retainerEnvelopeStatus === "voided" || retainerEnvelopeStatus === "unknown"
+          ? getRetainerStatusLabel(retainerEnvelopeStatus)
+          : steps[currentStepIndex]?.label ?? steps[0].label,
       steps: steps.map((step, index) => ({
         ...step,
         isComplete: index < currentStepIndex,
         isCurrent: index === currentStepIndex,
       })),
     };
-  }, [lastEnvelopeId]);
+  }, [lastEnvelopeId, retainerEnvelopeStatus]);
   const handoffCardClass = "overflow-hidden border-[#f2d5c1] shadow-sm";
   const contractHeaderSurfaceClass = "bg-[linear-gradient(90deg,rgba(234,117,38,0.52)_0%,rgba(234,117,38,0.52)_100%)]";
   const contractHeaderClass = `border-b border-[#efbb93] ${contractHeaderSurfaceClass} px-5 py-3.5`;
@@ -2323,7 +2424,7 @@ const CallResultUpdate = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => void refreshRetainerStatusView()}
-                    disabled={refreshingRetainerStatus}
+                    disabled={refreshingRetainerStatus || !lastEnvelopeId}
                     className="gap-2 rounded-md border-[#e6b086] bg-[#fff4ea] text-[#7a3718] shadow-sm hover:bg-[#ffe9d8] hover:text-[#6a2d13]"
                   >
                     <RefreshCw className={refreshingRetainerStatus ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
@@ -2374,10 +2475,34 @@ const CallResultUpdate = () => {
                   </div>
                 </div>
 
+                {retainerStatusError ? (
+                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {retainerStatusError}
+                  </div>
+                ) : null}
+
+                {retainerEnvelopeStatus === "signed" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleDownloadSignedRetainer()}
+                    disabled={downloadingRetainerDocument || refreshingRetainerStatus || !retainerStoredDocument?.path}
+                    className="mt-3 w-full gap-2 rounded-md border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm hover:bg-emerald-100 hover:text-emerald-900"
+                  >
+                    {downloadingRetainerDocument ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    {retainerStoredDocument?.path ? "Download Signed Retainer" : "Preparing Signed Retainer"}
+                  </Button>
+                ) : null}
+
                 <div className="mt-auto pt-3 text-[11px] text-muted-foreground">
                   {retainerStatusLastCheckedAt
-                    ? `Last refreshed ${new Date(retainerStatusLastCheckedAt).toLocaleString()}`
-                    : "Refresh this panel after sending to keep the retainer progress current."}
+                    ? `Last updated ${new Date(retainerStatusLastCheckedAt).toLocaleString()}`
+                    : "This panel updates from saved retainer status and DocuSign webhooks."}
                 </div>
               </div>
             </div>
@@ -3406,12 +3531,166 @@ const CallResultUpdate = () => {
     }
   }, [lead?.phone_number, contractRecipientPhone]);
 
+  const applyRetainerAgreementRow = useCallback((row: RetainerAgreementRow | null) => {
+    if (!row?.envelope_id) return;
+
+    const nextStatus = normalizeRetainerEnvelopeStatus(row.status);
+    setLastEnvelopeId(row.envelope_id);
+    setRetainerEnvelopeStatus(nextStatus);
+    setRetainerStoredDocument(
+      row.document_storage_path
+        ? {
+          bucket: row.document_bucket || "retainer-agreements",
+          path: row.document_storage_path,
+          filename: row.document_file_name || null,
+          contentType: row.document_content_type || null,
+        }
+        : null,
+    );
+    setRetainerStatusError(null);
+    setRetainerStatusLastCheckedAt(
+      row.last_synced_at || row.document_stored_at || row.updated_at || row.created_at || new Date().toISOString(),
+    );
+  }, []);
+
+  const queryRetainerAgreement = useCallback(async () => {
+    if (!submissionId) return null;
+
+    const supabaseUntyped = supabase as unknown as SupabaseRetainerClient;
+    const { data, error } = await supabaseUntyped
+      .from("retainer_agreements")
+      .select(RETAINER_AGREEMENT_SELECT_COLUMNS)
+      .eq("submission_id", submissionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message || "Failed to load retainer agreement");
+    }
+
+    return data;
+  }, [submissionId]);
+
+  useEffect(() => {
+    if (!submissionId) return;
+
+    let cancelled = false;
+
+    const loadRetainerAgreement = async () => {
+      try {
+        const data = await queryRetainerAgreement();
+        if (cancelled) return;
+
+        applyRetainerAgreementRow(data);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Error loading retainer agreement:", error);
+        }
+      }
+    };
+
+    void loadRetainerAgreement();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyRetainerAgreementRow, queryRetainerAgreement, submissionId]);
+
+  useEffect(() => {
+    if (!submissionId) return;
+
+    const channel = supabase
+      .channel(`retainer-agreements:${submissionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "retainer_agreements",
+          filter: `submission_id=eq.${submissionId}`,
+        },
+        (payload) => {
+          const nextRow = payload.new as RetainerAgreementRow | null;
+          applyRetainerAgreementRow(nextRow);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [applyRetainerAgreementRow, submissionId]);
+
   const refreshRetainerStatusView = useCallback(async () => {
     setRefreshingRetainerStatus(true);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    setRetainerStatusLastCheckedAt(new Date().toISOString());
-    setRefreshingRetainerStatus(false);
-  }, []);
+    setRetainerStatusError(null);
+
+    try {
+      const data = await queryRetainerAgreement();
+      applyRetainerAgreementRow(data);
+      setRetainerStatusLastCheckedAt(new Date().toISOString());
+    } catch (error) {
+      console.error("Error refreshing retainer status:", error);
+      const message = error instanceof Error ? error.message : "Failed to refresh retainer status";
+      setRetainerStatusError(message);
+      toast({
+        title: "Retainer status unavailable",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setRefreshingRetainerStatus(false);
+    }
+  }, [applyRetainerAgreementRow, queryRetainerAgreement, toast]);
+
+  const handleDownloadSignedRetainer = useCallback(async () => {
+    if (!retainerStoredDocument?.path) {
+      toast({
+        title: "Download unavailable",
+        description: "The signed retainer has not been archived yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDownloadingRetainerDocument(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from(retainerStoredDocument.bucket)
+        .createSignedUrl(retainerStoredDocument.path, 60 * 5);
+
+      if (error || !data?.signedUrl) {
+        throw new Error(error?.message || "Failed to create signed retainer download link.");
+      }
+
+      const signedRes = await fetch(data.signedUrl);
+      if (!signedRes.ok) {
+        throw new Error("Failed to download signed retainer from storage.");
+      }
+
+      const blob = await signedRes.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      const fallbackName = `signed-retainer-${lead?.customer_full_name || lastEnvelopeId}.pdf`;
+      link.href = url;
+      link.download = sanitizeDownloadFilename(retainerStoredDocument.filename || fallbackName);
+      window.document.body.appendChild(link);
+      link.click();
+      window.document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading signed retainer:", error);
+      const message = error instanceof Error ? error.message : "Failed to download signed retainer";
+      toast({
+        title: "Download unavailable",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingRetainerDocument(false);
+    }
+  }, [lastEnvelopeId, lead?.customer_full_name, retainerStoredDocument, toast]);
 
   async function handleSendContract() {
     type SendContractResponse = { envelopeId?: string };
@@ -3462,6 +3741,7 @@ const CallResultUpdate = () => {
       const response = await supabase.functions.invoke<SendContractResponse>("docusign-send-contract", {
         body: {
           submissionId,
+          leadId: lead?.id || undefined,
           recipientEmail: isEmailDelivery ? email || undefined : undefined,
           recipientName,
           recipientPhone: isSmsDelivery ? normalizedPhone || undefined : undefined,
@@ -3477,6 +3757,9 @@ const CallResultUpdate = () => {
 
       const envelopeId = response.data?.envelopeId ?? null;
       setLastEnvelopeId(envelopeId);
+      setRetainerEnvelopeStatus(envelopeId ? "sent" : "unknown");
+      setRetainerStoredDocument(null);
+      setRetainerStatusError(null);
       setRetainerStatusLastCheckedAt(new Date().toISOString());
 
       toast({
