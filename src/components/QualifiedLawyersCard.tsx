@@ -66,11 +66,41 @@ const minimumRailCards = 4;
 const railTrackClass =
   "flex items-start gap-3 overflow-x-auto pb-2 pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent";
 const railCardShellClass = "flex h-[17rem] w-[18rem] shrink-0 flex-col";
+const MAX_VISIBLE_STATE_BADGES = 7;
 const railAnimation = (index: number) =>
   ({
     className: "animate-fade-in-up motion-reduce:animate-none",
     style: { animationDelay: `${Math.min(index, 5) * 70}ms` },
   }) as const;
+
+const renderStateBadges = (states: string[] | undefined) => {
+  const allStates = states ?? [];
+
+  if (!allStates.length) {
+    return <span className="text-xs text-muted-foreground">No states listed</span>;
+  }
+
+  const visibleStates = allStates.slice(0, MAX_VISIBLE_STATE_BADGES);
+  const remainingCount = Math.max(0, allStates.length - visibleStates.length);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {visibleStates.map((state) => (
+        <span
+          key={state}
+          className="rounded-full border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-700"
+        >
+          {state}
+        </span>
+      ))}
+      {remainingCount > 0 ? (
+        <span className="rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-600">
+          +{remainingCount}
+        </span>
+      ) : null}
+    </div>
+  );
+};
 
 const formatDateOnly = (date?: Date) => {
   if (!date || !Number.isFinite(date.getTime())) return null;
@@ -427,8 +457,8 @@ export const QualifiedLawyersCard = ({
           </div>
 
           {/* States */}
-          <div className="text-xs leading-snug text-foreground">
-            {lawyer.states?.length ? lawyer.states.join(", ") : "No states listed"}
+          <div>
+            {renderStateBadges(lawyer.states)}
           </div>
 
           {/* Docs + match notes */}
