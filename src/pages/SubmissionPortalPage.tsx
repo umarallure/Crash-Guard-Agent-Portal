@@ -38,6 +38,7 @@ import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
+import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 
@@ -544,7 +545,7 @@ const SubmissionPortalPage = () => {
     return getStateFilterOptions(data).map((option) => ({
       ...option,
       itemClassName: unblockedStateCodes.has(option.value)
-        ? "bg-emerald-50 text-emerald-950 hover:bg-emerald-100 hover:text-emerald-950"
+        ? SALES_MAP_ACTIVE_STATE_OPTION_CLASS
         : undefined,
     }));
   }, [data, unblockedStateCodes]);

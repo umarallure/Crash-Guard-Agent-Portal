@@ -39,10 +39,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
-import { useLicensedAgent } from '@/hooks/useLicensedAgent';
 import { useCenterUser } from '@/hooks/useCenterUser';
 import { useTheme } from '@/hooks/useTheme';
-import { canAccessNavigation, isRestrictedUser } from '@/lib/userPermissions';
+import { getPortalRoleFlags, isRestrictedUser } from '@/lib/userPermissions';
 import { NotificationBell } from '@/components/NotificationBell';
 
 type NavItem = {
@@ -72,8 +71,7 @@ const AppShell = ({
   autoCollapseSidebarAfterMs,
 }: AppShellProps) => {
   const { user, signOut } = useAuth();
-  const { isLicensedAgent, loading: licensedLoading } = useLicensedAgent();
-  const { isCenterUser, loading: centerLoading } = useCenterUser();
+  const { isCenterUser } = useCenterUser();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -176,9 +174,6 @@ const AppShell = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoCollapseSidebarAfterMs, isSidebarCollapsed]);
 
-  const isBen = user?.id === '89da43d0-db34-4ffe-b6f1-8ca2453d2d76';
-  const isAuthorizedUser = user?.id === '89da43d0-db34-4ffe-b6f1-8ca2453d2d76';
-  const hasNavigationAccess = canAccessNavigation(user?.id);
   const [isAdmin, setIsAdmin] = useState(() => {
     if (!user?.id) return false;
     try {
@@ -187,9 +182,10 @@ const AppShell = ({
       return false;
     }
   });
+  const [isAgentRole, setIsAgentRole] = useState(false);
 
   useEffect(() => {
-    const checkAdminStatus = async () => {
+    const checkRoleStatus = async () => {
       if (!user) return;
 
       try {
@@ -200,36 +196,26 @@ const AppShell = ({
       }
       
       try {
-        const { supabase } = await import('@/integrations/supabase/client');
-        // Check if user has admin role in app_users table
-        const { data, error } = await (supabase as any)
-          .from('app_users')
-          .select('role, is_super_admin')
-          .eq('user_id', user.id)
-          .single();
-
-        const nextIsAdmin = !error && data && (
-          data.role === 'admin' ||
-          data.role === 'super_admin' ||
-          data.is_super_admin === true
-        );
-        setIsAdmin(!!nextIsAdmin);
+        const roleFlags = await getPortalRoleFlags(user.id);
+        setIsAdmin(roleFlags.isAdmin);
+        setIsAgentRole(roleFlags.isAgent);
         try {
-          localStorage.setItem(`cg_is_admin:${user.id}`, nextIsAdmin ? '1' : '0');
+          localStorage.setItem(`cg_is_admin:${user.id}`, roleFlags.isAdmin ? '1' : '0');
         } catch {
           // ignore
         }
       } catch (error) {
-        console.error('Error checking admin status:', error);
+        console.error('Error checking role status:', error);
       }
     };
 
-    checkAdminStatus();
+    checkRoleStatus();
   }, [user]);
 
   const navItems = useMemo<NavItem[]>(() => {
     const restricted = isRestrictedUser(user?.id);
     const canAccessAgentPages = !isCenterUser && !restricted;
+    const canAccessTaskManagement = (isAdmin || isAgentRole) && canAccessAgentPages;
 
     // Keep nav aligned with existing access rules.
     const items: NavItem[] = [
@@ -237,7 +223,7 @@ const AppShell = ({
         label: 'Score Board',
         to: '/scoreboard-dashboard',
         icon: <TrendingUp className="h-4 w-4 text-current" />,
-        show: canAccessAgentPages,
+        show: isAdmin && canAccessAgentPages,
       },
       {
         label: 'Closer Scoreboard',
@@ -249,7 +235,7 @@ const AppShell = ({
         label: 'Task Management',
         to: '/task-management',
         icon: <CalendarDays className="h-4 w-4 text-current" />,
-        show: isAdmin && canAccessAgentPages,
+        show: canAccessTaskManagement,
       },
       {
         label: 'Closer Portal',
@@ -323,14 +309,9 @@ const AppShell = ({
     return items.filter((i) => i.show !== false);
   }, [
     user?.id,
-    isLicensedAgent,
-    licensedLoading,
     isCenterUser,
-    centerLoading,
-    isBen,
-    isAuthorizedUser,
-    hasNavigationAccess,
     isAdmin,
+    isAgentRole,
   ]);
 
   const handleSignOut = async () => {

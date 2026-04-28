@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useAttorneys } from '@/hooks/useAttorneys';
 import { supabase } from '@/integrations/supabase/client';
+import { SALES_MAP_ACTIVE_STATE_CODE_SET, SALES_MAP_ACTIVE_STATE_COLOR } from '@/lib/salesMapActiveStates';
 import { US_STATES } from '@/lib/us-states';
 
 type CompetitionStatus = 'none' | 'light' | 'moderate' | 'heavy';
@@ -43,6 +44,7 @@ type AccountCategoryFilter = 'all' | 'broker_lawyer' | 'internal_lawyer';
 
 type MapPalette = {
   none: string;
+  active: string;
   light: string;
   moderate: string;
   heavy: string;
@@ -63,6 +65,7 @@ const ACCOUNT_CATEGORY_META: Record<
     description: 'Show orders from every attorney profile, regardless of account category.',
     palette: {
       none: '#e5e7eb',
+      active: SALES_MAP_ACTIVE_STATE_COLOR,
       light: '#22c55e',
       moderate: '#eab308',
       heavy: '#ef4444',
@@ -75,6 +78,7 @@ const ACCOUNT_CATEGORY_META: Record<
     description: 'Show only orders placed by broker-lawyer profiles.',
     palette: {
       none: '#e5e7eb',
+      active: SALES_MAP_ACTIVE_STATE_COLOR,
       light: '#38bdf8',
       moderate: '#6366f1',
       heavy: '#8b5cf6',
@@ -87,6 +91,7 @@ const ACCOUNT_CATEGORY_META: Record<
     description: 'Show only orders placed by internal-lawyer profiles.',
     palette: {
       none: '#e5e7eb',
+      active: SALES_MAP_ACTIVE_STATE_COLOR,
       light: '#22c55e',
       moderate: '#f59e0b',
       heavy: '#ef4444',
@@ -97,6 +102,7 @@ const ACCOUNT_CATEGORY_META: Record<
 };
 
 const MAP_PATH_SELECTOR = 'path[data-id], path[id]';
+const FORCED_LOW_VOLUME_STATE_CODES = new Set(['WY']);
 
 const toCompetitionStatus = (sales: number): CompetitionStatus => {
   if (sales <= 0) return 'none';
@@ -293,8 +299,15 @@ const SalesMapPage = () => {
       const code = p.getAttribute('data-id') || p.getAttribute('id');
       if (!code) return;
 
-      const state = stateByCodeRef.current.get(code);
-      const fill = state ? getStatusColor(state.status, mapPalette) : mapPalette.none;
+      const normalizedCode = code.trim().toUpperCase();
+      const state = stateByCodeRef.current.get(normalizedCode);
+      const fill = FORCED_LOW_VOLUME_STATE_CODES.has(normalizedCode)
+        ? mapPalette.light
+        : SALES_MAP_ACTIVE_STATE_CODE_SET.has(normalizedCode)
+          ? mapPalette.active
+          : state
+            ? getStatusColor(state.status, mapPalette)
+            : mapPalette.none;
 
       const selected = selectedStateCodeRef.current;
       const isSelected = selected ? selected === code : false;
@@ -309,6 +322,9 @@ const SalesMapPage = () => {
       path.style.setProperty('fill', fill, 'important');
       path.style.setProperty('stroke', isSelected ? '#111827' : '#0b0b0b', 'important');
       path.style.setProperty('stroke-width', isSelected ? '2' : '0.8', 'important');
+      path.style.setProperty('transition', 'transform 0.2s ease, opacity 0.3s ease', 'important');
+      path.style.setProperty('transform-origin', 'center', 'important');
+      path.style.setProperty('transform-box', 'fill-box', 'important');
       path.style.cursor = state ? 'pointer' : 'default';
       path.style.opacity = dimOthers && !isSelected ? '0.55' : '1';
     });
@@ -524,6 +540,15 @@ const SalesMapPage = () => {
     return allOrders.filter((o) => Array.isArray(o.target_states) && o.target_states.map(String).map((s) => s.toUpperCase()).includes(code));
   }, [allOrders, selectedStateCode]);
 
+  const statsCards = useMemo(
+    () => [
+      { label: 'Orders', value: totalOrders, accent: '#ae4010' },
+      { label: 'Active', value: SALES_MAP_ACTIVE_STATE_CODE_SET.size, accent: '#3f6eb3' },
+      { label: 'With Orders', value: states.filter((s) => s.sales > 0).length, accent: '#9ca3af' },
+    ],
+    [states, totalOrders]
+  );
+
   return (
     <div className="container mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -569,19 +594,7 @@ const SalesMapPage = () => {
           </Button>
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Submitted Orders</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-end justify-between">
-            <div>
-              <div className="text-3xl font-semibold">{totalOrders}</div>
-              <div className="mt-1 text-sm text-muted-foreground">{selectedAccountMeta.label}</div>
-            </div>
-          </CardContent>
-        </Card>
-
+      {false && (
         <Card className="sm:col-span-2">
           <CardContent className="p-4">
             <div className="flex flex-col gap-1">
@@ -595,6 +608,13 @@ const SalesMapPage = () => {
                 <div className="leading-tight">
                   <div className="text-sm font-medium">No orders</div>
                   <div className="text-xs text-muted-foreground">0 submitted orders</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: mapPalette.active }} />
+                <div className="leading-tight">
+                  <div className="text-sm font-medium">Active state</div>
+                  <div className="text-xs text-muted-foreground">Configured active coverage</div>
                 </div>
               </div>
               <div className="flex items-start gap-2">
@@ -621,12 +641,67 @@ const SalesMapPage = () => {
             </div>
           </CardContent>
         </Card>
-      </div>
+      )}
 
-      <Card>
+      <Card className="overflow-hidden rounded-2xl border-black/[0.08] bg-transparent dark:border-white/[0.06] dark:bg-transparent">
         <CardContent className="p-4">
           <div className="relative">
-            <div ref={mapRootRef} className="w-full overflow-hidden rounded-lg bg-white" style={{ height: 520 }} />
+            <div
+              ref={mapRootRef}
+              className="w-full overflow-hidden rounded-xl bg-transparent [&_svg_path[data-id]:hover]:scale-[1.08] [&_svg_path[id]:hover]:scale-[1.08]"
+              style={{ height: 520 }}
+            />
+
+            <div className="absolute left-3 top-3 z-10 hidden md:block">
+              <div className="w-32 overflow-hidden rounded-xl border border-black/[0.06] bg-white/90 shadow-lg backdrop-blur-sm dark:border-white/[0.08] dark:bg-[#1a1a1a]/60">
+                {statsCards.map((stat, index) => (
+                  <div
+                    key={stat.label}
+                    className={`px-4 py-3 ${index > 0 ? 'border-t border-black/[0.04] dark:border-white/[0.06]' : ''}`}
+                  >
+                    <div className="relative pl-3">
+                      <div
+                        className="absolute bottom-0.5 left-0 top-0.5 w-[3px] rounded-full"
+                        style={{ backgroundColor: stat.accent }}
+                      />
+                      <div className="text-xs leading-tight text-gray-500 dark:text-gray-400">{stat.label}</div>
+                      <div className="text-lg font-bold" style={{ color: stat.accent }}>
+                        {stat.value}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="absolute bottom-0 left-1/2 z-10 max-w-[calc(100%-1.5rem)] -translate-x-1/2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-black/[0.06] bg-white/90 px-2.5 py-2 shadow-lg backdrop-blur-sm dark:border-white/[0.08] dark:bg-[#1a1a1a]/60 md:max-w-none md:flex-nowrap md:gap-x-4 md:whitespace-nowrap md:px-4 md:py-2.5">
+                <div className="flex flex-wrap items-center gap-2 md:flex-nowrap md:gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.none }} />
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">No orders</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.light }} />
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Low volume</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.moderate }} />
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Moderate volume</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.heavy }} />
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">High volume</span>
+                  </div>
+                </div>
+
+                <div className="hidden h-5 w-px bg-black/[0.08] dark:bg-white/[0.08] md:block" />
+
+                <div className="inline-flex items-center gap-1 rounded-md border border-black/[0.06] bg-black/[0.04] px-2 py-0.5 text-[10px] font-semibold text-gray-500 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-gray-400">
+                  {selectedAccountMeta.label}
+                </div>
+              </div>
+            </div>
 
             {mapError ? (
               <div className="absolute inset-0 flex items-center justify-center p-6">
@@ -645,13 +720,13 @@ const SalesMapPage = () => {
             {tooltip.open && tooltip.state ? (
               <div
                 ref={tooltipRef}
-                className="pointer-events-none absolute z-10 rounded-lg border bg-background px-3 py-2 shadow-lg"
+                className="pointer-events-none absolute z-20 rounded-xl border border-black/[0.08] bg-white px-4 py-3 shadow-xl dark:border-white/[0.06] dark:bg-[#1a1a1a]"
                 style={{ left: tooltip.x, top: tooltip.y }}
               >
-                <div className="font-semibold">
+                <div className="text-sm font-semibold">
                   {tooltip.state.name} ({tooltip.state.code})
                 </div>
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-1.5 flex items-center gap-2">
                   <Badge
                     variant="secondary"
                     className={
@@ -673,12 +748,29 @@ const SalesMapPage = () => {
                     {getStatusLabel(tooltip.state.status)}
                   </Badge>
                 </div>
-                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <div className="mt-1 space-y-1 text-xs text-gray-400 dark:text-gray-500">
                   <div>Category: {selectedAccountMeta.label}</div>
                   <div>Orders: {tooltip.state.sales}</div>
                 </div>
               </div>
             ) : null}
+          </div>
+          <div className="mt-3 flex gap-2 md:hidden">
+            {statsCards.map((stat) => (
+              <div
+                key={stat.label}
+                className="relative flex-1 overflow-hidden rounded-xl border border-black/[0.06] bg-white/90 px-3 py-2.5 pl-5 shadow-sm backdrop-blur-sm dark:border-white/[0.08] dark:bg-[#1a1a1a]/60"
+              >
+                <div
+                  className="absolute bottom-0 left-0 top-0 w-1 rounded-r-full"
+                  style={{ backgroundColor: stat.accent }}
+                />
+                <div className="text-[10px] leading-tight text-gray-500 dark:text-gray-400">{stat.label}</div>
+                <div className="text-base font-bold" style={{ color: stat.accent }}>
+                  {stat.value}
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -692,27 +784,30 @@ const SalesMapPage = () => {
           }
         }}
       >
-        <SheetContent side="right" className="w-full sm:max-w-md">
-          <SheetHeader className="text-left">
+        <SheetContent
+          side="right"
+          className="w-full border-l border-black/[0.08] bg-white/95 p-0 backdrop-blur dark:border-white/[0.06] dark:bg-[#1a1a1a]/95 sm:max-w-md"
+        >
+          <SheetHeader className="border-b border-black/[0.06] px-5 py-4 text-left dark:border-white/[0.06]">
             <SheetTitle>
               {selectedState ? `Orders in ${selectedState.name} (${selectedState.code})` : 'Orders'}
             </SheetTitle>
           </SheetHeader>
 
-          <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 px-5 py-4">
             <Badge variant="secondary">{selectedStateOrders.length} orders</Badge>
             {loading ? (
               <div className="text-xs text-muted-foreground">Loading…</div>
             ) : null}
           </div>
 
-          <div className="mt-4 space-y-2 overflow-auto pr-1" style={{ maxHeight: 'calc(100vh - 180px)' }}>
+          <div className="space-y-2 overflow-auto px-5 pb-5" style={{ maxHeight: 'calc(100vh - 180px)' }}>
             {!selectedStateCode ? (
-              <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-black/[0.06] bg-white/80 px-3 py-2 text-sm text-muted-foreground shadow-sm dark:border-white/[0.06] dark:bg-white/[0.03]">
                 Select a state to view orders.
               </div>
             ) : selectedStateOrders.length === 0 ? (
-              <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-black/[0.06] bg-white/80 px-3 py-2 text-sm text-muted-foreground shadow-sm dark:border-white/[0.06] dark:bg-white/[0.03]">
                 No submitted orders in this state.
               </div>
             ) : (
@@ -720,7 +815,7 @@ const SalesMapPage = () => {
                 <button
                   key={o.id}
                   type="button"
-                  className="w-full rounded-lg border bg-background px-3 py-3 text-left transition hover:bg-muted"
+                  className="w-full rounded-xl border border-black/[0.06] bg-white/80 px-3 py-3 text-left shadow-sm transition hover:bg-black/[0.03] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
                   onClick={() => {
                     const base = `/order-fulfillment/${encodeURIComponent(o.id)}/fulfill`;
                     const lawyerId = (o.lawyer_id || '').trim();

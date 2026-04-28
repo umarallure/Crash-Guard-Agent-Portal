@@ -17,7 +17,7 @@ import type {
 export const TASK_STATUS_OPTIONS: Array<{ value: TaskStatus; label: string }> = [
   { value: "todo", label: "To Do" },
   { value: "in_progress", label: "In Progress" },
-  { value: "waiting", label: "Waiting" },
+  { value: "waiting", label: "Pending" },
   { value: "completed", label: "Completed" },
 ];
 
@@ -44,7 +44,7 @@ export const TASK_DEADLINE_FILTER_OPTIONS: Array<{
   { value: "today", label: "Due Today" },
   { value: "this_week", label: "This Week" },
   { value: "overdue", label: "Overdue" },
-  { value: "upcoming", label: "Next 7 Days" },
+  { value: "upcoming", label: "Next Week" },
 ];
 
 export const TASK_STATUS_META: Record<
@@ -53,19 +53,23 @@ export const TASK_STATUS_META: Record<
 > = {
   todo: {
     label: "To Do",
-    badgeClassName: "border-slate-200 bg-slate-50 text-slate-700",
+    badgeClassName:
+      "border-slate-300/70 bg-slate-100/80 text-slate-700 dark:border-slate-500/30 dark:bg-slate-400/10 dark:text-slate-200",
   },
   in_progress: {
     label: "In Progress",
-    badgeClassName: "border-sky-200 bg-sky-50 text-sky-700",
+    badgeClassName:
+      "border-sky-300/70 bg-sky-100/80 text-sky-700 dark:border-sky-500/30 dark:bg-sky-400/10 dark:text-sky-200",
   },
   waiting: {
-    label: "Waiting",
-    badgeClassName: "border-amber-200 bg-amber-50 text-amber-700",
+    label: "Pending",
+    badgeClassName:
+      "border-amber-300/70 bg-amber-100/80 text-amber-700 dark:border-amber-500/30 dark:bg-amber-400/10 dark:text-amber-200",
   },
   completed: {
     label: "Completed",
-    badgeClassName: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    badgeClassName:
+      "border-emerald-300/70 bg-emerald-100/80 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-400/10 dark:text-emerald-200",
   },
 };
 
@@ -75,17 +79,20 @@ export const TASK_PRIORITY_META: Record<
 > = {
   low: {
     label: "Low Priority",
-    badgeClassName: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    badgeClassName:
+      "border-emerald-300/70 bg-emerald-100/80 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-400/10 dark:text-emerald-200",
     railClassName: "bg-emerald-500/70",
   },
   medium: {
     label: "Medium Priority",
-    badgeClassName: "border-amber-200 bg-amber-50 text-amber-700",
+    badgeClassName:
+      "border-amber-300/70 bg-amber-100/80 text-amber-700 dark:border-amber-500/30 dark:bg-amber-400/10 dark:text-amber-200",
     railClassName: "bg-amber-500/80",
   },
   high: {
     label: "High Priority",
-    badgeClassName: "border-rose-200 bg-rose-50 text-rose-700",
+    badgeClassName:
+      "border-rose-300/70 bg-rose-100/80 text-rose-700 dark:border-rose-500/30 dark:bg-rose-400/10 dark:text-rose-200",
     railClassName: "bg-rose-500/80",
   },
 };
