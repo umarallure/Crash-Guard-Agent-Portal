@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { isCenterUser, isRestrictedUser } from '@/lib/userPermissions';
+import { getPortalRoleFlags, isCenterUser, isRestrictedUser } from '@/lib/userPermissions';
 import { Loader2, ShieldCheck, Zap, BarChart3, Lock, Eye, EyeOff } from 'lucide-react';
 
 const Auth = () => {
@@ -71,13 +71,18 @@ const Auth = () => {
       if (user) {
         const canAccess = await ensureAgentRoleOrSignOut(user.id);
         if (!canAccess) return;
+        const roleFlags = await getPortalRoleFlags(user.id);
         const isCenter = await isCenterUser(user.id);
         if (isCenter) {
           navigate('/center-lead-portal');
         } else if (isRestrictedUser(user.id)) {
           navigate('/daily-deal-flow');
-        } else {
+        } else if (roleFlags.isAdmin) {
           navigate('/scoreboard-dashboard');
+        } else if (roleFlags.canAccessTaskManagement) {
+          navigate('/task-management');
+        } else {
+          navigate('/closer-portal');
         }
       }
     };
