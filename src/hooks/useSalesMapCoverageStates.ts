@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { SALES_MAP_ACTIVE_STATE_CODE_SET } from "@/lib/salesMapActiveStates";
 
 export function useSalesMapCoverageStates() {
-  const [unblockedStateCodes, setUnblockedStateCodes] = useState<Set<string>>(new Set());
+  const [unblockedStateCodes, setUnblockedStateCodes] = useState<Set<string>>(
+    () => new Set(SALES_MAP_ACTIVE_STATE_CODE_SET)
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -20,11 +23,11 @@ export function useSalesMapCoverageStates() {
         return;
       }
 
-      const next = new Set(
-        (data ?? [])
-          .map((row) => (row.state_code || "").trim().toUpperCase())
-          .filter(Boolean)
-      );
+      const next = new Set(SALES_MAP_ACTIVE_STATE_CODE_SET);
+      (data ?? [])
+        .map((row) => (row.state_code || "").trim().toUpperCase())
+        .filter(Boolean)
+        .forEach((code) => next.add(code));
 
       setUnblockedStateCodes(next);
     };
