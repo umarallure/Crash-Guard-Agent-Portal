@@ -23,6 +23,7 @@ type ExistingAgreement = {
   status: RetainerStatus;
   submission_id: string | null;
   lead_id: string | null;
+  template_id: string | null;
   sent_at: string | null;
   viewed_at: string | null;
   signed_at: string | null;
@@ -598,6 +599,18 @@ function sanitizeStorageSegment(value: string | null | undefined) {
   return cleaned || "unlinked";
 }
 
+function sanitizePdfFileName(value: string | null | undefined) {
+  const withoutExtension = String(value || "")
+    .trim()
+    .replace(/\.pdf$/i, "")
+    .replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/^-+|-+$/g, "")
+    .trim();
+
+  return `${withoutExtension || "Signed-Retainer"}.pdf`;
+}
+
 async function sha256Hex(buffer: ArrayBuffer) {
   const hash = await crypto.subtle.digest("SHA-256", buffer);
   return Array.from(new Uint8Array(hash))
@@ -605,13 +618,40 @@ async function sha256Hex(buffer: ArrayBuffer) {
     .join("");
 }
 
+async function resolveSignedRetainerFileName(args: {
+  supabase: ReturnType<typeof createClient>;
+  templateId: string | null | undefined;
+}) {
+  const templateId = String(args.templateId || "").trim();
+  if (!templateId) return SIGNED_RETAINER_FILE_NAME;
+
+  const { data, error } = await args.supabase
+    .from("docusign_template_mappings")
+    .select("template_name")
+    .eq("template_id", templateId)
+    .eq("is_active", true)
+    .order("is_default", { ascending: false })
+    .order("priority", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[docusign-connect-webhook] Template name lookup failed", error);
+    return SIGNED_RETAINER_FILE_NAME;
+  }
+
+  return sanitizePdfFileName((data as { template_name?: string | null } | null)?.template_name);
+}
+
 async function archiveSignedRetainerDocument(args: {
   supabase: ReturnType<typeof createClient>;
   envelopeId: string;
   submissionId: string | null;
+  fileName: string;
 }): Promise<ArchivedDocument> {
   const document = await fetchSignedRetainerDocument(args.envelopeId);
-  const storagePath = `${sanitizeStorageSegment(args.submissionId)}/${sanitizeStorageSegment(args.envelopeId)}/${SIGNED_RETAINER_FILE_NAME}`;
+  const fileName = sanitizePdfFileName(args.fileName);
+  const storagePath = `${sanitizeStorageSegment(args.submissionId)}/${sanitizeStorageSegment(args.envelopeId)}/${fileName}`;
   const contentType = document.contentType || "application/pdf";
   const blob = new Blob([document.buffer], { type: contentType });
   const { error } = await args.supabase.storage
@@ -628,7 +668,7 @@ async function archiveSignedRetainerDocument(args: {
   return {
     bucket: RETAINER_DOCUMENT_BUCKET,
     storagePath,
-    fileName: SIGNED_RETAINER_FILE_NAME,
+    fileName,
     contentType,
     size: document.buffer.byteLength,
     sha256: await sha256Hex(document.buffer),
@@ -697,7 +737,7 @@ serve(async (req) => {
 
   const { data: existing, error: existingError } = await supabase
     .from("retainer_agreements")
-    .select("id,status,submission_id,lead_id,sent_at,viewed_at,signed_at,declined_at,voided_at,document_bucket,document_storage_path,document_file_name,document_content_type,document_size,document_sha256,document_stored_at")
+    .select("id,status,submission_id,lead_id,template_id,sent_at,viewed_at,signed_at,declined_at,voided_at,document_bucket,document_storage_path,document_file_name,document_content_type,document_size,document_sha256,document_stored_at")
     .eq("envelope_id", parsed.envelopeId)
     .maybeSingle();
 
@@ -714,10 +754,15 @@ serve(async (req) => {
 
   if (parsed.status === "signed" && !existingAgreement?.document_storage_path) {
     try {
+      const fileName = await resolveSignedRetainerFileName({
+        supabase,
+        templateId: existingAgreement?.template_id,
+      });
       archivedDocument = await archiveSignedRetainerDocument({
         supabase,
         envelopeId: parsed.envelopeId,
         submissionId,
+        fileName,
       });
     } catch (error) {
       archiveError = error;
