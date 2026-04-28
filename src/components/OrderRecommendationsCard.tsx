@@ -59,6 +59,35 @@ type SupabaseFromUntyped = {
   from: (table: string) => SupabaseQueryBuilderUntyped;
 };
 
+const MAX_VISIBLE_STATE_BADGES = 7;
+
+const renderStateBadges = (states: string[]) => {
+  if (!states.length) {
+    return <span className="text-xs text-muted-foreground">Not listed</span>;
+  }
+
+  const visibleStates = states.slice(0, MAX_VISIBLE_STATE_BADGES);
+  const remainingCount = Math.max(0, states.length - visibleStates.length);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {visibleStates.map((state) => (
+        <span
+          key={state}
+          className="rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-foreground"
+        >
+          {state}
+        </span>
+      ))}
+      {remainingCount > 0 ? (
+        <span className="rounded-full border border-border/60 bg-muted px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted-foreground">
+          +{remainingCount}
+        </span>
+      ) : null}
+    </div>
+  );
+};
+
 const formatExpiry = (iso: string) => {
   if (!iso) return "No order";
 
@@ -737,7 +766,6 @@ export const OrderRecommendationsCard = (props: {
     const isTopRecommendation = recommendationKey === topRecommendationOrderId;
     const rank = stateFilteredData.findIndex((item) => (item.order_id ?? item.lawyer_id) === recommendationKey) + 1;
     const rawReasons = Array.isArray(rec.reasons) ? rec.reasons : [];
-    const licensedStatesLabel = licensedStates.length ? licensedStates.join(", ") : "Not listed";
     const previewReasons = rawReasons.slice(0, 2);
     const expiryLabel = (() => {
       const value = formatExpiry(rec.expires_at);
@@ -793,7 +821,7 @@ export const OrderRecommendationsCard = (props: {
             {/* States */}
             <div className="flex items-start gap-1.5">
               <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/60" />
-              <span className="text-xs leading-snug text-foreground">{licensedStatesLabel}</span>
+              {renderStateBadges(licensedStates)}
             </div>
 
             {/* Meta row */}
@@ -901,9 +929,9 @@ export const OrderRecommendationsCard = (props: {
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                 {contactNumber ? <span className="font-mono">{contactNumber}</span> : null}
                 {licensedStates.length ? (
-                  <span className="inline-flex items-center gap-1">
+                  <span className="inline-flex min-w-0 items-start gap-1">
                     <MapPin className="h-3 w-3" />
-                    {licensedStates.join(", ")}
+                    {renderStateBadges(licensedStates)}
                   </span>
                 ) : null}
                 {rec.order_id ? (
