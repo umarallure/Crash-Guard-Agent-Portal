@@ -102,7 +102,7 @@ const ACCOUNT_CATEGORY_META: Record<
 };
 
 const MAP_PATH_SELECTOR = 'path[data-id], path[id]';
-const FORCED_LOW_VOLUME_STATE_CODES = new Set(['WY']);
+const FORCED_LOW_VOLUME_STATE_CODES = new Set(['FL', 'GA', 'NC', 'NY', 'WY']);
 
 const toCompetitionStatus = (sales: number): CompetitionStatus => {
   if (sales <= 0) return 'none';
