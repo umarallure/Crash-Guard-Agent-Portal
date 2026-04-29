@@ -127,7 +127,6 @@ const ACCOUNT_CATEGORY_META: Record<
 };
 
 const MAP_PATH_SELECTOR = 'path[data-id], path[id]';
-const BLOCKED_STATE_CODES = new Set(['NC']);
 const GREEN_ACTIVE_STATE_CODES = new Set(['WY', 'AZ', 'TX', 'GA', 'FL', 'NY']);
 const TEMPORARILY_UNAVAILABLE_STATE_CODES = new Set(['CA']);
 const US_STATE_CODE_SET = new Set(US_STATES.map((state) => state.code));
@@ -365,8 +364,6 @@ const SalesMapPage = () => {
       let fill = mapPalette.none;
       if (state?.coverageColor === 'temporarily_unavailable') {
         fill = mapPalette.unavailable;
-      } else if (BLOCKED_STATE_CODES.has(normalizedCode)) {
-        fill = mapPalette.none;
       } else if (state?.coverageColor === 'green') {
         fill = mapPalette.light;
       } else if (state?.coverageColor === 'yellow') {
@@ -440,6 +437,9 @@ const SalesMapPage = () => {
         if (!userId) return;
         accountTypeByUser.set(userId, profile.account_type ?? null);
       });
+      const internalAttorneyProfiles = attorneyProfiles.filter(
+        (profile) => profile.account_type === 'internal_lawyer'
+      );
 
       const rows = (ordersResponse.data ?? []) as OrderRow[];
       const filteredRows = rows.filter((row) => {
@@ -488,23 +488,23 @@ const SalesMapPage = () => {
         }
       }
 
-      for (const profile of attorneyProfiles) {
-        if (profile.account_type !== 'internal_lawyer') continue;
-        if (selectedAccountCategory !== 'all' && selectedAccountCategory !== 'internal_lawyer') continue;
-        if (isTestAttorney(profile.full_name, profile.firm_name, profile.primary_email, profile.personal_email)) continue;
+      if (selectedAccountCategory === 'all' || selectedAccountCategory === 'internal_lawyer') {
+        for (const profile of internalAttorneyProfiles) {
+          if (isTestAttorney(profile.full_name, profile.firm_name, profile.primary_email, profile.personal_email)) continue;
 
-        const licensedStates = toStateCodes(profile.licensed_states);
-        if (!licensedStates.length) continue;
+          const licensedStates = toStateCodes(profile.licensed_states);
+          if (!licensedStates.length) continue;
 
-        const userId = String(profile.user_id || '').trim();
-        const fallbackName = String(profile.full_name || profile.primary_email || profile.personal_email || '').trim();
-        if (!userId && !fallbackName) continue;
+          const userId = String(profile.user_id || '').trim();
+          const fallbackName = String(profile.full_name || profile.primary_email || profile.personal_email || '').trim();
+          if (!userId && !fallbackName) continue;
 
-        addAttorneyCoverage(
-          `${profile.account_type || 'attorney'}:${userId || fallbackName}`,
-          licensedStates,
-          toStateCodes(profile.blocked_states)
-        );
+          addAttorneyCoverage(
+            `${profile.account_type || 'attorney'}:${userId || fallbackName}`,
+            licensedStates,
+            toStateCodes(profile.blocked_states)
+          );
+        }
       }
 
       const nextStates: StateSales[] = US_STATES.map((s) => {
@@ -668,9 +668,9 @@ const SalesMapPage = () => {
 
   const statsCards = useMemo(
     () => [
-      { label: 'Orders', value: totalOrders, accent: '#ae4010' },
-      { label: 'Active', value: states.filter((s) => s.isActiveCoverage).length, accent: '#3f6eb3' },
-      { label: 'With Orders', value: states.filter((s) => s.sales > 0).length, accent: '#9ca3af' },
+      { label: 'Open Orders', value: totalOrders, accent: '#ae4010' },
+      { label: 'Covered States', value: states.filter((s) => s.isActiveCoverage).length, accent: '#3f6eb3' },
+      { label: 'States With Orders', value: states.filter((s) => s.sales > 0).length, accent: '#9ca3af' },
     ],
     [states, totalOrders]
   );
