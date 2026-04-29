@@ -102,6 +102,7 @@ const ACCOUNT_CATEGORY_META: Record<
 };
 
 const MAP_PATH_SELECTOR = 'path[data-id], path[id]';
+const BLOCKED_STATE_CODES = new Set(['NC']);
 const FORCED_LOW_VOLUME_STATE_CODES = new Set(['WY']);
 
 const toCompetitionStatus = (sales: number): CompetitionStatus => {
@@ -301,13 +302,16 @@ const SalesMapPage = () => {
 
       const normalizedCode = code.trim().toUpperCase();
       const state = stateByCodeRef.current.get(normalizedCode);
-      const fill = FORCED_LOW_VOLUME_STATE_CODES.has(normalizedCode)
-        ? mapPalette.light
-        : SALES_MAP_ACTIVE_STATE_CODE_SET.has(normalizedCode)
-          ? mapPalette.active
-          : state
-            ? getStatusColor(state.status, mapPalette)
-            : mapPalette.none;
+      let fill = mapPalette.none;
+      if (BLOCKED_STATE_CODES.has(normalizedCode)) {
+        fill = mapPalette.none;
+      } else if (FORCED_LOW_VOLUME_STATE_CODES.has(normalizedCode)) {
+        fill = mapPalette.light;
+      } else if (SALES_MAP_ACTIVE_STATE_CODE_SET.has(normalizedCode)) {
+        fill = mapPalette.active;
+      } else if (state) {
+        fill = getStatusColor(state.status, mapPalette);
+      }
 
       const selected = selectedStateCodeRef.current;
       const isSelected = selected ? selected === code : false;

@@ -78,6 +78,11 @@ interface CallClaimRow {
   created_at: string | null;
 }
 
+interface LeadStatusRow {
+  submission_id: string | null;
+  status: string | null;
+}
+
 interface CloserStats {
   name: string;
   userId: string;
@@ -124,9 +129,11 @@ type AttributedCallResultRow = {
 const REPORT_TIME_ZONE = "America/New_York";
 const RECORDS_PER_PAGE = 20;
 const CALL_LOG_TABLES = ["call_logs", "call_update_logs"] as const;
+const LEAD_STATUS_QUERY_BATCH_SIZE = 500;
 const ATTORNEY_REVIEW_STATUS = "attorney_review";
-const CLOSED_DEAL_STATUS = "submitted";
-const ESTIMATED_COMMISSION_PER_CLOSED_DEAL = 500;
+const SUBMITTED_ATTORNEY_STATUS = "submitted";
+const CLOSED_DEAL_LEAD_STATUS = "attorney_approved";
+const COMMISSION_PAID_PER_CLOSED_DEAL = 50;
 const DATE_FILTER_LABEL: Record<DateFilter, string> = {
   today: "Today",
   yesterday: "Yesterday",
@@ -236,6 +243,9 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
+const calculateCommissionPaid = (closedDeals: number) =>
+  closedDeals * COMMISSION_PAID_PER_CLOSED_DEAL;
+
 const formatDateKeyInTimeZone = (date: Date) =>
   new Intl.DateTimeFormat("en-CA", {
     timeZone: REPORT_TIME_ZONE,
@@ -297,8 +307,11 @@ const getApproxTimestampRange = (startKey: string, endKey: string) => {
 const isSubmittedToAttorneyStatus = (value: string | null | undefined) =>
   normalizeText(value) === ATTORNEY_REVIEW_STATUS;
 
-const isClosedDealStatus = (value: string | null | undefined) =>
-  normalizeText(value) === CLOSED_DEAL_STATUS;
+const isSubmittedAttorneyStatus = (value: string | null | undefined) =>
+  normalizeText(value) === SUBMITTED_ATTORNEY_STATUS;
+
+const isClosedDealLeadStatus = (value: string | null | undefined) =>
+  normalizeText(value) === CLOSED_DEAL_LEAD_STATUS;
 
 const isLostDealStatus = (value: string | null | undefined) =>
   LOST_STATUSES.has(normalizeText(value));
@@ -307,7 +320,7 @@ const isOpportunityRow = (row: CallResultRow) => {
   const normalizedStatus = normalizeText(row.status);
   if (!normalizedStatus) return false;
   if (isSubmittedToAttorneyStatus(row.status)) return false;
-  if (isClosedDealStatus(row.submitted_attorney_status)) return false;
+  if (isSubmittedAttorneyStatus(row.submitted_attorney_status)) return false;
   if (isLostDealStatus(row.status)) return false;
   return true;
 };
@@ -401,6 +414,45 @@ const fetchCallResultRows = async (
   return Array.from(deduped.values());
 };
 
+const chunkArray = <T,>(items: T[], size: number) => {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+};
+
+const fetchLeadStatusRows = async (submissionIds: string[]): Promise<LeadStatusRow[]> => {
+  const uniqueSubmissionIds = Array.from(
+    new Set(submissionIds.map((id) => id.trim()).filter(Boolean)),
+  );
+
+  if (uniqueSubmissionIds.length === 0) return [];
+
+  const results = await Promise.all(
+    chunkArray(uniqueSubmissionIds, LEAD_STATUS_QUERY_BATCH_SIZE).map((batch) =>
+      (supabase as any)
+        .from("leads")
+        .select("submission_id, status")
+        .in("submission_id", batch),
+    ),
+  );
+
+  const rows: LeadStatusRow[] = [];
+
+  results.forEach((result) => {
+    if (result.error) {
+      throw result.error;
+    }
+
+    rows.push(...((result.data || []) as LeadStatusRow[]));
+  });
+
+  return rows;
+};
+
 const fetchCloserCallClaims = async (
   startKey: string,
   endKey: string,
@@ -458,6 +510,7 @@ const CloserScoreboardPage = () => {
   const [closerDirectory, setCloserDirectory] = useState<LicensedCloserDirectoryEntry[]>([]);
   const [callResultRows, setCallResultRows] = useState<CallResultRow[]>([]);
   const [callClaimRows, setCallClaimRows] = useState<CallClaimRow[]>([]);
+  const [leadStatusRows, setLeadStatusRows] = useState<LeadStatusRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -583,6 +636,7 @@ const CloserScoreboardPage = () => {
     ]);
 
     const errors: string[] = [];
+    let nextCallResultRows: CallResultRow[] = [];
 
     if (directoryResult.status === "fulfilled") {
       setCloserDirectory(directoryResult.value);
@@ -592,9 +646,24 @@ const CloserScoreboardPage = () => {
     }
 
     if (callResultsResult.status === "fulfilled") {
-      setCallResultRows(callResultsResult.value);
+      nextCallResultRows = callResultsResult.value;
+      setCallResultRows(nextCallResultRows);
+
+      const submissionIds = nextCallResultRows
+        .map((row) => row.submission_id)
+        .filter((id): id is string => Boolean(id));
+
+      const leadStatusResult = await Promise.allSettled([fetchLeadStatusRows(submissionIds)]);
+
+      if (leadStatusResult[0].status === "fulfilled") {
+        setLeadStatusRows(leadStatusResult[0].value);
+      } else {
+        setLeadStatusRows([]);
+        errors.push("lead approval statuses");
+      }
     } else {
       setCallResultRows([]);
+      setLeadStatusRows([]);
       errors.push("call result outcomes");
     }
 
@@ -630,6 +699,19 @@ const CloserScoreboardPage = () => {
     [closerDirectory],
   );
 
+  const leadStatusBySubmissionId = useMemo(() => {
+    const statuses = new Map<string, string | null>();
+
+    leadStatusRows.forEach((row) => {
+      const submissionId = String(row.submission_id || "").trim();
+      if (!submissionId) return;
+
+      statuses.set(submissionId, row.status);
+    });
+
+    return statuses;
+  }, [leadStatusRows]);
+
   const submissionSnapshots = useMemo<SubmissionSnapshot[]>(() => {
     const grouped = new Map<string, AttributedCallResultRow[]>();
 
@@ -664,9 +746,7 @@ const CloserScoreboardPage = () => {
       const reachedSubmittedToAttorney = rows.some((item) =>
         isSubmittedToAttorneyStatus(item.row.status),
       );
-      const closedDeal = rows.some((item) =>
-        isClosedDealStatus(item.row.submitted_attorney_status),
-      );
+      const closedDeal = isClosedDealLeadStatus(leadStatusBySubmissionId.get(submissionId));
 
       return {
         submissionId,
@@ -680,7 +760,7 @@ const CloserScoreboardPage = () => {
           : null,
       };
     });
-  }, [callResultRows, closerDirectoryIndex]);
+  }, [callResultRows, closerDirectoryIndex, leadStatusBySubmissionId]);
 
   const closerStats = useMemo<CloserStats[]>(() => {
     const statsMap = new Map<string, Omit<CloserStats, "submitRate" | "rank">>();
@@ -720,7 +800,6 @@ const CloserScoreboardPage = () => {
 
       if (snapshot.closedDeal) {
         stats.closedDeals += 1;
-        stats.estimatedCommission += ESTIMATED_COMMISSION_PER_CLOSED_DEAL;
       }
 
       if (snapshot.opportunity) {
@@ -731,6 +810,7 @@ const CloserScoreboardPage = () => {
     return Array.from(statsMap.values())
       .map((stats) => ({
         ...stats,
+        estimatedCommission: calculateCommissionPaid(stats.closedDeals),
         submitRate:
           stats.callsStarted > 0
             ? (stats.submittedToAttorney / stats.callsStarted) * 100
@@ -758,10 +838,7 @@ const CloserScoreboardPage = () => {
         0,
       );
       const closedDeals = closerStats.reduce((total, closer) => total + closer.closedDeals, 0);
-      const estimatedCommission = closerStats.reduce(
-        (total, closer) => total + closer.estimatedCommission,
-        0,
-      );
+      const estimatedCommission = calculateCommissionPaid(closedDeals);
 
       return {
         callsStarted,
@@ -1353,7 +1430,7 @@ const CloserScoreboardPage = () => {
                           label="Closed Deals"
                           className="text-green-700 dark:text-green-400"
                         />
-                        <SortableHead column="estimatedCommission" label="Commission" />
+                        <SortableHead column="estimatedCommission" label="Commission Paid" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
