@@ -39,6 +39,8 @@ interface TaskFormDialogProps {
   open: boolean;
   initialTask: CloserTask | null;
   initialAssignee?: TaskAssigneeOption | null;
+  initialLead?: TaskLeadOption | null;
+  lockLead?: boolean;
   assigneeOptions: TaskAssigneeOption[];
   currentUserAssignee: TaskAssigneeOption | null;
   selfAssignOnly?: boolean;
@@ -79,6 +81,8 @@ export function TaskFormDialog({
   open,
   initialTask,
   initialAssignee = null,
+  initialLead = null,
+  lockLead = false,
   assigneeOptions,
   currentUserAssignee,
   selfAssignOnly = false,
@@ -163,15 +167,18 @@ export function TaskFormDialog({
 
     setValues({
       ...createEmptyState(),
+      leadId: initialLead?.id || "",
+      leadReference: initialLead?.reference || "",
       assigneeUserId: presetAssignee?.key || "",
       assigneeName: presetAssignee?.label || "",
     });
-    setLeadSearchText("");
+    setLeadSearchText(initialLead ? getLeadDisplayName(initialLead.reference, initialLead.customerName) : "");
     setShowLeadResults(false);
-  }, [assigneeOptions, currentUserAssignee, initialAssignee, initialTask, open, selfAssignOnly]);
+  }, [assigneeOptions, currentUserAssignee, initialAssignee, initialLead, initialTask, open, selfAssignOnly]);
 
   useEffect(() => {
     if (!open) return;
+    if (lockLead) return;
 
     const query = leadSearchText.trim();
     if (values.leadId) {
@@ -185,7 +192,7 @@ export function TaskFormDialog({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [leadSearchText, onLeadSearch, open, values.leadId, values.leadReference]);
+  }, [leadSearchText, lockLead, onLeadSearch, open, values.leadId, values.leadReference]);
 
   const handleChange = <K extends keyof TaskFormValues>(key: K, value: TaskFormValues[K]) => {
     setValues((previous) => ({
@@ -200,6 +207,8 @@ export function TaskFormDialog({
   };
 
   const handleLeadInputChange = (value: string) => {
+    if (lockLead) return;
+
     setLeadSearchText(value);
     setShowLeadResults(true);
 
@@ -217,6 +226,8 @@ export function TaskFormDialog({
   };
 
   const clearAttachedLead = () => {
+    if (lockLead) return;
+
     handleChange("leadId", "");
     handleChange("leadReference", "");
     setLeadSearchText("");
@@ -436,13 +447,15 @@ export function TaskFormDialog({
                       value={leadSearchText}
                       onChange={(event) => handleLeadInputChange(event.target.value)}
                       onFocus={() => {
+                        if (lockLead) return;
                         setShowLeadResults(true);
                         onLeadSearch(leadSearchText.trim());
                       }}
-                      placeholder="Search customer or phone"
-                      className="h-10 border-zinc-800 bg-zinc-900 pl-9 pr-10"
+                      readOnly={lockLead}
+                      placeholder={lockLead ? "Attached lead" : "Search customer or phone"}
+                      className={`h-10 border-zinc-800 bg-zinc-900 pl-9 pr-10 ${lockLead ? "cursor-default" : ""}`}
                     />
-                    {values.leadId ? (
+                    {values.leadId && !lockLead ? (
                       <Button
                         type="button"
                         variant="ghost"
@@ -463,7 +476,7 @@ export function TaskFormDialog({
                     </div>
                   ) : null}
 
-                  {showLeadResults ? (
+                  {showLeadResults && !lockLead ? (
                     <div className="absolute z-20 mt-2 w-full rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl shadow-black/30">
                       <ScrollArea className="h-52">
                         <div className="space-y-1 p-2">

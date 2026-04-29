@@ -28,6 +28,7 @@ import { VerificationPanel } from "@/components/VerificationPanel";
 import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
 import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
+import { LeadTaskCreateButton } from "@/pages/TaskManagement/components/LeadTaskCreateButton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search, Download } from "lucide-react";
 import { US_STATES } from "@/lib/us-states";
@@ -4023,6 +4024,16 @@ const CallResultUpdate = () => {
                     <Badge variant="outline" className="text-[10px] font-semibold uppercase tracking-wide">Callback</Badge>
                   </>
                 ) : null}
+              </div>
+              <div className="pt-1">
+                <LeadTaskCreateButton
+                  lead={{
+                    id: lead.id,
+                    submissionId: lead.submission_id,
+                    customerName: lead.customer_full_name,
+                    phoneNumber: lead.phone_number,
+                  }}
+                />
               </div>
             </div>
 

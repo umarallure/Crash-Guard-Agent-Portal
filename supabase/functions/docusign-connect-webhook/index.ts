@@ -23,6 +23,7 @@ type ExistingAgreement = {
   status: RetainerStatus;
   submission_id: string | null;
   lead_id: string | null;
+  template_id: string | null;
   sent_at: string | null;
   viewed_at: string | null;
   signed_at: string | null;
@@ -598,6 +599,41 @@ function sanitizeStorageSegment(value: string | null | undefined) {
   return cleaned || "unlinked";
 }
 
+function sanitizePdfFileName(value: string | null | undefined) {
+  const withoutExtension = String(value || "")
+    .trim()
+    .replace(/\.pdf$/i, "")
+    .replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/^-+|-+$/g, "")
+    .trim();
+
+  return `${withoutExtension || "Signed-Retainer"}.pdf`;
+}
+
+function stripPdfExtension(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .replace(/\.pdf$/i, "")
+    .trim();
+}
+
+function buildSignedRetainerFileName(args: {
+  templateName: string | null;
+  leadName: string | null;
+}) {
+  const templateName = stripPdfExtension(args.templateName) || "Signed-Retainer";
+  const leadName = stripPdfExtension(args.leadName);
+  const nameParts = leadName ? [templateName, leadName] : [templateName];
+
+  return sanitizePdfFileName(nameParts.join(" - "));
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    .test(value);
+}
+
 async function sha256Hex(buffer: ArrayBuffer) {
   const hash = await crypto.subtle.digest("SHA-256", buffer);
   return Array.from(new Uint8Array(hash))
@@ -605,13 +641,100 @@ async function sha256Hex(buffer: ArrayBuffer) {
     .join("");
 }
 
+async function resolveSignedRetainerTemplateName(args: {
+  supabase: ReturnType<typeof createClient>;
+  templateId: string | null | undefined;
+}) {
+  const templateId = String(args.templateId || "").trim();
+  if (!templateId) return null;
+
+  const { data, error } = await args.supabase
+    .from("docusign_template_mappings")
+    .select("template_name")
+    .eq("template_id", templateId)
+    .eq("is_active", true)
+    .order("is_default", { ascending: false })
+    .order("priority", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[docusign-connect-webhook] Template name lookup failed", error);
+    return null;
+  }
+
+  return getString((data as { template_name?: string | null } | null)?.template_name);
+}
+
+async function resolveLeadFullName(args: {
+  supabase: ReturnType<typeof createClient>;
+  leadId: string | null | undefined;
+  submissionId: string | null | undefined;
+}) {
+  const leadId = String(args.leadId || "").trim();
+  const submissionId = String(args.submissionId || "").trim();
+
+  if (leadId && isUuid(leadId)) {
+    const { data, error } = await args.supabase
+      .from("leads")
+      .select("customer_full_name")
+      .eq("id", leadId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[docusign-connect-webhook] Lead name lookup by lead_id failed", error);
+    } else {
+      const leadName = getString((data as { customer_full_name?: string | null } | null)?.customer_full_name);
+      if (leadName) return leadName;
+    }
+  }
+
+  if (!submissionId) return null;
+
+  const { data, error } = await args.supabase
+    .from("leads")
+    .select("customer_full_name")
+    .eq("submission_id", submissionId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[docusign-connect-webhook] Lead name lookup by submission_id failed", error);
+    return null;
+  }
+
+  return getString((data as { customer_full_name?: string | null } | null)?.customer_full_name);
+}
+
+async function resolveSignedRetainerFileName(args: {
+  supabase: ReturnType<typeof createClient>;
+  templateId: string | null | undefined;
+  leadId: string | null | undefined;
+  submissionId: string | null | undefined;
+}) {
+  const [templateName, leadName] = await Promise.all([
+    resolveSignedRetainerTemplateName({
+      supabase: args.supabase,
+      templateId: args.templateId,
+    }),
+    resolveLeadFullName({
+      supabase: args.supabase,
+      leadId: args.leadId,
+      submissionId: args.submissionId,
+    }),
+  ]);
+
+  return buildSignedRetainerFileName({ templateName, leadName });
+}
+
 async function archiveSignedRetainerDocument(args: {
   supabase: ReturnType<typeof createClient>;
   envelopeId: string;
   submissionId: string | null;
+  fileName: string;
 }): Promise<ArchivedDocument> {
   const document = await fetchSignedRetainerDocument(args.envelopeId);
-  const storagePath = `${sanitizeStorageSegment(args.submissionId)}/${sanitizeStorageSegment(args.envelopeId)}/${SIGNED_RETAINER_FILE_NAME}`;
+  const fileName = sanitizePdfFileName(args.fileName);
+  const storagePath = `${sanitizeStorageSegment(args.submissionId)}/${sanitizeStorageSegment(args.envelopeId)}/${fileName}`;
   const contentType = document.contentType || "application/pdf";
   const blob = new Blob([document.buffer], { type: contentType });
   const { error } = await args.supabase.storage
@@ -628,7 +751,7 @@ async function archiveSignedRetainerDocument(args: {
   return {
     bucket: RETAINER_DOCUMENT_BUCKET,
     storagePath,
-    fileName: SIGNED_RETAINER_FILE_NAME,
+    fileName,
     contentType,
     size: document.buffer.byteLength,
     sha256: await sha256Hex(document.buffer),
@@ -697,7 +820,7 @@ serve(async (req) => {
 
   const { data: existing, error: existingError } = await supabase
     .from("retainer_agreements")
-    .select("id,status,submission_id,lead_id,sent_at,viewed_at,signed_at,declined_at,voided_at,document_bucket,document_storage_path,document_file_name,document_content_type,document_size,document_sha256,document_stored_at")
+    .select("id,status,submission_id,lead_id,template_id,sent_at,viewed_at,signed_at,declined_at,voided_at,document_bucket,document_storage_path,document_file_name,document_content_type,document_size,document_sha256,document_stored_at")
     .eq("envelope_id", parsed.envelopeId)
     .maybeSingle();
 
@@ -709,15 +832,23 @@ serve(async (req) => {
   const existingAgreement = (existing ?? null) as ExistingAgreement | null;
   const now = new Date().toISOString();
   const submissionId = existingAgreement?.submission_id ?? parsed.submissionId;
+  const leadId = existingAgreement?.lead_id ?? parsed.leadId;
   let archivedDocument: ArchivedDocument | null = null;
   let archiveError: unknown = null;
 
   if (parsed.status === "signed" && !existingAgreement?.document_storage_path) {
     try {
+      const fileName = await resolveSignedRetainerFileName({
+        supabase,
+        templateId: existingAgreement?.template_id,
+        leadId,
+        submissionId,
+      });
       archivedDocument = await archiveSignedRetainerDocument({
         supabase,
         envelopeId: parsed.envelopeId,
         submissionId,
+        fileName,
       });
     } catch (error) {
       archiveError = error;
@@ -728,7 +859,7 @@ serve(async (req) => {
   const upsertPayload = {
     envelope_id: parsed.envelopeId,
     submission_id: submissionId,
-    lead_id: existingAgreement?.lead_id ?? parsed.leadId,
+    lead_id: leadId,
     status: mergeStatus(existingAgreement, parsed),
     sent_at: existingAgreement?.sent_at ?? parsed.sentAt,
     viewed_at: existingAgreement?.viewed_at ?? parsed.viewedAt,
