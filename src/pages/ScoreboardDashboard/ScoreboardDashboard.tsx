@@ -21,6 +21,7 @@ interface FilteredRow {
   date: string | null;
   insured_name: string | null;
   client_phone_number: string | null;
+  state: string | null;
   lead_vendor: string | null;
   agent: string | null;
   status: string | null;
@@ -629,7 +630,7 @@ const ScoreboardDashboard = () => {
         
         const { data, error } = await (supabase
           .from('daily_deal_flow')
-          .select('id, date, insured_name, client_phone_number, lead_vendor, agent, status, call_result, submitted_attorney, submitted_attorney_status, notes')
+          .select('id, date, insured_name, client_phone_number, state, lead_vendor, agent, status, call_result, submitted_attorney, submitted_attorney_status, notes')
           .gte('date', startKey)
           .lte('date', endKey)
           .eq('is_callback', activityType === 'followup') as any);
@@ -761,6 +762,8 @@ const ScoreboardDashboard = () => {
       setCallsLoading(false);
     }
   };
+
+  const showInboundBpoStateColumn = selectedFilter === 'total_transfers' && activityType === 'inbound';
 
   if (loading || !isAdmin) {
     return (
@@ -1099,6 +1102,7 @@ const ScoreboardDashboard = () => {
                               <TableHead className="font-semibold">Date</TableHead>
                               <TableHead className="font-semibold">Customer Name</TableHead>
                               <TableHead className="font-semibold">Phone</TableHead>
+                              {showInboundBpoStateColumn && <TableHead className="font-semibold">State</TableHead>}
                               <TableHead className="font-semibold">Agent</TableHead>
                               <TableHead className="font-semibold">Status</TableHead>
                               <TableHead className="font-semibold">Call Result</TableHead>
@@ -1115,6 +1119,7 @@ const ScoreboardDashboard = () => {
                                   <TableCell className="font-medium">{row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}</TableCell>
                                   <TableCell>{row.insured_name || '-'}</TableCell>
                                   <TableCell>{row.client_phone_number || '-'}</TableCell>
+                                  {showInboundBpoStateColumn && <TableCell>{row.state || '-'}</TableCell>}
                                   <TableCell>{row.agent || '-'}</TableCell>
                                   <TableCell>{row.status || '-'}</TableCell>
                                   <TableCell>{row.call_result || '-'}</TableCell>
