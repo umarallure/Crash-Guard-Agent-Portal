@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useAttorneys } from '@/hooks/useAttorneys';
 import { supabase } from '@/integrations/supabase/client';
-import { SALES_MAP_ACTIVE_STATE_CODE_SET, SALES_MAP_ACTIVE_STATE_COLOR } from '@/lib/salesMapActiveStates';
+import { SALES_MAP_ACTIVE_STATE_COLOR } from '@/lib/salesMapActiveStates';
 import { US_STATES } from '@/lib/us-states';
 
 type CompetitionStatus = 'none' | 'light' | 'moderate' | 'heavy';
@@ -18,6 +18,9 @@ type StateSales = {
   code: string;
   name: string;
   sales: number;
+  attorneyCount: number;
+  isActiveCoverage: boolean;
+  coverageColor: 'green' | 'yellow' | 'temporarily_unavailable' | 'inactive';
   status: CompetitionStatus;
 };
 
@@ -42,12 +45,31 @@ type OrderRow = {
 type AttorneyAccountType = 'broker_lawyer' | 'internal_lawyer' | null;
 type AccountCategoryFilter = 'all' | 'broker_lawyer' | 'internal_lawyer';
 
+type AttorneyProfileRow = {
+  user_id?: string | null;
+  full_name?: string | null;
+  firm_name?: string | null;
+  primary_email?: string | null;
+  personal_email?: string | null;
+  licensed_states?: unknown;
+  blocked_states?: unknown;
+  account_type?: AttorneyAccountType;
+};
+
+type LawyerRequirementRow = {
+  attorney_id?: string | null;
+  attorney_name?: string | null;
+  states?: unknown;
+  lawyer_type?: AttorneyAccountType;
+};
+
 type MapPalette = {
   none: string;
   active: string;
   light: string;
   moderate: string;
   heavy: string;
+  unavailable: string;
 };
 
 const ACCOUNT_CATEGORY_META: Record<
@@ -69,6 +91,7 @@ const ACCOUNT_CATEGORY_META: Record<
       light: '#22c55e',
       moderate: '#eab308',
       heavy: '#ef4444',
+      unavailable: '#f97316',
     },
     activeClasses: 'border-slate-300 bg-slate-50 text-slate-900',
     icon: Building2,
@@ -79,9 +102,10 @@ const ACCOUNT_CATEGORY_META: Record<
     palette: {
       none: '#e5e7eb',
       active: SALES_MAP_ACTIVE_STATE_COLOR,
-      light: '#38bdf8',
-      moderate: '#6366f1',
-      heavy: '#8b5cf6',
+      light: '#22c55e',
+      moderate: '#eab308',
+      heavy: '#ef4444',
+      unavailable: '#f97316',
     },
     activeClasses: 'border-sky-300 bg-sky-50 text-sky-900',
     icon: BriefcaseBusiness,
@@ -93,8 +117,9 @@ const ACCOUNT_CATEGORY_META: Record<
       none: '#e5e7eb',
       active: SALES_MAP_ACTIVE_STATE_COLOR,
       light: '#22c55e',
-      moderate: '#f59e0b',
+      moderate: '#eab308',
       heavy: '#ef4444',
+      unavailable: '#f97316',
     },
     activeClasses: 'border-emerald-300 bg-emerald-50 text-emerald-900',
     icon: Building2,
@@ -103,7 +128,35 @@ const ACCOUNT_CATEGORY_META: Record<
 
 const MAP_PATH_SELECTOR = 'path[data-id], path[id]';
 const BLOCKED_STATE_CODES = new Set(['NC']);
-const FORCED_LOW_VOLUME_STATE_CODES = new Set(['WY']);
+const GREEN_ACTIVE_STATE_CODES = new Set(['WY', 'AZ', 'TX', 'GA', 'FL', 'NY']);
+const TEMPORARILY_UNAVAILABLE_STATE_CODES = new Set(['CA']);
+const US_STATE_CODE_SET = new Set(US_STATES.map((state) => state.code));
+
+const toStateCodes = (value: unknown): string[] => {
+  const asArray = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : value.split(',');
+          } catch {
+            return value.split(',');
+          }
+        })()
+      : [];
+
+  return [
+    ...new Set(
+      asArray
+        .map((item) => String(item || '').trim().toUpperCase())
+        .filter((code) => US_STATE_CODE_SET.has(code))
+    ),
+  ];
+};
+
+const isTestAttorney = (...values: unknown[]) =>
+  values.some((value) => String(value ?? '').trim().toLowerCase().includes('test'));
 
 const toCompetitionStatus = (sales: number): CompetitionStatus => {
   if (sales <= 0) return 'none';
@@ -124,6 +177,13 @@ const getStatusLabel = (status: CompetitionStatus) => {
   if (status === 'light') return 'Low (1–5)';
   if (status === 'moderate') return 'Moderate (6–10)';
   return 'High (11+)';
+};
+
+const getCoverageLabel = (state: StateSales) => {
+  if (state.coverageColor === 'temporarily_unavailable') return 'Temporarily unavailable';
+  if (state.coverageColor === 'green') return 'Low volume';
+  if (state.coverageColor === 'yellow') return 'Medium volume';
+  return 'Inactive';
 };
 
 const clampPercent = (n: number) => Math.max(0, Math.min(100, n));
@@ -303,14 +363,14 @@ const SalesMapPage = () => {
       const normalizedCode = code.trim().toUpperCase();
       const state = stateByCodeRef.current.get(normalizedCode);
       let fill = mapPalette.none;
-      if (BLOCKED_STATE_CODES.has(normalizedCode)) {
+      if (state?.coverageColor === 'temporarily_unavailable') {
+        fill = mapPalette.unavailable;
+      } else if (BLOCKED_STATE_CODES.has(normalizedCode)) {
         fill = mapPalette.none;
-      } else if (FORCED_LOW_VOLUME_STATE_CODES.has(normalizedCode)) {
+      } else if (state?.coverageColor === 'green') {
         fill = mapPalette.light;
-      } else if (SALES_MAP_ACTIVE_STATE_CODE_SET.has(normalizedCode)) {
-        fill = mapPalette.active;
-      } else if (state) {
-        fill = getStatusColor(state.status, mapPalette);
+      } else if (state?.coverageColor === 'yellow') {
+        fill = mapPalette.moderate;
       }
 
       const selected = selectedStateCodeRef.current;
@@ -341,33 +401,25 @@ const SalesMapPage = () => {
     try {
       setDataError(null);
 
-      // Use the source-of-truth orders table so totals match the DB.
-      // The generated Supabase types for this portal may not include orders.
-      const supabaseUntyped = supabase as unknown as {
-        from: (
-          table: string
-        ) => {
-          select: (cols: string) => {
-            order: (
-              column: string,
-              opts: { ascending: boolean }
-            ) => Promise<{ data: OrderRow[] | null; error: unknown }>;
-          };
-        };
-      };
+      const [ordersResponse, attorneyProfileResponse, lawyerRequirementResponse] = await Promise.all([
+        (supabase as any)
+          .from('orders')
+          .select('id,target_states,lawyer_id,status,created_at,expires_at,quota_total,quota_filled')
+          .eq('status', 'OPEN')
+          .order('created_at', { ascending: false }),
+        (supabase as any)
+          .from('attorney_profiles')
+          .select('user_id,full_name,firm_name,primary_email,personal_email,licensed_states,blocked_states,account_type')
+          .in('account_type', ['broker_lawyer', 'internal_lawyer']),
+        (supabase as any)
+          .from('lawyer_requirements')
+          .select('attorney_id,attorney_name,states,lawyer_type')
+          .eq('lawyer_type', 'broker_lawyer'),
+      ]);
 
-      const { data, error } = await supabaseUntyped
-        .from('orders')
-        .select('id,target_states,lawyer_id,status,created_at,expires_at,quota_total,quota_filled')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        throw error instanceof Error ? error : new Error(String(error));
+      if (ordersResponse.error) {
+        throw ordersResponse.error instanceof Error ? ordersResponse.error : new Error(String(ordersResponse.error));
       }
-
-      const attorneyProfileResponse = await (supabase as any)
-        .from('attorney_profiles')
-        .select('user_id, account_type');
 
       if (attorneyProfileResponse.error) {
         throw attorneyProfileResponse.error instanceof Error
@@ -375,14 +427,21 @@ const SalesMapPage = () => {
           : new Error(String(attorneyProfileResponse.error));
       }
 
+      if (lawyerRequirementResponse.error) {
+        throw lawyerRequirementResponse.error instanceof Error
+          ? lawyerRequirementResponse.error
+          : new Error(String(lawyerRequirementResponse.error));
+      }
+
       const accountTypeByUser = new Map<string, AttorneyAccountType>();
-      ((attorneyProfileResponse.data ?? []) as Array<{ user_id?: string; account_type?: AttorneyAccountType }>).forEach((profile) => {
+      const attorneyProfiles = (attorneyProfileResponse.data ?? []) as AttorneyProfileRow[];
+      attorneyProfiles.forEach((profile) => {
         const userId = String(profile.user_id || '').trim();
         if (!userId) return;
         accountTypeByUser.set(userId, profile.account_type ?? null);
       });
 
-      const rows = (data ?? []) as OrderRow[];
+      const rows = (ordersResponse.data ?? []) as OrderRow[];
       const filteredRows = rows.filter((row) => {
         if (selectedAccountCategory === 'all') return true;
         const lawyerId = String(row.lawyer_id || '').trim();
@@ -403,12 +462,70 @@ const SalesMapPage = () => {
         }
       }
 
+      const coverageByState = new Map<string, Set<string>>();
+      const addAttorneyCoverage = (attorneyKey: string, licensedStates: string[], blockedStates: string[]) => {
+        const blocked = new Set(blockedStates);
+        for (const code of licensedStates) {
+          if (blocked.has(code)) continue;
+          const existing = coverageByState.get(code) ?? new Set<string>();
+          existing.add(attorneyKey);
+          coverageByState.set(code, existing);
+        }
+      };
+
+      if (selectedAccountCategory === 'all' || selectedAccountCategory === 'broker_lawyer') {
+        for (const row of (lawyerRequirementResponse.data ?? []) as LawyerRequirementRow[]) {
+          if (isTestAttorney(row.attorney_name)) continue;
+
+          const licensedStates = toStateCodes(row.states);
+          if (!licensedStates.length) continue;
+
+          const attorneyId = String(row.attorney_id || '').trim();
+          const attorneyName = String(row.attorney_name || '').trim();
+          if (!attorneyId && !attorneyName) continue;
+
+          addAttorneyCoverage(`broker:${attorneyId || attorneyName}`, licensedStates, []);
+        }
+      }
+
+      for (const profile of attorneyProfiles) {
+        if (profile.account_type !== 'internal_lawyer') continue;
+        if (selectedAccountCategory !== 'all' && selectedAccountCategory !== 'internal_lawyer') continue;
+        if (isTestAttorney(profile.full_name, profile.firm_name, profile.primary_email, profile.personal_email)) continue;
+
+        const licensedStates = toStateCodes(profile.licensed_states);
+        if (!licensedStates.length) continue;
+
+        const userId = String(profile.user_id || '').trim();
+        const fallbackName = String(profile.full_name || profile.primary_email || profile.personal_email || '').trim();
+        if (!userId && !fallbackName) continue;
+
+        addAttorneyCoverage(
+          `${profile.account_type || 'attorney'}:${userId || fallbackName}`,
+          licensedStates,
+          toStateCodes(profile.blocked_states)
+        );
+      }
+
       const nextStates: StateSales[] = US_STATES.map((s) => {
         const sales = counts.get(s.code) ?? 0;
+        const attorneyCount = coverageByState.get(s.code)?.size ?? 0;
+        const isActiveCoverage = attorneyCount > 0;
+        const coverageColor: StateSales['coverageColor'] = TEMPORARILY_UNAVAILABLE_STATE_CODES.has(s.code)
+          ? 'temporarily_unavailable'
+          : isActiveCoverage
+            ? GREEN_ACTIVE_STATE_CODES.has(s.code)
+              ? 'green'
+              : 'yellow'
+            : 'inactive';
+
         return {
           code: s.code,
           name: s.name,
           sales,
+          attorneyCount,
+          isActiveCoverage,
+          coverageColor,
           status: toCompetitionStatus(sales),
         };
       });
@@ -424,6 +541,11 @@ const SalesMapPage = () => {
           code: s.code,
           name: s.name,
           sales: 0,
+          attorneyCount: 0,
+          isActiveCoverage: false,
+          coverageColor: TEMPORARILY_UNAVAILABLE_STATE_CODES.has(s.code)
+            ? 'temporarily_unavailable'
+            : 'inactive',
           status: 'none',
         }))
       );
@@ -547,7 +669,7 @@ const SalesMapPage = () => {
   const statsCards = useMemo(
     () => [
       { label: 'Orders', value: totalOrders, accent: '#ae4010' },
-      { label: 'Active', value: SALES_MAP_ACTIVE_STATE_CODE_SET.size, accent: '#3f6eb3' },
+      { label: 'Active', value: states.filter((s) => s.isActiveCoverage).length, accent: '#3f6eb3' },
       { label: 'With Orders', value: states.filter((s) => s.sales > 0).length, accent: '#9ca3af' },
     ],
     [states, totalOrders]
@@ -558,7 +680,7 @@ const SalesMapPage = () => {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Sales Map</h2>
-          <p className="text-sm text-muted-foreground">Submitted orders by state</p>
+          <p className="text-sm text-muted-foreground">Open orders and licensed lawyer coverage by state</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="inline-flex rounded-xl border border-border bg-card p-1">
@@ -683,7 +805,7 @@ const SalesMapPage = () => {
                 <div className="flex flex-wrap items-center gap-2 md:flex-nowrap md:gap-3">
                   <div className="flex items-center gap-1.5">
                     <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.none }} />
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400">No orders</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Inactive</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.light }} />
@@ -691,11 +813,15 @@ const SalesMapPage = () => {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.moderate }} />
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Moderate volume</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Medium volume</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.heavy }} />
                     <span className="text-[10px] text-gray-500 dark:text-gray-400">High volume</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapPalette.unavailable }} />
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">Temporarily unavailable</span>
                   </div>
                 </div>
 
@@ -754,6 +880,8 @@ const SalesMapPage = () => {
                 </div>
                 <div className="mt-1 space-y-1 text-xs text-gray-400 dark:text-gray-500">
                   <div>Category: {selectedAccountMeta.label}</div>
+                  <div>Coverage: {getCoverageLabel(tooltip.state)}</div>
+                  <div>Licensed lawyers: {tooltip.state.attorneyCount}</div>
                   <div>Orders: {tooltip.state.sales}</div>
                 </div>
               </div>
