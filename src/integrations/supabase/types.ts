@@ -267,6 +267,7 @@ export type Database = {
           injuries: string | null
           insurance_company: string | null
           insured: boolean | null
+          internal_notes: string | null
           lead_id: string | null
           licensed_agent_account: string | null
           medical_attention: string | null
@@ -313,6 +314,7 @@ export type Database = {
           injuries?: string | null
           insurance_company?: string | null
           insured?: boolean | null
+          internal_notes?: string | null
           lead_id?: string | null
           licensed_agent_account?: string | null
           medical_attention?: string | null
@@ -359,6 +361,7 @@ export type Database = {
           injuries?: string | null
           insurance_company?: string | null
           insured?: boolean | null
+          internal_notes?: string | null
           lead_id?: string | null
           licensed_agent_account?: string | null
           medical_attention?: string | null
