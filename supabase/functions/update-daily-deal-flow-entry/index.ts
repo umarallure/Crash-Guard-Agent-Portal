@@ -9,7 +9,6 @@ type RequestBody = {
   licensed_agent_account?: string | null;
   status?: string | null;
   call_result?: string | null;
-  tag?: string | null;
   carrier?: string | null;
   product_type?: string | null;
   draft_date?: string | null;
@@ -164,7 +163,6 @@ serve(async (req)=>{
       licensed_agent_account = null,
       status = null,
       call_result = null,
-      tag = null,
       carrier = null,
       product_type = null,
       draft_date = null,
@@ -204,8 +202,8 @@ serve(async (req)=>{
       insurance_documents = null,
       police_report = null,
       assigned_attorney_id = null,
-      submitted_attorney = null,
-      submitted_attorney_status = null
+      submitted_attorney=null,
+      submitted_attorney_status= null
     } = body;
     // Validate required fields
     if (!submission_id) {
@@ -217,8 +215,9 @@ serve(async (req)=>{
     console.log('Updating daily deal flow for submission:', submission_id, 'call source:', call_source);
     // Get today's date in EST YYYY-MM-DD format
     const todayDate = getTodayDateEST();
+    const leadSelectColumns = 'customer_full_name, phone_number, lead_vendor, state';
     // Fetch lead data for insertions
-    const { data: leadData, error: leadError } = await supabase.from('leads').select('customer_full_name, phone_number, lead_vendor').eq('submission_id', submission_id).single();
+    const { data: leadData, error: leadError } = await supabase.from('leads').select(leadSelectColumns).eq('submission_id', submission_id).single();
     if (leadError && call_source !== 'First Time Transfer') {
       console.error('Error fetching lead data:', leadError);
       throw new Error('Failed to fetch lead data');
@@ -250,7 +249,7 @@ serve(async (req)=>{
       }
       if (shouldCreateNew) {
         // Create new entry with today's date
-        const { data: leadData, error: leadError } = await supabase.from('leads').select('customer_full_name, phone_number, lead_vendor').eq('submission_id', submission_id).single();
+        const { data: leadData, error: leadError } = await supabase.from('leads').select(leadSelectColumns).eq('submission_id', submission_id).single();
         if (leadError) {
           console.error('Error fetching lead data for new entry:', leadError);
           throw new Error('Failed to fetch lead data for new entry');
@@ -260,12 +259,12 @@ serve(async (req)=>{
           lead_vendor: leadData?.lead_vendor,
           insured_name: leadData?.customer_full_name,
           client_phone_number: leadData?.phone_number,
+          state: leadData?.state,
           date: todayDate,
           buffer_agent,
           agent,
           licensed_agent_account,
           status: finalStatus,
-          tag,
           call_result: callResultStatus,
           carrier,
           product_type,
@@ -306,8 +305,8 @@ serve(async (req)=>{
             agent,
             licensed_agent_account,
             status: finalStatus,
-            tag,
             call_result: callResultStatus,
+            state: leadData?.state,
             carrier,
             product_type,
             draft_date,
@@ -342,8 +341,6 @@ serve(async (req)=>{
             medical_treatment_proof,
             insurance_documents,
             police_report,
-            submitted_attorney,
-            submitted_attorney_status,
             updated_at: getCurrentTimestampEST()
           }).eq('id', mostRecentEntry.id).select().single();
           if (error) {
@@ -359,12 +356,12 @@ serve(async (req)=>{
             lead_vendor: leadData?.lead_vendor,
             insured_name: leadData?.customer_full_name,
             client_phone_number: leadData?.phone_number,
+            state: leadData?.state,
             date: todayDate,
             buffer_agent,
             agent,
             licensed_agent_account,
             status: finalStatus,
-            tag,
             call_result: callResultStatus,
             carrier,
             product_type,
@@ -399,9 +396,7 @@ serve(async (req)=>{
             assigned_attorney_id,
             medical_treatment_proof,
             insurance_documents,
-            police_report,
-            submitted_attorney,
-            submitted_attorney_status
+            police_report
           }).select().single();
           if (error) {
             console.error('Error inserting new daily deal flow entry:', error);
@@ -427,8 +422,8 @@ serve(async (req)=>{
           agent,
           licensed_agent_account,
           status: finalStatus,
-          tag,
           call_result: callResultStatus,
+          state: leadData?.state,
           carrier,
           product_type,
           draft_date,
@@ -480,12 +475,12 @@ serve(async (req)=>{
           lead_vendor: leadData?.lead_vendor,
           insured_name: leadData?.customer_full_name,
           client_phone_number: leadData?.phone_number,
+          state: leadData?.state,
           date: todayDate,
           buffer_agent,
           agent,
           licensed_agent_account,
           status: finalStatus,
-          tag,
           call_result: callResultStatus,
           carrier,
           product_type,
@@ -522,7 +517,7 @@ serve(async (req)=>{
           insurance_documents,
           police_report,
           submitted_attorney,
-          submitted_attorney_status
+          submitted_attorney_status,
         }).select().single();
         if (error) {
           console.error('Error inserting new daily deal flow entry:', error);
