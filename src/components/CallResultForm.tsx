@@ -418,7 +418,8 @@ export const CallResultForm = ({
   const [applicationSubmitted, setApplicationSubmitted] = useState<boolean | null>(true);
   const [status, setStatus] = useState("");
   const [statusReason, setStatusReason] = useState("");
-  const [notes, setNotes] = useState("");
+  const [publicSlackNotes, setPublicSlackNotes] = useState("");
+  const [internalNotes, setInternalNotes] = useState("");
   const [submissionStatus, setSubmissionStatus] = useState<string>("");
   const [bufferAgent, setBufferAgent] = useState("");
   const [agentWhoTookCall, setAgentWhoTookCall] = useState("");
@@ -613,7 +614,7 @@ export const CallResultForm = ({
           setPriorAttorneyDetails('');
           break;
         case 'additional_notes':
-          setNotes('');
+          setPublicSlackNotes('');
           break;
         default:
           break;
@@ -699,7 +700,7 @@ export const CallResultForm = ({
           if (!priorAttorneyDetails) setPriorAttorneyDetails(value);
           break;
         case 'additional_notes':
-          if (!notes.trim()) setNotes(value);
+          if (!publicSlackNotes.trim()) setPublicSlackNotes(value);
           break;
         default:
           break;
@@ -726,7 +727,7 @@ export const CallResultForm = ({
     passengersCount,
     priorAttorneyInvolved,
     priorAttorneyDetails,
-    notes,
+    publicSlackNotes,
   ]);
 
   useEffect(() => {
@@ -754,7 +755,8 @@ export const CallResultForm = ({
     const loadExistingCallResult = async () => {
       if (!submissionId) return;
 
-      let notesLoadedFromCallResult = false;
+      setPublicSlackNotes("");
+      setInternalNotes("");
 
       try {
         const { data: existingResult, error } = await supabase
@@ -770,10 +772,8 @@ export const CallResultForm = ({
           // Populate form with existing data
           setApplicationSubmitted(Boolean(existingResult.application_submitted));
           setStatus(existingResult.status || '');
-          setNotes(existingResult.notes || '');
-          if ((existingResult.notes || '').trim()) {
-            notesLoadedFromCallResult = true;
-          }
+          setPublicSlackNotes(existingResult.notes || '');
+          setInternalNotes(existingResult.internal_notes || '');
           setBufferAgent(existingResult.buffer_agent || '');
           setAgentWhoTookCall(existingResult.agent_who_took_call || '');
           setCallSource(existingResult.call_source || '');
@@ -1125,7 +1125,7 @@ export const CallResultForm = ({
 
         if (dealFlowData && !dealFlowError && (dealFlowData.notes || '').trim()) {
           console.log('Pre-populating notes from daily_deal_flow:', dealFlowData.notes);
-          setNotes(dealFlowData.notes);
+          setPublicSlackNotes(dealFlowData.notes);
         }
       } catch (ddfError) {
         console.log('Could not fetch notes from daily_deal_flow:', ddfError);
@@ -1145,16 +1145,16 @@ export const CallResultForm = ({
       setStatusReason("Chargeback DQ");
       // Auto-populate notes for Chargeback DQ
       const clientName = customerName || "[Client Name]";
-      setNotes(getNoteText(status, "Chargeback DQ", clientName));
+      setPublicSlackNotes(getNoteText(status, "Chargeback DQ", clientName));
     } else if (status === "GI - Currently DQ") {
       // Reset carrier attempted fields when switching to this status
       setCarrierAttempted1("");
       setCarrierAttempted2("");
       setCarrierAttempted3("");
-      setNotes("");
+      setPublicSlackNotes("");
     } else {
       setStatusReason("");
-      setNotes("");
+      setPublicSlackNotes("");
     }
   }, [status, customerName]);
 
@@ -1167,7 +1167,7 @@ export const CallResultForm = ({
       if (carrierAttempted3) carriers.push(carrierAttempted3);
       
       const carrierText = carriers.join(', ');
-      setNotes(`${clientName} has been declined through ${carrierText} and only qualifies for a GI policy. They are currently DQ'd`);
+      setPublicSlackNotes(`${clientName} has been declined through ${carrierText} and only qualifies for a GI policy. They are currently DQ'd`);
     }
   }, [status, carrierAttempted1, carrierAttempted2, carrierAttempted3, customerName]);
 
@@ -1196,13 +1196,13 @@ export const CallResultForm = ({
     Boolean(agentWhoTookCall) &&
     Boolean(selectedPipeline) &&
     Boolean(qualifiedStage) &&
-    Boolean(notes.trim());
+    Boolean(publicSlackNotes.trim());
   const isNotQualifiedFormComplete =
     Boolean(callSource) &&
     Boolean(agentWhoTookCall) &&
     Boolean(selectedPipeline) &&
     Boolean(status) &&
-    Boolean(notes.trim()) &&
+    Boolean(publicSlackNotes.trim()) &&
     (status !== "GI - Currently DQ" || Boolean(carrierAttempted1));
 
   const handleStatusReasonChange = (reason: string) => {
@@ -1210,14 +1210,14 @@ export const CallResultForm = ({
     if (reason && reason !== "Other") {
       const clientName = customerName || "[Client Name]";
       if (status === "Updated Banking/draft date") {
-        setNotes(getNoteText(status, reason, clientName, newDraftDate));
+        setPublicSlackNotes(getNoteText(status, reason, clientName, newDraftDate));
       } else if (status === "Fulfilled carrier requirements") {
-        setNotes("");
+        setPublicSlackNotes("");
       } else {
-        setNotes(getNoteText(status, reason, clientName));
+        setPublicSlackNotes(getNoteText(status, reason, clientName));
       }
     } else if (reason === "Other") {
-      setNotes("");
+      setPublicSlackNotes("");
     }
   };
 
@@ -1226,7 +1226,7 @@ export const CallResultForm = ({
     // Update notes if reason is already selected
     if (statusReason && status === "Updated Banking/draft date") {
       const clientName = customerName || "[Client Name]";
-      setNotes(getNoteText(status, statusReason, clientName, date));
+      setPublicSlackNotes(getNoteText(status, statusReason, clientName, date));
     }
   };
 
@@ -1356,8 +1356,8 @@ export const CallResultForm = ({
         finalStatus = getQualifiedStageKey(status);
       }
 
-      // Generate final notes
-      let finalNotes = notes;
+      // Generate final public notes. Internal notes stay in call_results.internal_notes only.
+      let finalNotes = publicSlackNotes;
       if (applicationSubmitted === true) {
         const structuredNotes = generateSubmittedApplicationNotes(
           {
@@ -1377,7 +1377,7 @@ export const CallResultForm = ({
             priorAttorneyDetails
           }
         );
-        finalNotes = combineNotes(structuredNotes, notes);
+        finalNotes = combineNotes(structuredNotes, publicSlackNotes);
       }
 
       const callResultData = {
@@ -1385,6 +1385,7 @@ export const CallResultForm = ({
         application_submitted: applicationSubmitted,
         status: finalStatus,
         notes: finalNotes,
+        internal_notes: internalNotes.trim() || null,
         dq_reason: applicationSubmitted === true && qualifiedStageReason
           ? qualifiedStageReason
           : (showStatusReasonDropdown ? statusReason : null),
@@ -1516,7 +1517,7 @@ export const CallResultForm = ({
               status: finalStatus,
               call_source: callSource,
               dq_reason: showStatusReasonDropdown ? statusReason : null,
-              notes: notes
+              notes: publicSlackNotes
             },
             isRetentionCall: isRetentionCall,
             customerName: leadCustomerName,
@@ -1635,8 +1636,8 @@ export const CallResultForm = ({
                 stageName: stageLabel,
                 statusKey: finalStatus,
                 tag: (selectedTag || "").trim() || null,
-                additionalNotes: notes,
-                notes: finalNotes,
+                publicSlackNotes,
+                additionalNotes: publicSlackNotes,
                 dq_reason: applicationSubmitted === true && qualifiedStageReason
                   ? qualifiedStageReason
                   : (showStatusReasonDropdown ? statusReason : null),
@@ -1671,7 +1672,7 @@ export const CallResultForm = ({
               status: finalStatus,
               dq_reason: showStatusReasonDropdown ? statusReason : null,
               status_reason: showStatusReasonDropdown ? statusReason : null,
-              notes: notes,
+              notes: publicSlackNotes,
               buffer_agent: bufferAgent,
               agent_who_took_call: agentWhoTookCall,
               lead_vendor: leadData.lead_vendor || leadVendor || 'N/A',
@@ -1728,7 +1729,8 @@ export const CallResultForm = ({
           setApplicationSubmitted(true);
           setStatus("");
           setStatusReason("");
-          setNotes("");
+          setPublicSlackNotes("");
+          setInternalNotes("");
           setBufferAgent("");
           setAgentWhoTookCall("");
           setLeadVendor("");
@@ -1989,23 +1991,38 @@ export const CallResultForm = ({
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="notesSubmitted">
-            Agent Notes <span className="text-red-500">*</span>
+          <Label htmlFor="publicSlackNotesSubmitted">
+            Public Slack Notes <span className="text-red-500">*</span>
           </Label>
           <Textarea
-            id="notesSubmitted"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Enter any additional notes about this application..."
+            id="publicSlackNotesSubmitted"
+            value={publicSlackNotes}
+            onChange={(e) => setPublicSlackNotes(e.target.value)}
+            placeholder="Enter the notes that should be visible in Slack..."
             rows={4}
-            className={`${!notes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
+            className={`${!publicSlackNotes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
           />
           <p className="text-sm text-slate-500">
-            Application details will be auto-generated and combined with your notes when saved.
+            These notes can be sent to Slack and shared downstream.
           </p>
-          {!notes.trim() && (
-            <p className="text-sm text-red-500">Agent Notes are required</p>
+          {!publicSlackNotes.trim() && (
+            <p className="text-sm text-red-500">Public Slack Notes are required</p>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="internalNotesSubmitted">Internal Notes</Label>
+          <Textarea
+            id="internalNotesSubmitted"
+            value={internalNotes}
+            onChange={(e) => setInternalNotes(e.target.value)}
+            placeholder="Enter internal-only notes..."
+            rows={4}
+            className="border-[#ead9ce] bg-white/95"
+          />
+          <p className="text-sm text-slate-500">
+            Internal notes are saved only on the call result and are not sent to Slack.
+          </p>
         </div>
       </div>
     </div>
@@ -2235,20 +2252,20 @@ export const CallResultForm = ({
 
       <div className="space-y-3 border-t border-[#f0e2d7] pt-4">
         <div className="space-y-2">
-          <Label htmlFor="notes">
-            Notes <span className="text-red-500">*</span>
+          <Label htmlFor="publicSlackNotes">
+            Public Slack Notes <span className="text-red-500">*</span>
           </Label>
           <Textarea
-            id="notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            id="publicSlackNotes"
+            value={publicSlackNotes}
+            onChange={(e) => setPublicSlackNotes(e.target.value)}
             placeholder={showStatusReasonDropdown && statusReason && statusReason !== "Other"
               ? "Note has been auto-populated. You can edit if needed."
               : showStatusReasonDropdown && statusReason === "Other"
               ? "Please enter a custom message."
-              : "Why the call got dropped or application not get submitted? Please provide the reason (required)"
+              : "Enter the notes that should be visible in Slack (required)"
             }
-            className={`${!notes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
+            className={`${!publicSlackNotes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
             rows={4}
             required
           />
@@ -2262,9 +2279,24 @@ export const CallResultForm = ({
               Please enter a custom message for this reason.
             </p>
           )}
-          {!notes.trim() && (
-            <p className="text-sm text-red-500">Notes are required</p>
+          {!publicSlackNotes.trim() && (
+            <p className="text-sm text-red-500">Public Slack Notes are required</p>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="internalNotes">Internal Notes</Label>
+          <Textarea
+            id="internalNotes"
+            value={internalNotes}
+            onChange={(e) => setInternalNotes(e.target.value)}
+            placeholder="Enter internal-only notes..."
+            rows={4}
+            className="border-[#ead9ce] bg-white/95"
+          />
+          <p className="text-sm text-slate-500">
+            Internal notes are saved only on the call result and are not sent to Slack.
+          </p>
         </div>
       </div>
     </div>
@@ -2306,7 +2338,7 @@ export const CallResultForm = ({
                       <div className="space-y-2">
                         <div className="font-semibold text-foreground">Update Call Result</div>
                         <p className="text-muted-foreground">
-                          Finalize the call outcome, submission details, and agent notes in one compact closeout panel.
+                          Finalize the call outcome, submission details, public Slack notes, and internal notes in one compact closeout panel.
                         </p>
                       </div>
                     </PopoverContent>
@@ -2566,20 +2598,20 @@ export const CallResultForm = ({
               )}
 
               <div>
-                <Label htmlFor="notes">
-                  Notes <span className="text-red-500">*</span>
+                <Label htmlFor="publicSlackNotesLegacy">
+                  Public Slack Notes <span className="text-red-500">*</span>
                 </Label>
                 <Textarea
-                  id="notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  id="publicSlackNotesLegacy"
+                  value={publicSlackNotes}
+                  onChange={(e) => setPublicSlackNotes(e.target.value)}
                   placeholder={showStatusReasonDropdown && statusReason && statusReason !== "Other" 
                     ? "Note has been auto-populated. You can edit if needed." 
                     : showStatusReasonDropdown && statusReason === "Other"
                     ? "Please enter a custom message."
                     : "Why the call got dropped or application not get submitted? Please provide the reason (required)"
                   }
-                  className={`${!notes.trim() ? 'border-red-300 focus:border-red-500' : ''}`}
+                  className={`${!publicSlackNotes.trim() ? 'border-red-300 focus:border-red-500' : ''}`}
                   rows={3}
                   required
                 />
@@ -2593,8 +2625,8 @@ export const CallResultForm = ({
                     Please enter a custom message for this reason.
                   </p>
                 )}
-                {!notes.trim() && (
-                  <p className="text-sm text-red-500 mt-1">Notes are required</p>
+                {!publicSlackNotes.trim() && (
+                  <p className="text-sm text-red-500 mt-1">Public Slack Notes are required</p>
                 )}
               </div>
             </div>
@@ -2608,7 +2640,7 @@ export const CallResultForm = ({
                 {!agentWhoTookCall && " Agent who took the call"}
                 {!selectedPipeline && " Pipeline Name"}
                 {!qualifiedStage && " Status / Stage"}
-                {!notes.trim() && " Agent Notes"}
+                {!publicSlackNotes.trim() && " Public Slack Notes"}
               </p>
             </div>
           )}
@@ -2623,7 +2655,7 @@ export const CallResultForm = ({
                 {!selectedPipeline && " Pipeline Name"}
                 {!status && " Status/Stage"}
                 {status === "GI - Currently DQ" && !carrierAttempted1 && " Carrier Attempted #1"}
-                {!notes.trim() && " Notes"}
+                {!publicSlackNotes.trim() && " Public Slack Notes"}
               </p>
             </div>
           )}

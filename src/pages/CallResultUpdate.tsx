@@ -1974,6 +1974,10 @@ const CallResultUpdate = () => {
     assignedAttorneyProfile?.primary_email?.trim() ||
     currentAssignedAttorneyId ||
     "";
+  const hasSelectedBrokerLawyer =
+    attorneyFulfillmentMode === "broker" &&
+    Boolean(selectedSubmittedLawyer) &&
+    selectedSubmittedLawyer?.isNoCoverage !== true;
   const selectedHandoffAttorneyLabel =
     attorneyFulfillmentMode === "broker"
       ? selectedSubmittedLawyer?.attorney_name || ""
@@ -2940,6 +2944,7 @@ const CallResultUpdate = () => {
                   currentAssignedAttorneyId={currentAssignedAttorneyId}
                   onAssigned={({ lawyerId }) => setCurrentAssignedAttorneyId(lawyerId)}
                   onUnassigned={() => setCurrentAssignedAttorneyId(null)}
+                  assignmentMode="deferred"
                   layout="horizontal"
                   hideHeader
                 />
@@ -4152,13 +4157,15 @@ const CallResultUpdate = () => {
               >
                 {documentUploadCard}
               </div>
-              <div
-                ref={revealRef("intake-form-card")}
-                className={`${revealMotionClass} ${revealClass("intake-form-card", "translate-y-4")}`}
-                style={revealTransition(190)}
-              >
-                {intakeFormCard}
-              </div>
+              {hasSelectedBrokerLawyer ? (
+                <div
+                  ref={revealRef("intake-form-card")}
+                  className={`${revealMotionClass} ${revealClass("intake-form-card", "translate-y-4")}`}
+                  style={revealTransition(190)}
+                >
+                  {intakeFormCard}
+                </div>
+              ) : null}
               <div
                 ref={revealRef("handoff-did-card")}
                 className={`${revealMotionClass} ${revealClass("handoff-did-card", "translate-y-4")}`}

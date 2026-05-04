@@ -24,6 +24,7 @@ type Payload = {
     stageName?: string | null;
     statusKey?: string | null;
     tag?: string | null;
+    publicSlackNotes?: string | null;
     additionalNotes?: string | null;
     notes?: string | null;
     dq_reason?: string | null;
@@ -164,8 +165,12 @@ serve(async (req) => {
     const stageName = (payload.callResult?.stageName || "").trim() || "Unknown Stage";
     const statusKey = (payload.callResult?.statusKey || "").trim() || "Unknown Status Key";
     const tag = (payload.callResult?.tag || "").trim();
-    const additionalNotes = (payload.callResult?.additionalNotes || "").trim();
-    const notes = (payload.callResult?.notes || "").trim();
+    const publicSlackNotes = (
+      payload.callResult?.publicSlackNotes ??
+      payload.callResult?.additionalNotes ??
+      payload.callResult?.notes ??
+      ""
+    ).trim();
     const reason = (payload.callResult?.dq_reason || "").trim();
     const agentName = (payload.callResult?.agent_who_took_call || "").trim() || "N/A";
     const bufferAgent = (payload.callResult?.buffer_agent || "").trim() || "N/A";
@@ -215,20 +220,9 @@ serve(async (req) => {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Additional Notes:*\n${additionalNotes || "No additional notes"}`,
+            text: `*Public Slack Notes:*\n${publicSlackNotes || "No public Slack notes"}`,
           },
         },
-        ...(notes && notes !== additionalNotes
-          ? [
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: `*Saved Notes Payload:*\n${notes}`,
-                },
-              },
-            ]
-          : []),
         {
           type: "context",
           elements: [
