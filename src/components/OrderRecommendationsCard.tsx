@@ -169,12 +169,15 @@ export const OrderRecommendationsCard = (props: {
   currentAssignedAttorneyId?: string | null;
   onAssigned?: (input: { orderId: string; lawyerId: string }) => void;
   onUnassigned?: () => void;
+  assignmentMode?: "persist" | "deferred";
   layout?: "list" | "horizontal";
   hideHeader?: boolean;
 }) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const { attorneys } = useAttorneys({ accountType: "internal_lawyer" });
+  const assignmentMode = props.assignmentMode ?? "persist";
+  const isDeferredAssignment = assignmentMode === "deferred";
 
   const [resolvedLeadId, setResolvedLeadId] = useState<string | null>(props.leadId ?? null);
   const [loadingLead, setLoadingLead] = useState(false);
@@ -251,6 +254,14 @@ export const OrderRecommendationsCard = (props: {
       return "not_found" as const;
     }
 
+    if (isDeferredAssignment) {
+      const assignedId = String(props.currentAssignedAttorneyId || "").trim();
+      setDealFlowRowId(null);
+      setAssignedAttorneyName(assignedId ? attorneyById.get(assignedId) || assignedId : null);
+      setDealFlowStatus("eligible");
+      return "eligible" as const;
+    }
+
     try {
       const { data: dealRow, error: dealError } = await supabase
         .from("daily_deal_flow")
@@ -288,7 +299,7 @@ export const OrderRecommendationsCard = (props: {
       setDealFlowStatus("not_found");
       return "not_found" as const;
     }
-  }, [props.submissionId, attorneyById]);
+  }, [props.currentAssignedAttorneyId, props.submissionId, attorneyById, isDeferredAssignment]);
 
   useEffect(() => {
     void refreshDealFlowStatus();
@@ -391,6 +402,17 @@ export const OrderRecommendationsCard = (props: {
   }, [dealFlowStatus, requestSignature, run]);
 
   const clearAssignedAttorney = async () => {
+    if (isDeferredAssignment) {
+      setAssignedAttorneyName(null);
+      props.onUnassigned?.();
+
+      toast({
+        title: "Attorney selection cleared",
+        description: "Save the call result to persist the updated attorney assignment.",
+      });
+      return;
+    }
+
     if (!props.submissionId) {
       toast({
         title: "Cannot clear assignment",
@@ -578,6 +600,19 @@ export const OrderRecommendationsCard = (props: {
   };
 
   const assign = async (rec: Recommendation) => {
+    const attorneyLabel = rec.attorney_name || attorneyById.get(rec.lawyer_id) || rec.lawyer_id;
+
+    if (isDeferredAssignment) {
+      setAssignedAttorneyName(attorneyLabel);
+      props.onAssigned?.({ orderId: rec.order_id ?? "", lawyerId: rec.lawyer_id });
+
+      toast({
+        title: "Attorney selected",
+        description: `${attorneyLabel} will be saved when the call result is saved.`,
+      });
+      return;
+    }
+
     if (!user?.id) {
       toast({
         title: "Not signed in",
@@ -654,10 +689,10 @@ export const OrderRecommendationsCard = (props: {
 
       toast({
         title: "Assigned",
-        description: `Lead assigned to ${rec.attorney_name || attorneyById.get(rec.lawyer_id) || rec.lawyer_id}`,
+        description: `Lead assigned to ${attorneyLabel}`,
       });
 
-      setAssignedAttorneyName(rec.attorney_name || attorneyById.get(rec.lawyer_id) || rec.lawyer_id);
+      setAssignedAttorneyName(attorneyLabel);
       setDealFlowStatus("already_assigned");
       props.onAssigned?.({ orderId: rec.order_id ?? "", lawyerId: rec.lawyer_id });
 
