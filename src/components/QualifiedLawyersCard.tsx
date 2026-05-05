@@ -64,7 +64,7 @@ interface QualifiedLawyersCardProps {
 
 const minimumRailCards = 4;
 const railTrackClass =
-  "flex items-start gap-3 overflow-x-auto pb-2 pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent";
+  "flex items-start gap-3 overflow-x-auto pb-2 pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent dark:[&::-webkit-scrollbar-thumb]:bg-white/15";
 const railCardShellClass = "flex h-[17rem] w-[18rem] shrink-0 flex-col";
 const MAX_VISIBLE_STATE_BADGES = 7;
 const railAnimation = (index: number) =>
@@ -88,13 +88,13 @@ const renderStateBadges = (states: string[] | undefined) => {
       {visibleStates.map((state) => (
         <span
           key={state}
-          className="rounded-full border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-700"
+          className="rounded-full border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-700 dark:border-white/15 dark:bg-white/5 dark:text-zinc-200"
         >
           {state}
         </span>
       ))}
       {remainingCount > 0 ? (
-        <span className="rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-600">
+        <span className="rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-slate-600 dark:border-white/15 dark:bg-white/10 dark:text-zinc-300">
           +{remainingCount}
         </span>
       ) : null}
@@ -275,8 +275,8 @@ export const QualifiedLawyersCard = ({
 
     return (
       <div key={key} className="flex items-center gap-1.5">
-        <Icon className={`h-3 w-3 shrink-0 ${positive ? "text-emerald-600" : "text-rose-500"}`} />
-        <span className="text-xs leading-snug text-slate-600">{label}</span>
+        <Icon className={`h-3 w-3 shrink-0 ${positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400"}`} />
+        <span className="text-xs leading-snug text-slate-600 dark:text-zinc-300">{label}</span>
       </div>
     );
   };
@@ -349,10 +349,10 @@ export const QualifiedLawyersCard = ({
   const renderPlaceholderCard = (slotIndex: number) => (
     <div
       key={`incoming-lawyer-${slotIndex}`}
-      className={`${railCardShellClass} items-center justify-center rounded-xl border border-dashed border-slate-200/80 bg-slate-50/40 px-5 py-10 ${railAnimation(slotIndex).className}`}
+      className={`${railCardShellClass} items-center justify-center rounded-xl border border-dashed border-slate-200/80 bg-slate-50/40 px-5 py-10 dark:border-white/10 dark:bg-white/[0.03] ${railAnimation(slotIndex).className}`}
       style={railAnimation(slotIndex).style}
     >
-      <div className="h-8 w-8 rounded-full border-2 border-dashed border-slate-200/60" />
+      <div className="h-8 w-8 rounded-full border-2 border-dashed border-slate-200/60 dark:border-white/15" />
       <span className="mt-3 text-xs text-muted-foreground/70">Awaiting match</span>
     </div>
   );
@@ -367,11 +367,11 @@ export const QualifiedLawyersCard = ({
     return (
       <div
         key="no-lawyer-match"
-        className={`${railCardShellClass} justify-between rounded-xl border border-dashed border-slate-300/80 bg-[linear-gradient(180deg,rgba(243,244,246,0.96)_0%,rgba(255,255,255,0.98)_100%)] p-4 ${railAnimation(0).className}`}
+        className={`${railCardShellClass} justify-between rounded-xl border border-dashed border-slate-300/80 bg-[linear-gradient(180deg,rgba(243,244,246,0.96)_0%,rgba(255,255,255,0.98)_100%)] p-4 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(63,63,70,0.55)_0%,rgba(24,24,27,0.92)_100%)] ${railAnimation(0).className}`}
         style={railAnimation(0).style}
       >
         <div className="space-y-3">
-          <Badge className="rounded-full bg-[#2c3139] px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-[#2c3139]">
+          <Badge className="rounded-full bg-[#2c3139] px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-[#2c3139] dark:bg-white/15 dark:hover:bg-white/15">
             No Exact Match
           </Badge>
 
@@ -381,19 +381,19 @@ export const QualifiedLawyersCard = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-            <span className="rounded-full border border-slate-200/80 bg-white/90 px-2 py-0.5 font-medium text-slate-600">
+            <span className="rounded-full border border-slate-200/80 bg-white/90 px-2 py-0.5 font-medium text-slate-600 dark:border-white/15 dark:bg-white/5 dark:text-zinc-300">
               {leadStateLabel || "Unknown"}
             </span>
             {hasExcludedLawyers ? (
-              <span className="rounded-full border border-rose-200/80 bg-rose-50/80 px-2 py-0.5 font-medium text-rose-600">
+              <span className="rounded-full border border-rose-200/80 bg-rose-50/80 px-2 py-0.5 font-medium text-rose-600 dark:border-rose-400/30 dark:bg-rose-500/15 dark:text-rose-200">
                 {excludedLawyers.length} hidden
               </span>
             ) : null}
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200/80 py-2.5">
-          <div className="h-2 w-2 rounded-full border border-slate-300/80" />
+        <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200/80 py-2.5 dark:border-white/10 dark:bg-white/[0.02]">
+          <div className="h-2 w-2 rounded-full border border-slate-300/80 dark:border-white/20" />
           <span className="text-xs text-muted-foreground">Awaiting match</span>
         </div>
       </div>
@@ -410,13 +410,13 @@ export const QualifiedLawyersCard = ({
       (lawyer.driver_id === "yes" && !lawyer.isDriverIdMatch);
 
     const borderTone = isSelected
-      ? "border-[#4b5563] ring-1 ring-[#374151]/60"
-      : "border-slate-200/90 hover:border-slate-300";
+      ? "border-[#4b5563] ring-1 ring-[#374151]/60 dark:border-orange-400/60 dark:ring-orange-400/30"
+      : "border-slate-200/90 hover:border-slate-300 dark:border-white/10 dark:hover:border-white/25";
     const bgTone = isSelected
-      ? "bg-[linear-gradient(180deg,rgba(55,65,81,0.10)_0%,rgba(255,255,255,0.98)_100%)]"
+      ? "bg-[linear-gradient(180deg,rgba(55,65,81,0.10)_0%,rgba(255,255,255,0.98)_100%)] dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.14)_0%,rgba(24,24,27,0.92)_100%)]"
       : tone === "available"
-        ? "bg-[linear-gradient(180deg,rgba(243,244,246,0.92)_0%,rgba(255,255,255,0.98)_100%)]"
-        : "bg-[linear-gradient(180deg,rgba(248,250,252,0.96)_0%,rgba(255,255,255,0.98)_100%)]";
+        ? "bg-[linear-gradient(180deg,rgba(243,244,246,0.92)_0%,rgba(255,255,255,0.98)_100%)] dark:bg-[linear-gradient(180deg,rgba(63,63,70,0.45)_0%,rgba(24,24,27,0.92)_100%)]"
+        : "bg-[linear-gradient(180deg,rgba(248,250,252,0.96)_0%,rgba(255,255,255,0.98)_100%)] dark:bg-[linear-gradient(180deg,rgba(63,63,70,0.30)_0%,rgba(24,24,27,0.92)_100%)]";
 
     return (
       <div
@@ -430,13 +430,13 @@ export const QualifiedLawyersCard = ({
             <span className="text-[10px] font-semibold text-muted-foreground">#{String(rank).padStart(2, "0")}</span>
             <Badge className={
               tone === "available"
-                ? "rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139]"
-                : "rounded-full border border-slate-300/90 bg-slate-100 px-2 py-0 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                ? "rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139] dark:bg-orange-500/30 dark:text-orange-100 dark:hover:bg-orange-500/30"
+                : "rounded-full border border-slate-300/90 bg-slate-100 px-2 py-0 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/15 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white/10"
             }>
               {tone === "available" ? "Ready" : "Needs Review"}
             </Badge>
             {isSelected ? (
-              <Badge className="rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139]">
+              <Badge className="rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139] dark:bg-orange-500/40 dark:text-orange-50 dark:hover:bg-orange-500/40">
                 Selected
               </Badge>
             ) : null}
@@ -449,8 +449,8 @@ export const QualifiedLawyersCard = ({
             </div>
             <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
               <span className="font-mono">{lawyer.did_number || "No DID"}</span>
-              <span className="text-slate-300">|</span>
-              <span className={`font-medium ${lawyer.isSolMatch ? "text-foreground" : "text-rose-600"}`}>
+              <span className="text-slate-300 dark:text-white/15">|</span>
+              <span className={`font-medium ${lawyer.isSolMatch ? "text-foreground" : "text-rose-600 dark:text-rose-300"}`}>
                 SOL: {getSolChipLabel(lawyer)}
               </span>
             </div>
@@ -462,14 +462,14 @@ export const QualifiedLawyersCard = ({
           </div>
 
           {/* Docs + match notes */}
-          <div className="space-y-1.5 border-t border-slate-200/60 pt-2.5">
+          <div className="space-y-1.5 border-t border-slate-200/60 pt-2.5 dark:border-white/10">
             <div className="flex items-center gap-1.5">
               {needsDocs ? (
-                <XCircle className="h-3 w-3 shrink-0 text-rose-500" />
+                <XCircle className="h-3 w-3 shrink-0 text-rose-500 dark:text-rose-400" />
               ) : (
-                <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
               )}
-              <span className="text-xs text-slate-600">
+              <span className="text-xs text-slate-600 dark:text-zinc-300">
                 Docs {needsDocs ? "need review" : "ready"}
               </span>
             </div>
@@ -484,8 +484,8 @@ export const QualifiedLawyersCard = ({
           onClick={() => (isSelected ? handleDeselectLawyer() : handleSelectLawyer(lawyer))}
           className={`mt-3 w-full rounded-lg ${
             isSelected
-              ? "bg-slate-700 text-white hover:bg-slate-800"
-              : "bg-[#2c3139] text-white hover:bg-[#1f242b]"
+              ? "bg-slate-700 text-white hover:bg-slate-800 dark:bg-orange-600 dark:hover:bg-orange-500"
+              : "bg-[#2c3139] text-white hover:bg-[#1f242b] dark:bg-orange-600 dark:hover:bg-orange-500"
           }`}
         >
           {isSelected ? (
@@ -521,16 +521,16 @@ export const QualifiedLawyersCard = ({
   };
 
   const sectionHeader = (
-    <div className="flex items-start justify-between gap-4 rounded-[20px] bg-[linear-gradient(90deg,rgba(31,41,55,0.18)_0%,rgba(31,41,55,0.1)_12%,rgba(255,255,255,0)_34%)] px-4 py-3">
+    <div className="flex items-start justify-between gap-4 rounded-[20px] bg-[linear-gradient(90deg,rgba(31,41,55,0.18)_0%,rgba(31,41,55,0.1)_12%,rgba(255,255,255,0)_34%)] px-4 py-3 dark:bg-[linear-gradient(90deg,rgba(234,117,38,0.22)_0%,rgba(234,117,38,0.10)_12%,rgba(0,0,0,0)_34%)]">
       <div className="space-y-1">
-        <div className="text-sm font-semibold tracking-tight text-slate-950">
+        <div className="text-sm font-semibold tracking-tight text-slate-950 dark:text-zinc-100">
           Available Lawyers
         </div>
-        <div className="text-xs text-slate-600">
+        <div className="text-xs text-slate-600 dark:text-zinc-400">
           Choose the best-fit submission lawyer from the current qualified matches.
         </div>
       </div>
-      <Badge className="rounded-full bg-[#2c3139] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white hover:bg-[#2c3139]">
+      <Badge className="rounded-full bg-[#2c3139] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white hover:bg-[#2c3139] dark:bg-orange-500/30 dark:text-orange-100 dark:hover:bg-orange-500/30">
         {availableLawyers.length} exact
       </Badge>
     </div>
@@ -551,7 +551,7 @@ export const QualifiedLawyersCard = ({
     return (
       <div className="space-y-4">
         {!hideHeader ? sectionHeader : null}
-        <div className="rounded-[20px] border border-rose-200 bg-rose-50/90 px-4 py-3 text-sm text-rose-700">
+        <div className="rounded-[20px] border border-rose-200 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200">
           Error loading lawyers: {error}
         </div>
       </div>
@@ -564,20 +564,20 @@ export const QualifiedLawyersCard = ({
 
       <div className="space-y-4">
         {selectedLawyer ? (
-          <div className="flex flex-col gap-3 rounded-[20px] border border-slate-300 bg-[linear-gradient(180deg,rgba(51,65,85,0.12)_0%,rgba(255,255,255,0.96)_62%,rgba(255,255,255,1)_100%)] p-3.5 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.26)] sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 rounded-[20px] border border-slate-300 bg-[linear-gradient(180deg,rgba(51,65,85,0.12)_0%,rgba(255,255,255,0.96)_62%,rgba(255,255,255,1)_100%)] p-3.5 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.26)] sm:flex-row sm:items-center sm:justify-between dark:border-orange-400/30 dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.18)_0%,rgba(24,24,27,0.92)_62%,rgba(24,24,27,1)_100%)] dark:shadow-black/40">
             <div className="space-y-1">
-              <div className="flex items-center gap-2 text-slate-950">
-                <CheckCircle2 className="h-4.5 w-4.5 text-slate-700" />
+              <div className="flex items-center gap-2 text-slate-950 dark:text-zinc-100">
+                <CheckCircle2 className="h-4.5 w-4.5 text-slate-700 dark:text-orange-300" />
                 <span className="text-sm font-semibold">Selected: {selectedLawyer.attorney_name}</span>
               </div>
-              <div className="text-sm text-slate-600">
+              <div className="text-sm text-slate-600 dark:text-zinc-300">
                 DID: {selectedLawyer.did_number || "Not listed"}
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {selectedLawyer.submission_link ? (
-                <Button size="sm" className="rounded-md bg-[#2c3139] text-white hover:bg-[#1f242b]" asChild>
+                <Button size="sm" className="rounded-md bg-[#2c3139] text-white hover:bg-[#1f242b] dark:bg-orange-600 dark:hover:bg-orange-500" asChild>
                   <a href={selectedLawyer.submission_link} target="_blank" rel="noopener noreferrer">
                     <Send className="mr-1 h-4 w-4" />
                     Submission Portal
@@ -589,7 +589,7 @@ export const QualifiedLawyersCard = ({
                 size="sm"
                 variant="outline"
                 onClick={handleDeselectLawyer}
-                className="rounded-md border-slate-300 bg-white/90 text-slate-700 hover:border-[#2c3139] hover:bg-[#2c3139] hover:text-white"
+                className="rounded-md border-slate-300 bg-white/90 text-slate-700 hover:border-[#2c3139] hover:bg-[#2c3139] hover:text-white dark:border-white/15 dark:bg-white/10 dark:text-zinc-200 dark:hover:border-orange-400/40 dark:hover:bg-orange-500/20 dark:hover:text-orange-100"
               >
                 Deselect
               </Button>
@@ -599,10 +599,10 @@ export const QualifiedLawyersCard = ({
 
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400">
               Matching Lawyers
             </div>
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-slate-500 dark:text-zinc-400">
               {brokerRailLawyers.length > 0
                 ? `${availableLawyers.length} ready${
                     partiallyMatchedLawyers.length > 0 ? `, ${partiallyMatchedLawyers.length} need review` : ""

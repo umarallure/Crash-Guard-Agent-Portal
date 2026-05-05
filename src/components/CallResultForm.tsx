@@ -41,6 +41,13 @@ interface CallResultFormProps {
 
 type LeadsUpdate = Database["public"]["Tables"]["leads"]["Update"];
 
+const callResultFieldClass =
+  "border-[#ead9ce] bg-white/95 text-slate-950 shadow-sm placeholder:text-slate-500 dark:border-white/10 dark:bg-zinc-950/70 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-orange-400/70";
+const callResultRequiredFieldClass =
+  "border-red-300 bg-white/95 text-slate-950 shadow-sm placeholder:text-slate-500 focus:border-red-500 dark:border-red-500/70 dark:bg-zinc-950/70 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-red-400";
+const callResultCarrierFieldClass =
+  "border-[#e7c9c1] bg-white/95 text-slate-950 shadow-sm placeholder:text-slate-500 dark:border-red-400/20 dark:bg-zinc-950/70 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-red-300/60";
+
 const statusOptions = [
   "Incomplete Transfer",
   "Returned To Center - DQ",
@@ -1756,19 +1763,19 @@ export const CallResultForm = ({
   };
 
   const qualificationControls = (
-    <div className="space-y-3 rounded-[18px] border border-[#eddcd0] bg-white/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)]">
+    <div className="space-y-3 rounded-[18px] border border-[#eddcd0] bg-white/92 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] dark:border-white/10 dark:bg-zinc-900/70 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-0.5">
-            <Label className="text-sm font-semibold text-slate-950">
+            <Label className="text-sm font-semibold text-foreground">
               Is lead qualified?
             </Label>
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-muted-foreground">
               Pick the final direction and keep the closeout tight.
             </p>
           </div>
           {isRetentionCall && (
-            <Badge className="w-fit rounded-full border border-violet-300/60 bg-violet-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700 hover:bg-violet-500/10">
+            <Badge className="w-fit rounded-full border border-violet-300/60 bg-violet-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700 hover:bg-violet-500/10 dark:border-violet-300/25 dark:text-violet-200">
               <Shield className="mr-1 h-3 w-3" />
               Retention
             </Badge>
@@ -1782,7 +1789,7 @@ export const CallResultForm = ({
             onClick={() => {
               setApplicationSubmitted(true);
             }}
-            className={`${applicationSubmitted === true ? "border-green-800 bg-green-800 text-white hover:bg-green-900" : "border-green-800 bg-white text-green-800 hover:border-green-800 hover:bg-green-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
+            className={`${applicationSubmitted === true ? "border-green-800 bg-green-800 text-white hover:bg-green-900 dark:border-emerald-400/70 dark:bg-emerald-500/25 dark:text-emerald-100 dark:hover:bg-emerald-500/35" : "border-green-800 bg-white text-green-800 hover:border-green-800 hover:bg-green-800 hover:text-white dark:border-emerald-400/35 dark:bg-zinc-950/60 dark:text-emerald-300 dark:hover:border-emerald-300/60 dark:hover:bg-emerald-500/15 dark:hover:text-emerald-100"} h-10 rounded-md font-semibold shadow-sm`}
           >
             <CheckCircle className="h-4 w-4" />
             Yes
@@ -1793,7 +1800,7 @@ export const CallResultForm = ({
             onClick={() => {
               setApplicationSubmitted(false);
             }}
-            className={`${applicationSubmitted === false ? "border-red-800 bg-red-800 text-white hover:bg-red-900" : "border-red-800 bg-white text-red-800 hover:border-red-800 hover:bg-red-800 hover:text-white"} h-10 rounded-md font-semibold shadow-sm`}
+            className={`${applicationSubmitted === false ? "border-red-800 bg-red-800 text-white hover:bg-red-900 dark:border-red-400/70 dark:bg-red-500/25 dark:text-red-100 dark:hover:bg-red-500/35" : "border-red-800 bg-white text-red-800 hover:border-red-800 hover:bg-red-800 hover:text-white dark:border-red-400/35 dark:bg-zinc-950/60 dark:text-red-300 dark:hover:border-red-300/60 dark:hover:bg-red-500/15 dark:hover:text-red-100"} h-10 rounded-md font-semibold shadow-sm`}
           >
             <XCircle className="h-4 w-4" />
             No
@@ -1803,7 +1810,7 @@ export const CallResultForm = ({
               <Button
                 type="button"
                 variant="outline"
-                className="h-10 rounded-md border-[#efcfb8] bg-[#fffaf5] text-[#8c5632] shadow-sm hover:bg-[#fff1e7]"
+                className="h-10 rounded-md border-[#efcfb8] bg-[#fffaf5] text-[#8c5632] shadow-sm hover:bg-[#fff1e7] dark:border-orange-300/20 dark:bg-orange-500/10 dark:text-orange-200 dark:hover:bg-orange-500/15"
               >
                 <Info className="h-4 w-4" />
                 Return DID
@@ -1853,7 +1860,7 @@ export const CallResultForm = ({
   const submittedApplicationDetailsSection = showSubmittedFields ? (
     <div className="space-y-4">
       <div className="space-y-3 pt-0.5">
-        <h3 className="text-sm font-semibold tracking-tight text-slate-950">
+        <h3 className="text-sm font-semibold tracking-tight text-foreground">
           Application Submitted
         </h3>
 
@@ -1863,7 +1870,7 @@ export const CallResultForm = ({
                 Call Source <span className="text-red-500">*</span>
               </Label>
               <Select value={callSource || undefined} onValueChange={handleCallSourceChange}>
-                <SelectTrigger className={`${!callSource ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectTrigger className={cn(!callSource ? callResultRequiredFieldClass : callResultFieldClass)}>
                   <SelectValue placeholder="Select call source (required)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1883,7 +1890,7 @@ export const CallResultForm = ({
                 Agent who took the call <span className="text-red-500">*</span>
               </Label>
               <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall}>
-                <SelectTrigger className={`${!agentWhoTookCall ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectTrigger className={cn(!agentWhoTookCall ? callResultRequiredFieldClass : callResultFieldClass)}>
                   <SelectValue placeholder="Select agent (required)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1911,7 +1918,7 @@ export const CallResultForm = ({
                   setQualifiedStageReason("");
                 }}
               >
-                <SelectTrigger className={`${!selectedPipeline ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectTrigger className={cn(!selectedPipeline ? callResultRequiredFieldClass : callResultFieldClass)}>
                   <SelectValue placeholder="Select pipeline (required)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1935,7 +1942,7 @@ export const CallResultForm = ({
                   setQualifiedStageReason("");
                 }}
               >
-                <SelectTrigger className={`${!qualifiedStage ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+                <SelectTrigger className={cn(!qualifiedStage ? callResultRequiredFieldClass : callResultFieldClass)}>
                   <SelectValue placeholder="Select stage (required)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1955,7 +1962,7 @@ export const CallResultForm = ({
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="qualifiedStageReason">Reason</Label>
                 <Select value={qualifiedStageReason} onValueChange={setQualifiedStageReason}>
-                  <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                  <SelectTrigger className={callResultFieldClass}>
                     <SelectValue placeholder="Select reason" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1971,14 +1978,14 @@ export const CallResultForm = ({
         </div>
       </div>
 
-      <div className="space-y-3 border-t border-[#f0e2d7] pt-4">
+      <div className="space-y-3 border-t border-[#f0e2d7] pt-4 dark:border-white/10">
         {showSubmissionStatusField && (
           <div className="space-y-2">
-            <Label htmlFor="submissionStatus" className="text-sm font-semibold text-slate-950">
+            <Label htmlFor="submissionStatus" className="text-sm font-semibold text-foreground">
               Submission Status
             </Label>
             <Select value={submissionStatus} onValueChange={setSubmissionStatus}>
-              <SelectTrigger className="border-[#ead9ce] bg-white/95">
+              <SelectTrigger className={callResultFieldClass}>
                 <SelectValue placeholder="Select submission status" />
               </SelectTrigger>
               <SelectContent>
@@ -2000,9 +2007,9 @@ export const CallResultForm = ({
             onChange={(e) => setPublicSlackNotes(e.target.value)}
             placeholder="Enter the notes that should be visible in Slack..."
             rows={4}
-            className={`${!publicSlackNotes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
+            className={cn(!publicSlackNotes.trim() ? callResultRequiredFieldClass : callResultFieldClass)}
           />
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             These notes can be sent to Slack and shared downstream.
           </p>
           {!publicSlackNotes.trim() && (
@@ -2018,9 +2025,9 @@ export const CallResultForm = ({
             onChange={(e) => setInternalNotes(e.target.value)}
             placeholder="Enter internal-only notes..."
             rows={4}
-            className="border-[#ead9ce] bg-white/95"
+            className={callResultFieldClass}
           />
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Internal notes are saved only on the call result and are not sent to Slack.
           </p>
         </div>
@@ -2031,7 +2038,7 @@ export const CallResultForm = ({
   const notSubmittedDetailsSection = showNotSubmittedFields ? (
     <div className="space-y-4">
       <div className="space-y-3 pt-0.5">
-        <h3 className="text-sm font-semibold tracking-tight text-slate-950">
+        <h3 className="text-sm font-semibold tracking-tight text-foreground">
           Application Not Submitted
         </h3>
 
@@ -2041,7 +2048,7 @@ export const CallResultForm = ({
               Call Source <span className="text-red-500">*</span>
             </Label>
             <Select value={callSource || undefined} onValueChange={handleCallSourceChange} required>
-              <SelectTrigger className={`${!callSource ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+              <SelectTrigger className={cn(!callSource ? callResultRequiredFieldClass : callResultFieldClass)}>
                 <SelectValue placeholder="Select call source (required)" />
               </SelectTrigger>
               <SelectContent>
@@ -2061,7 +2068,7 @@ export const CallResultForm = ({
               Agent who took the call <span className="text-red-500">*</span>
             </Label>
             <Select value={agentWhoTookCall} onValueChange={setAgentWhoTookCall} required>
-              <SelectTrigger className={`${!agentWhoTookCall ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+              <SelectTrigger className={cn(!agentWhoTookCall ? callResultRequiredFieldClass : callResultFieldClass)}>
                 <SelectValue placeholder={agentsLoading ? "Loading agents..." : "Select agent (required)"} />
               </SelectTrigger>
               <SelectContent>
@@ -2089,7 +2096,7 @@ export const CallResultForm = ({
                 setStatusReason("");
               }}
             >
-              <SelectTrigger className={`${!selectedPipeline ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+              <SelectTrigger className={cn(!selectedPipeline ? callResultRequiredFieldClass : callResultFieldClass)}>
                 <SelectValue placeholder="Select pipeline (required)" />
               </SelectTrigger>
               <SelectContent>
@@ -2114,7 +2121,7 @@ export const CallResultForm = ({
               }}
               required
             >
-              <SelectTrigger className={`${!status ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}>
+              <SelectTrigger className={cn(!status ? callResultRequiredFieldClass : callResultFieldClass)}>
                 <SelectValue placeholder="Select stage (required)" />
               </SelectTrigger>
               <SelectContent>
@@ -2142,7 +2149,7 @@ export const CallResultForm = ({
                  "Reason"}
               </Label>
               <Select value={statusReason} onValueChange={handleStatusReasonChange}>
-                <SelectTrigger className="border-[#ead9ce] bg-white/95">
+                <SelectTrigger className={callResultFieldClass}>
                   <SelectValue placeholder={`Select reason for ${status.toLowerCase()}`} />
                 </SelectTrigger>
                 <SelectContent>
@@ -2164,7 +2171,8 @@ export const CallResultForm = ({
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-full justify-start border-[#ead9ce] bg-white/95 text-left font-normal",
+                      callResultFieldClass,
+                      "w-full justify-start text-left font-normal",
                       !newDraftDate && "text-muted-foreground"
                     )}
                   >
@@ -2187,10 +2195,10 @@ export const CallResultForm = ({
       </div>
 
       {showCarrierAttemptedFields && (
-        <div className="space-y-3 rounded-[18px] border border-[#efcdc5] bg-[linear-gradient(180deg,rgba(255,241,238,0.95)_0%,rgba(255,248,247,0.98)_100%)] p-3">
+        <div className="space-y-3 rounded-[18px] border border-[#efcdc5] bg-[linear-gradient(180deg,rgba(255,241,238,0.95)_0%,rgba(255,248,247,0.98)_100%)] p-3 dark:border-red-400/20 dark:bg-[linear-gradient(180deg,rgba(127,29,29,0.18)_0%,rgba(24,24,27,0.92)_100%)]">
           <div className="space-y-0.5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#b0543a]">GI - Currently DQ</div>
-            <h4 className="text-sm font-semibold text-[#7f3020]">Carrier attempts</h4>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#b0543a] dark:text-red-300">GI - Currently DQ</div>
+            <h4 className="text-sm font-semibold text-[#7f3020] dark:text-red-100">Carrier attempts</h4>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -2199,7 +2207,7 @@ export const CallResultForm = ({
                 Attempted Carrier #1 <span className="text-red-500">*</span>
               </Label>
               <Select value={carrierAttempted1} onValueChange={setCarrierAttempted1} required>
-                <SelectTrigger className={`${!carrierAttempted1 ? 'border-red-300 focus:border-red-500' : 'border-[#e7c9c1]'} bg-white/95`}>
+                <SelectTrigger className={cn(!carrierAttempted1 ? callResultRequiredFieldClass : callResultCarrierFieldClass)}>
                   <SelectValue placeholder="Select carrier (required)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2218,7 +2226,7 @@ export const CallResultForm = ({
             <div className="space-y-2">
               <Label htmlFor="carrierAttempted2">Attempted Carrier #2</Label>
               <Select value={carrierAttempted2} onValueChange={setCarrierAttempted2}>
-                <SelectTrigger className="border-[#e7c9c1] bg-white/95">
+                <SelectTrigger className={callResultCarrierFieldClass}>
                   <SelectValue placeholder="Select carrier (optional)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2234,7 +2242,7 @@ export const CallResultForm = ({
             <div className="space-y-2">
               <Label htmlFor="carrierAttempted3">Attempted Carrier #3</Label>
               <Select value={carrierAttempted3} onValueChange={setCarrierAttempted3}>
-                <SelectTrigger className="border-[#e7c9c1] bg-white/95">
+                <SelectTrigger className={callResultCarrierFieldClass}>
                   <SelectValue placeholder="Select carrier (optional)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2250,7 +2258,7 @@ export const CallResultForm = ({
         </div>
       )}
 
-      <div className="space-y-3 border-t border-[#f0e2d7] pt-4">
+      <div className="space-y-3 border-t border-[#f0e2d7] pt-4 dark:border-white/10">
         <div className="space-y-2">
           <Label htmlFor="publicSlackNotes">
             Public Slack Notes <span className="text-red-500">*</span>
@@ -2265,17 +2273,17 @@ export const CallResultForm = ({
               ? "Please enter a custom message."
               : "Enter the notes that should be visible in Slack (required)"
             }
-            className={`${!publicSlackNotes.trim() ? 'border-red-300 focus:border-red-500' : 'border-[#ead9ce]'} bg-white/95`}
+            className={cn(!publicSlackNotes.trim() ? callResultRequiredFieldClass : callResultFieldClass)}
             rows={4}
             required
           />
           {showStatusReasonDropdown && statusReason && statusReason !== "Other" && (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               Note has been auto-populated based on the selected reason. You can edit it if needed.
             </p>
           )}
           {showStatusReasonDropdown && statusReason === "Other" && (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               Please enter a custom message for this reason.
             </p>
           )}
@@ -2292,9 +2300,9 @@ export const CallResultForm = ({
             onChange={(e) => setInternalNotes(e.target.value)}
             placeholder="Enter internal-only notes..."
             rows={4}
-            className="border-[#ead9ce] bg-white/95"
+            className={callResultFieldClass}
           />
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Internal notes are saved only on the call result and are not sent to Slack.
           </p>
         </div>
@@ -2314,12 +2322,12 @@ export const CallResultForm = ({
         </div>
       )}
 
-      <Card className="overflow-hidden rounded-lg border border-[#d97231]/20 bg-white shadow-[0_22px_58px_-42px_rgba(162,86,41,0.32)]">
+      <Card className="overflow-hidden rounded-lg border border-[#d97231]/20 bg-white shadow-[0_22px_58px_-42px_rgba(162,86,41,0.32)] dark:border-orange-400/20 dark:bg-zinc-950 dark:shadow-black/25 dark:ring-1 dark:ring-white/10">
         <Collapsible open={!isCollapsed} onOpenChange={(open) => setIsCollapsed(!open)}>
-          <div className="flex w-full items-center justify-between gap-3.5 bg-[#c25516] px-4 py-3.5 text-left text-white">
+          <div className="flex w-full items-center justify-between gap-3.5 bg-[#c25516] px-4 py-3.5 text-left text-white dark:bg-[#ad4814]">
             <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[18px] border border-white/85 bg-white text-[#c25516] shadow-sm">
-                <Wrench className="h-4 w-4 text-[#c25516]" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[18px] border border-white/85 bg-white text-[#c25516] shadow-sm dark:border-orange-200/60 dark:bg-orange-50">
+                <Wrench className="h-4 w-4 text-[#c25516] dark:text-[#ad4814]" />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -2328,7 +2336,7 @@ export const CallResultForm = ({
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea] dark:border-white/25 dark:bg-white/15 dark:text-orange-100 dark:hover:bg-white/25"
                         aria-label="Update call result info"
                       >
                         <Info className="h-3.5 w-3.5" />
@@ -2355,11 +2363,11 @@ export const CallResultForm = ({
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                className="shrink-0 rounded-md border border-white/85 bg-white/95 p-1 text-[#c25516] shadow-sm transition-colors hover:bg-white"
+                className="shrink-0 rounded-md border border-white/85 bg-white/95 p-1 text-[#c25516] shadow-sm transition-colors hover:bg-white dark:border-white/25 dark:bg-white/15 dark:text-orange-100 dark:hover:bg-white/25"
                 aria-label={isCollapsed ? "Expand update call result" : "Collapse update call result"}
               >
                 <ChevronDown
-                  className={`h-3.5 w-3.5 text-[#c25516] transition-transform duration-300 ease-out ${
+                  className={`h-3.5 w-3.5 text-[#c25516] transition-transform duration-300 ease-out dark:text-orange-100 ${
                     !isCollapsed ? "rotate-180" : ""
                   }`}
                 />
@@ -2367,7 +2375,7 @@ export const CallResultForm = ({
             </CollapsibleTrigger>
           </div>
           <CollapsibleContent>
-            <div className="border-t border-[#d97231]/15 bg-white px-4 pb-4 pt-3.5">
+            <div className="border-t border-[#d97231]/15 bg-white px-4 pb-4 pt-3.5 text-foreground dark:border-orange-400/15 dark:bg-zinc-950/95">
         <form onSubmit={handleSubmit} className="space-y-4">
           {qualificationControls}
 
@@ -2633,8 +2641,8 @@ export const CallResultForm = ({
           )}
 
           {applicationSubmitted === true && !isQualifiedFormComplete && (
-            <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3">
-              <p className="text-sm text-red-700">
+            <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3 dark:border-red-400/30 dark:bg-red-950/35">
+              <p className="text-sm text-red-700 dark:text-red-200">
                 Please complete all required fields:
                 {!callSource && " Call Source"}
                 {!agentWhoTookCall && " Agent who took the call"}
@@ -2647,8 +2655,8 @@ export const CallResultForm = ({
 
           {/* Validation message for not submitted applications */}
           {applicationSubmitted === false && !isNotQualifiedFormComplete && (
-            <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3">
-              <p className="text-sm text-red-700">
+            <div className="rounded-[18px] border border-red-200 bg-red-50/90 p-3 dark:border-red-400/30 dark:bg-red-950/35">
+              <p className="text-sm text-red-700 dark:text-red-200">
                 Please complete all required fields:
                 {!callSource && " Call Source"}
                 {!agentWhoTookCall && " Agent who took the call"}
@@ -2670,7 +2678,7 @@ export const CallResultForm = ({
                   (applicationSubmitted === true && !isQualifiedFormComplete) ||
                   (applicationSubmitted === false && !isNotQualifiedFormComplete)
                 }
-                className="min-w-36 rounded-md bg-[#c25516] text-white shadow-sm hover:bg-[#a94812]"
+                className="min-w-36 rounded-md bg-[#c25516] text-white shadow-sm hover:bg-[#a94812] dark:bg-orange-600 dark:hover:bg-orange-500"
               >
                 {isSubmitting ? (
                   <>

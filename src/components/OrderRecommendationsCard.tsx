@@ -742,10 +742,10 @@ export const OrderRecommendationsCard = (props: {
   const renderPlaceholderCard = (slotIndex: number) => (
     <div
       key={`upcoming-${slotIndex}`}
-      className={`${horizontalRailCardClass} items-center justify-center rounded-xl border border-dashed border-border/50 bg-muted/20 px-5 py-10 ${railAnimation(slotIndex).className}`}
+      className={`${horizontalRailCardClass} items-center justify-center rounded-xl border border-dashed border-border/50 bg-muted/20 px-5 py-10 dark:border-white/10 dark:bg-white/[0.03] ${railAnimation(slotIndex).className}`}
       style={railAnimation(slotIndex).style}
     >
-      <div className="h-8 w-8 rounded-full border-2 border-dashed border-border/40" />
+      <div className="h-8 w-8 rounded-full border-2 border-dashed border-border/40 dark:border-white/15" />
       <span className="mt-3 text-xs text-muted-foreground/70">Awaiting match</span>
     </div>
   );
@@ -753,11 +753,11 @@ export const OrderRecommendationsCard = (props: {
   const renderNoAttorneyCard = () => (
     <div
       key="no-attorney"
-      className={`${horizontalRailCardClass} justify-between rounded-xl border border-dashed border-orange-200/80 bg-[linear-gradient(180deg,rgba(255,248,242,0.96)_0%,rgba(255,255,255,0.98)_100%)] p-4 ${railAnimation(0).className}`}
+      className={`${horizontalRailCardClass} justify-between rounded-xl border border-dashed border-orange-200/80 bg-[linear-gradient(180deg,rgba(255,248,242,0.96)_0%,rgba(255,255,255,0.98)_100%)] p-4 dark:border-orange-300/25 dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.12)_0%,rgba(24,24,27,0.96)_100%)] ${railAnimation(0).className}`}
       style={railAnimation(0).style}
     >
       <div className="space-y-3">
-        <Badge variant="outline" className="rounded-full border-orange-200/80 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-[#a85221]">
+        <Badge variant="outline" className="rounded-full border-orange-200/80 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-[#a85221] dark:border-orange-300/30 dark:bg-orange-500/15 dark:text-orange-100">
           No Match
         </Badge>
 
@@ -775,15 +775,15 @@ export const OrderRecommendationsCard = (props: {
             {getStateMatchToken(props.leadOverrides?.state) || formatStateFilterLabel(props.leadOverrides?.state) || "Unknown"}
           </span>
           {hiddenStateMismatchCount > 0 ? (
-            <span className="rounded-full border border-orange-200/60 bg-orange-50/80 px-2 py-0.5 font-medium text-[#a85221]">
+            <span className="rounded-full border border-orange-200/60 bg-orange-50/80 px-2 py-0.5 font-medium text-[#a85221] dark:border-orange-300/25 dark:bg-orange-500/15 dark:text-orange-200">
               {hiddenStateMismatchCount} hidden
             </span>
           ) : null}
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-orange-200/60 py-2.5">
-        <div className="h-2 w-2 rounded-full border border-orange-300/80" />
+      <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-orange-200/60 py-2.5 dark:border-orange-300/20 dark:bg-white/[0.02]">
+        <div className="h-2 w-2 rounded-full border border-orange-300/80 dark:border-orange-200/50" />
         <span className="text-xs text-muted-foreground">Awaiting match</span>
       </div>
     </div>
@@ -810,15 +810,15 @@ export const OrderRecommendationsCard = (props: {
     })();
 
     const borderTone = isAssigned
-      ? "border-[#ea7526] ring-1 ring-[#ea7526]/60"
+      ? "border-[#ea7526] ring-1 ring-[#ea7526]/60 dark:border-orange-400/70 dark:ring-orange-400/30"
       : isTopRecommendation
-        ? "border-[#f0b184]"
-        : "border-border/60";
+        ? "border-[#f0b184] dark:border-orange-300/35"
+        : "border-border/60 dark:border-white/10 dark:hover:border-white/20";
     const bgTone = isAssigned
-      ? "bg-[linear-gradient(180deg,rgba(255,241,230,0.96)_0%,rgba(255,255,255,0.98)_100%)]"
+      ? "bg-[linear-gradient(180deg,rgba(255,241,230,0.96)_0%,rgba(255,255,255,0.98)_100%)] dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.18)_0%,rgba(24,24,27,0.96)_100%)]"
       : isTopRecommendation
-        ? "bg-[linear-gradient(180deg,rgba(255,247,240,0.98)_0%,rgba(255,255,255,0.98)_100%)]"
-        : "bg-[linear-gradient(180deg,rgba(255,250,246,0.92)_0%,rgba(255,255,255,0.98)_100%)]";
+        ? "bg-[linear-gradient(180deg,rgba(255,247,240,0.98)_0%,rgba(255,255,255,0.98)_100%)] dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.11)_0%,rgba(24,24,27,0.96)_100%)]"
+        : "bg-[linear-gradient(180deg,rgba(255,250,246,0.92)_0%,rgba(255,255,255,0.98)_100%)] dark:bg-[linear-gradient(180deg,rgba(63,63,70,0.35)_0%,rgba(24,24,27,0.96)_100%)]";
 
     if (horizontal) {
       return (
@@ -936,10 +936,10 @@ export const OrderRecommendationsCard = (props: {
         key={recommendationKey}
         className={`rounded-xl border p-4 ${railAnimation(rank - 1).className} ${
           isAssigned
-            ? "border-[#ea7526] bg-orange-50/50 ring-1 ring-[#ea7526]/40"
+            ? "border-[#ea7526] bg-orange-50/50 ring-1 ring-[#ea7526]/40 dark:border-orange-400/70 dark:bg-orange-500/15 dark:ring-orange-400/30"
             : isTopRecommendation
-              ? "border-[#f0b184] bg-orange-50/30"
-              : "border-border/60 bg-background"
+              ? "border-[#f0b184] bg-orange-50/30 dark:border-orange-300/35 dark:bg-orange-500/10"
+              : "border-border/60 bg-background dark:border-white/10 dark:bg-zinc-950/70"
         }`}
         style={railAnimation(rank - 1).style}
       >
@@ -1048,7 +1048,7 @@ export const OrderRecommendationsCard = (props: {
         })
       }
       disabled={loading || clearingAssignment}
-      className="h-8 gap-2 rounded-md border-[#e6b086] bg-[#fff4ea] px-3 text-xs font-medium text-[#7a3718] shadow-sm hover:bg-[#ffe9d8] hover:text-[#6a2d13]"
+      className="h-8 gap-2 rounded-md border-[#e6b086] bg-[#fff4ea] px-3 text-xs font-medium text-[#7a3718] shadow-sm hover:bg-[#ffe9d8] hover:text-[#6a2d13] dark:border-orange-300/25 dark:bg-orange-500/10 dark:text-orange-200 dark:hover:bg-orange-500/20 dark:hover:text-orange-100"
     >
       <RefreshCw className={`h-3.5 w-3.5 ${loading || clearingAssignment ? "animate-spin" : ""}`} />
       Refresh
@@ -1070,20 +1070,20 @@ export const OrderRecommendationsCard = (props: {
       ) : null}
 
         {dealFlowStatus === "loading" ? (
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.03]">
             <Loader2 className="h-4 w-4 animate-spin" />
             Checking Daily Deal Flow status...
           </div>
         ) : dealFlowStatus === "not_found" ? (
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.03]">
             <Info className="h-4 w-4 shrink-0" />
             This lead does not exist in Daily Deal Flow yet. Create a deal entry first.
           </div>
         ) : dealFlowStatus === "already_assigned" ? (
-          <div className="space-y-3 rounded-lg border bg-muted/20 px-4 py-3.5">
+          <div className="space-y-3 rounded-lg border bg-muted/20 px-4 py-3.5 dark:border-white/10 dark:bg-white/[0.03]">
             <div className="flex items-center gap-2 text-sm">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/15">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-300" />
               </div>
               <span className="text-muted-foreground">
                 Assigned to <strong className="text-foreground">{assignedAttorneyName}</strong>
@@ -1096,7 +1096,7 @@ export const OrderRecommendationsCard = (props: {
                 size="sm"
                 onClick={() => void clearAssignedAttorney()}
                 disabled={clearingAssignment}
-                className="gap-1.5 text-xs"
+                className="gap-1.5 text-xs dark:border-white/15 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
               >
                 {clearingAssignment ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -1110,7 +1110,7 @@ export const OrderRecommendationsCard = (props: {
         ) : (
           <div className="space-y-3">
             {error ? (
-              <div className="rounded-lg border bg-background px-3 py-2.5 text-sm text-muted-foreground">
+              <div className="rounded-lg border bg-background px-3 py-2.5 text-sm text-muted-foreground dark:border-white/10 dark:bg-zinc-950/70">
                 Failed to load recommendations: {error}
               </div>
             ) : null}
@@ -1123,7 +1123,7 @@ export const OrderRecommendationsCard = (props: {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.03]">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading recommendations...
                 </div>
@@ -1139,7 +1139,7 @@ export const OrderRecommendationsCard = (props: {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground">
+                <div className="rounded-lg border bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.03]">
                   No matching open orders found.
                 </div>
               )
@@ -1169,8 +1169,8 @@ export const OrderRecommendationsCard = (props: {
   }
 
   return (
-    <Card className="overflow-hidden border-[#f2d5c1] shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-[#f2d5c1] bg-[linear-gradient(90deg,rgba(234,117,38,0.28)_0%,rgba(234,117,38,0.14)_12%,rgba(234,117,38,0.07)_24%,rgba(234,117,38,0.02)_34%,rgba(234,117,38,0)_46%)] px-5 py-3.5">
+    <Card className="overflow-hidden border-[#f2d5c1] shadow-sm dark:border-orange-400/20 dark:bg-zinc-950 dark:shadow-black/30">
+      <div className="flex items-center justify-between gap-3 border-b border-[#f2d5c1] bg-[linear-gradient(90deg,rgba(234,117,38,0.28)_0%,rgba(234,117,38,0.14)_12%,rgba(234,117,38,0.07)_24%,rgba(234,117,38,0.02)_34%,rgba(234,117,38,0)_46%)] px-5 py-3.5 dark:border-orange-400/20 dark:bg-[linear-gradient(90deg,rgba(234,117,38,0.18)_0%,rgba(234,117,38,0.08)_18%,rgba(0,0,0,0)_48%)]">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-sm font-bold tracking-tight">Attorney Recommendations</span>
           {subtitle ? (

@@ -1250,7 +1250,7 @@ const CallResultUpdate = () => {
       return (
         <div className="space-y-3 animate-fade-in">
           <div className="flex items-center gap-2">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600 dark:text-amber-300" />
             <span className="text-sm text-muted-foreground">Screening {screeningPhone || lead?.phone_number || "this number"}...</span>
           </div>
           <div className="space-y-2">
@@ -1273,7 +1273,7 @@ const CallResultUpdate = () => {
           <Button
             variant="outline"
             size="sm"
-            className="gap-2 border-amber-400/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+            className="gap-2 border-amber-400/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950 dark:border-amber-400/40 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20 dark:hover:text-amber-100"
             onClick={() => {
               setDncLookupError(null);
               void runDncLookup(dncInputPhone || undefined);
@@ -1300,12 +1300,12 @@ const CallResultUpdate = () => {
               placeholder="Paste phone number here"
               value={dncInputPhone}
               onChange={(e) => setDncInputPhone(e.target.value)}
-              className="h-9 max-w-[14rem] font-mono text-sm tracking-wide border-amber-300/80 focus-visible:ring-amber-400/60"
+              className="h-9 max-w-[14rem] font-mono text-sm tracking-wide border-amber-300/80 focus-visible:ring-amber-400/60 dark:border-amber-400/35 dark:bg-amber-500/5 dark:text-amber-100 dark:placeholder:text-amber-300/40 dark:focus-visible:ring-amber-400/40"
             />
             <Button
               variant="outline"
               size="sm"
-              className="gap-2 border-amber-400/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+              className="gap-2 border-amber-400/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950 dark:border-amber-400/40 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20 dark:hover:text-amber-100"
               onClick={() => void runDncLookup(dncInputPhone)}
               disabled={!inputNormalized}
             >
@@ -1679,67 +1679,67 @@ const CallResultUpdate = () => {
 
   const preCallCards = (
     <div className={`grid grid-cols-1 items-start gap-4${showDisclaimer ? " xl:grid-cols-2" : ""}`}>
-      <Card className="border-amber-200/80 bg-amber-50/30 shadow-sm">
+      <Card className="border-amber-200/80 bg-amber-50/30 shadow-sm dark:border-amber-400/25 dark:bg-amber-500/5">
         <Collapsible open={!isDncLookupCollapsed} onOpenChange={(open) => setIsDncLookupCollapsed(!open)}>
           <CollapsibleTrigger asChild>
-            <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/60">
+            <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/60 dark:hover:bg-amber-500/10">
               <div className="flex items-center gap-2.5">
-                <ShieldAlert className="h-4 w-4 text-amber-600" />
-                <span className="text-sm font-semibold text-amber-900">DNC Lookup</span>
-                <span className="hidden text-xs text-amber-700/70 sm:inline">TCPA / DNC screening</span>
+                <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+                <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">DNC Lookup</span>
+                <span className="hidden text-xs text-amber-700/70 sm:inline dark:text-amber-300/70">TCPA / DNC screening</span>
               </div>
-              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform ${!isDncLookupCollapsed ? "rotate-180" : ""}`} />
+              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform dark:text-amber-300 ${!isDncLookupCollapsed ? "rotate-180" : ""}`} />
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="border-t border-amber-200/60 px-5 pb-4 pt-3">{dncLookupCardContent}</div>
+            <div className="border-t border-amber-200/60 px-5 pb-4 pt-3 dark:border-amber-400/20">{dncLookupCardContent}</div>
           </CollapsibleContent>
         </Collapsible>
       </Card>
 
       {showDisclaimer && (
-        <Card className="border-amber-200/60 bg-amber-50/20 shadow-sm">
+        <Card className="border-amber-200/60 bg-amber-50/20 shadow-sm dark:border-amber-400/25 dark:bg-amber-500/5">
           <Collapsible open={!isDisclaimerCollapsed} onOpenChange={(open) => setIsDisclaimerCollapsed(!open)}>
             <CollapsibleTrigger asChild>
-              <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/40">
+              <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/40 dark:hover:bg-amber-500/10">
                 <div className="flex items-center gap-2.5">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" />
-                  <span className="text-sm font-semibold text-amber-900">Disclaimer Required</span>
-                  <span className="hidden text-xs text-amber-700/70 sm:inline">Verbal consent needed</span>
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+                  <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">Disclaimer Required</span>
+                  <span className="hidden text-xs text-amber-700/70 sm:inline dark:text-amber-300/70">Verbal consent needed</span>
                 </div>
-                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform ${!isDisclaimerCollapsed ? "rotate-180" : ""}`} />
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform dark:text-amber-300 ${!isDisclaimerCollapsed ? "rotate-180" : ""}`} />
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="space-y-2.5 border-t border-amber-200/40 px-5 pb-4 pt-3">
-                <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
+              <div className="space-y-2.5 border-t border-amber-200/40 px-5 pb-4 pt-3 dark:border-amber-400/20">
+                <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground dark:border-amber-400/20 dark:bg-zinc-900/70">
                   Is your phone number{" "}
-                  <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
+                  <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
                     {lead?.phone_number || "on file"}
                   </span>{" "}
                   on the Federal, National or State Do Not Call List?
                 </div>
 
-                <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2">
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-                  <p className="text-[11px] leading-4 text-amber-800">
+                <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2 dark:bg-amber-500/10">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600 dark:text-amber-300" />
+                  <p className="text-[11px] leading-4 text-amber-800 dark:text-amber-200">
                     If a customer says <strong>no</strong> and we see it's on the DNC list, we still have to take verbal consent.
                   </p>
                 </div>
 
-                <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
+                <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground dark:border-amber-400/20 dark:bg-zinc-900/70">
                   Sir/Ma'am, even if your phone number is on the Federal National or State Do Not Call List, do we still
                   have your permission to call you and submit your application to Accident Claims Helpline via your
                   phone number{" "}
-                  <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
+                  <span className="rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
                     {lead?.phone_number || "on file"}
                   </span>
                   ? And do we have your permission to call you on the same phone number in the future if needed?
                 </div>
 
-                <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2">
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700" />
-                  <p className="text-[13px] font-semibold text-amber-900">Make sure you get a clear YES on it.</p>
+                <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2 dark:border-amber-400/35 dark:bg-amber-500/15">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                  <p className="text-[13px] font-semibold text-amber-900 dark:text-amber-100">Make sure you get a clear YES on it.</p>
                 </div>
               </div>
             </CollapsibleContent>
@@ -1811,7 +1811,7 @@ const CallResultUpdate = () => {
                   <div
                     className={`rounded-lg border transition-all ${
                       isLinkedSection
-                        ? "border-[#4b5666]/45 bg-[linear-gradient(180deg,rgba(96,111,131,0.14)_0%,rgba(240,244,248,0.96)_100%)] shadow-[0_16px_34px_-24px_rgba(30,41,59,0.5)]"
+                        ? "border-[#4b5666]/45 bg-[linear-gradient(180deg,rgba(96,111,131,0.14)_0%,rgba(240,244,248,0.96)_100%)] shadow-[0_16px_34px_-24px_rgba(30,41,59,0.5)] dark:border-white/15 dark:bg-[linear-gradient(180deg,rgba(96,111,131,0.18)_0%,rgba(39,39,42,0.92)_100%)] dark:shadow-black/40"
                         : "border-border/60 bg-card"
                     }`}
                   >
@@ -1819,7 +1819,7 @@ const CallResultUpdate = () => {
                       <button
                         type="button"
                         className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors ${
-                          isLinkedSection ? "hover:bg-[#e6ebf2]/55" : "hover:bg-muted/20"
+                          isLinkedSection ? "hover:bg-[#e6ebf2]/55 dark:hover:bg-white/5" : "hover:bg-muted/20"
                         }`}
                       >
                         <div className="space-y-0.5 min-w-0">
@@ -1831,7 +1831,7 @@ const CallResultUpdate = () => {
                               {sectionIndex + 1}/{callFlowSections.length}
                             </span>
                             {isLinkedSection ? (
-                              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-[#45505f] animate-pulse" />
+                              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-[#45505f] animate-pulse dark:bg-orange-300" />
                             ) : null}
                           </div>
                           <h3 className="text-[13px] font-semibold text-foreground leading-snug">{section.title}</h3>
@@ -1852,7 +1852,7 @@ const CallResultUpdate = () => {
                     <CollapsibleContent>
                       <div
                         className={`space-y-2.5 border-t px-4 pb-3.5 pt-3 ${
-                          isLinkedSection ? "border-[#4b5666]/16 bg-[#f6f8fb]/82" : "border-border/40"
+                          isLinkedSection ? "border-[#4b5666]/16 bg-[#f6f8fb]/82 dark:border-white/10 dark:bg-zinc-900/60" : "border-border/40"
                         }`}
                       >
                         {section.summary ? (
@@ -1905,14 +1905,14 @@ const CallResultUpdate = () => {
                         ) : null}
 
                         {section.tips?.length ? (
-                          <div className="rounded-md bg-sky-50/70 px-3.5 py-2.5">
-                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                          <div className="rounded-md bg-sky-50/70 px-3.5 py-2.5 dark:bg-sky-500/10">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-300">
                               Tips
                             </div>
-                            <ul className="space-y-1 text-[12px] leading-5 text-sky-900">
+                            <ul className="space-y-1 text-[12px] leading-5 text-sky-900 dark:text-sky-100">
                               {section.tips.map((item) => (
                                 <li key={item} className="flex gap-1.5">
-                                  <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-sky-500" />
+                                  <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-sky-500 dark:bg-sky-400" />
                                   <span>{item}</span>
                                 </li>
                               ))}
@@ -1921,14 +1921,14 @@ const CallResultUpdate = () => {
                         ) : null}
 
                         {section.redFlags?.length ? (
-                          <div className="rounded-md bg-rose-50/70 px-3.5 py-2.5">
-                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-700">
+                          <div className="rounded-md bg-rose-50/70 px-3.5 py-2.5 dark:bg-rose-500/10">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-700 dark:text-rose-300">
                               Red Flags
                             </div>
-                            <ul className="space-y-1 text-[12px] leading-5 text-rose-900">
+                            <ul className="space-y-1 text-[12px] leading-5 text-rose-900 dark:text-rose-100">
                               {section.redFlags.map((item) => (
                                 <li key={item} className="flex gap-1.5">
-                                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-rose-500" />
+                                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-rose-500 dark:text-rose-300" />
                                   <span>{item}</span>
                                 </li>
                               ))}
@@ -1937,14 +1937,14 @@ const CallResultUpdate = () => {
                         ) : null}
 
                         {section.notes?.length ? (
-                          <div className="rounded-md bg-amber-50/70 px-3.5 py-2.5">
-                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                          <div className="rounded-md bg-amber-50/70 px-3.5 py-2.5 dark:bg-amber-500/10">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700 dark:text-amber-300">
                               Notes
                             </div>
-                            <ul className="space-y-1 text-[12px] leading-5 text-amber-900">
+                            <ul className="space-y-1 text-[12px] leading-5 text-amber-900 dark:text-amber-100">
                               {section.notes.map((item) => (
                                 <li key={item} className="flex gap-1.5">
-                                  <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                                  <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400" />
                                   <span>{item}</span>
                                 </li>
                               ))}
@@ -2194,23 +2194,23 @@ const CallResultUpdate = () => {
       })),
     };
   }, [lastEnvelopeId, retainerEnvelopeStatus]);
-  const handoffCardClass = "overflow-hidden border-[#f2d5c1] shadow-sm";
-  const contractHeaderSurfaceClass = "bg-[linear-gradient(90deg,rgba(234,117,38,0.52)_0%,rgba(234,117,38,0.52)_100%)]";
-  const contractHeaderClass = `border-b border-[#efbb93] ${contractHeaderSurfaceClass} px-5 py-3.5`;
-  const uploadHeaderClass = "border-b border-[#e1893b] bg-[linear-gradient(90deg,rgba(225,137,59,0.84)_0%,rgba(225,137,59,0.84)_100%)] px-5 py-3.5";
+  const handoffCardClass = "overflow-hidden border-[#f2d5c1] shadow-sm dark:border-orange-400/20 dark:bg-zinc-950 dark:shadow-black/30";
+  const contractHeaderSurfaceClass = "bg-[linear-gradient(90deg,rgba(234,117,38,0.52)_0%,rgba(234,117,38,0.52)_100%)] dark:bg-[linear-gradient(90deg,rgba(234,117,38,0.32)_0%,rgba(234,117,38,0.18)_100%)]";
+  const contractHeaderClass = `border-b border-[#efbb93] ${contractHeaderSurfaceClass} px-5 py-3.5 dark:border-orange-400/25`;
+  const uploadHeaderClass = "border-b border-[#e1893b] bg-[linear-gradient(90deg,rgba(225,137,59,0.84)_0%,rgba(225,137,59,0.84)_100%)] px-5 py-3.5 dark:border-orange-400/25 dark:bg-[linear-gradient(90deg,rgba(225,137,59,0.45)_0%,rgba(225,137,59,0.25)_100%)]";
   const handoffHeaderContentClass = "flex items-center justify-between gap-3";
   const handoffIconClass =
-    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#efbb93]/70 bg-[#fff2e8] text-[#b85a20]";
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#efbb93]/70 bg-[#fff2e8] text-[#b85a20] dark:border-orange-300/40 dark:bg-orange-500/15 dark:text-orange-200";
   const uploadIconClass =
-    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#e1893b]/75 bg-[#ffead2] text-[#984617]";
-  const handoffChevronClass = "shrink-0 rounded-md border border-[#efbb93]/70 bg-white/80 p-1";
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#e1893b]/75 bg-[#ffead2] text-[#984617] dark:border-orange-300/40 dark:bg-orange-500/15 dark:text-orange-200";
+  const handoffChevronClass = "shrink-0 rounded-md border border-[#efbb93]/70 bg-white/80 p-1 dark:border-orange-300/30 dark:bg-white/10 dark:text-orange-100";
   const uploadChevronClass =
-    "shrink-0 rounded-md border border-white/85 bg-white/95 p-1 text-[#984617] shadow-sm transition-colors hover:bg-white";
+    "shrink-0 rounded-md border border-white/85 bg-white/95 p-1 text-[#984617] shadow-sm transition-colors hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-orange-100 dark:hover:bg-white/20";
   const handoffInfoButtonClass =
-    "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]";
+    "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea] dark:border-orange-300/30 dark:bg-white/10 dark:text-orange-100 dark:hover:bg-white/20";
   const uploadInfoButtonClass =
-    "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]";
-  const scriptGuideCardClass = "overflow-hidden border-[#2b333f]/80 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.8)]";
+    "inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea] dark:border-orange-300/30 dark:bg-white/10 dark:text-orange-100 dark:hover:bg-white/20";
+  const scriptGuideCardClass = "overflow-hidden border-[#2b333f]/80 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.8)] dark:border-white/10 dark:bg-zinc-950 dark:shadow-black/30";
   const scriptGuideHeaderClass =
     "border-b border-[#384252]/95 bg-[linear-gradient(90deg,#161c24_0%,#1d2530_34%,#28313d_66%,#333d4a_100%)] text-slate-100";
   const scriptGuideChevronClass =
@@ -2269,10 +2269,10 @@ const CallResultUpdate = () => {
               <div className="flex h-full flex-col">
                 <div className="space-y-4">
                 {selectedHandoffAttorneyLabel ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                    <span className="font-medium text-emerald-800">{selectedHandoffAttorneyLabel}</span>
-                    <span className="text-xs text-emerald-700/70">selected above</span>
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm dark:border-emerald-400/30 dark:bg-emerald-500/10">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
+                    <span className="font-medium text-emerald-800 dark:text-emerald-100">{selectedHandoffAttorneyLabel}</span>
+                    <span className="text-xs text-emerald-700/70 dark:text-emerald-300/80">selected above</span>
                   </div>
                 ) : (
                   <div className="rounded-xl border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -2326,13 +2326,13 @@ const CallResultUpdate = () => {
                 </div>
 
                 {!loadingTemplates && selectedRetainerState && filteredContractTemplates.length === 0 ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
                     No templates are currently available for {selectedRetainerStateName}. Choose a different state to continue.
                   </div>
                 ) : null}
 
                 {!loadingTemplates && contractTemplateError ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
                     {contractTemplateError}
                   </div>
                 ) : null}
@@ -2391,7 +2391,7 @@ const CallResultUpdate = () => {
                 </div>
 
                 {lastEnvelopeId ? (
-                  <div className="rounded-xl border border-[#f2d5c1] bg-[#fff8f2] px-3 py-2">
+                  <div className="rounded-xl border border-[#f2d5c1] bg-[#fff8f2] px-3 py-2 dark:border-orange-400/25 dark:bg-orange-500/10">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       Envelope ID
                     </div>
@@ -2421,7 +2421,7 @@ const CallResultUpdate = () => {
                 </div>
               </div>
 
-              <div className="flex h-full flex-col rounded-[20px] border border-[#f2d5c1] bg-[linear-gradient(180deg,rgba(255,245,236,0.92)_0%,rgba(255,255,255,0.98)_100%)] p-4 shadow-[0_18px_36px_-30px_rgba(234,117,38,0.22)]">
+              <div className="flex h-full flex-col rounded-[20px] border border-[#f2d5c1] bg-[linear-gradient(180deg,rgba(255,245,236,0.92)_0%,rgba(255,255,255,0.98)_100%)] p-4 shadow-[0_18px_36px_-30px_rgba(234,117,38,0.22)] dark:border-orange-400/20 dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.10)_0%,rgba(24,24,27,0.92)_100%)]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-sm font-semibold text-foreground">Agreement Status</div>
                   <Button
@@ -2430,29 +2430,29 @@ const CallResultUpdate = () => {
                     size="sm"
                     onClick={() => void refreshRetainerStatusView()}
                     disabled={refreshingRetainerStatus || !lastEnvelopeId}
-                    className="gap-2 rounded-md border-[#e6b086] bg-[#fff4ea] text-[#7a3718] shadow-sm hover:bg-[#ffe9d8] hover:text-[#6a2d13]"
+                    className="gap-2 rounded-md border-[#e6b086] bg-[#fff4ea] text-[#7a3718] shadow-sm hover:bg-[#ffe9d8] hover:text-[#6a2d13] dark:border-orange-400/30 dark:bg-orange-500/15 dark:text-orange-200 dark:hover:bg-orange-500/25 dark:hover:text-orange-100"
                   >
                     <RefreshCw className={refreshingRetainerStatus ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
                     Refresh
                   </Button>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-[#f2d5c1] bg-white/78 px-3.5 py-3 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.28)]">
+                <div className="mt-4 rounded-xl border border-[#f2d5c1] bg-white/78 px-3.5 py-3 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-zinc-900/70">
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                       Retainer Progress
                     </div>
-                    <div className="text-xs font-medium text-[#8b4a1f]">{retainerProgress.currentStepLabel}</div>
+                    <div className="text-xs font-medium text-[#8b4a1f] dark:text-orange-200">{retainerProgress.currentStepLabel}</div>
                   </div>
 
                   <div className="mt-3 flex items-start">
                     {retainerProgress.steps.map((step, index) => {
                       const markerClass = step.isComplete
-                        ? "border-emerald-500 bg-emerald-500 text-white shadow-[0_8px_16px_-12px_rgba(34,197,94,0.9)]"
+                        ? "border-emerald-500 bg-emerald-500 text-white shadow-[0_8px_16px_-12px_rgba(34,197,94,0.9)] dark:border-emerald-400 dark:bg-emerald-500"
                         : step.isCurrent
-                          ? "border-[#ea7526] bg-[#fff2e8] text-[#b85a20] shadow-[0_10px_18px_-14px_rgba(234,117,38,0.85)]"
-                          : "border-slate-200 bg-white text-muted-foreground";
-                      const connectorClass = index < retainerProgress.currentStepIndex ? "bg-emerald-400/90" : "bg-slate-200";
+                          ? "border-[#ea7526] bg-[#fff2e8] text-[#b85a20] shadow-[0_10px_18px_-14px_rgba(234,117,38,0.85)] dark:border-orange-400 dark:bg-orange-500/20 dark:text-orange-200"
+                          : "border-slate-200 bg-white text-muted-foreground dark:border-white/10 dark:bg-zinc-900/50";
+                      const connectorClass = index < retainerProgress.currentStepIndex ? "bg-emerald-400/90 dark:bg-emerald-500/70" : "bg-slate-200 dark:bg-white/10";
 
                       return (
                         <div key={step.label} className="flex min-w-0 flex-1 items-start">
@@ -2481,7 +2481,7 @@ const CallResultUpdate = () => {
                 </div>
 
                 {retainerStatusError ? (
-                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200">
                     {retainerStatusError}
                   </div>
                 ) : null}
@@ -2493,7 +2493,7 @@ const CallResultUpdate = () => {
                     size="sm"
                     onClick={() => void handleDownloadSignedRetainer()}
                     disabled={downloadingRetainerDocument || refreshingRetainerStatus || !retainerStoredDocument?.path}
-                    className="mt-3 w-full gap-2 rounded-md border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm hover:bg-emerald-100 hover:text-emerald-900"
+                    className="mt-3 w-full gap-2 rounded-md border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm hover:bg-emerald-100 hover:text-emerald-900 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-100"
                   >
                     {downloadingRetainerDocument ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2552,7 +2552,7 @@ const CallResultUpdate = () => {
               {docusignDesktopGuideSteps.map((step) => (
                 <div
                   key={step.step}
-                  className="group/step rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm transition-all duration-200 hover:border-[#4b5666]/35 hover:bg-[linear-gradient(180deg,rgba(96,111,131,0.08)_0%,rgba(255,255,255,0.98)_100%)] hover:shadow-[0_18px_36px_-28px_rgba(30,41,59,0.34)] lg:flex lg:items-center lg:gap-3"
+                  className="group/step rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm transition-all duration-200 hover:border-[#4b5666]/35 lg:flex lg:items-center lg:gap-3"
                 >
                   <div className="space-y-2 lg:w-fit lg:min-w-[24rem] lg:max-w-[46rem] lg:flex-none lg:self-center">
                     <div className="flex flex-wrap items-center gap-2">
@@ -2709,7 +2709,7 @@ const CallResultUpdate = () => {
   );
 
   const handoffDidCard = (
-    <Card className="mx-auto w-full max-w-[22rem] overflow-hidden border-[#d7dee6] shadow-sm">
+    <Card className="mx-auto w-full max-w-[22rem] overflow-hidden border-[#d7dee6] shadow-sm dark:border-white/10">
       <CardContent className="space-y-3.5 px-4 py-4 text-center">
         <div className="space-y-1">
           <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -2724,14 +2724,14 @@ const CallResultUpdate = () => {
           <div
             className={`w-full rounded-xl border px-3 py-2.5 ${
               selectedHandoffAttorneyDid
-                ? "border-[#c9d7e6] bg-[linear-gradient(180deg,rgba(237,243,249,0.82)_0%,rgba(255,255,255,0.98)_100%)]"
+                ? "border-[#c9d7e6] bg-[linear-gradient(180deg,rgba(237,243,249,0.82)_0%,rgba(255,255,255,0.98)_100%)] dark:border-sky-400/25 dark:bg-[linear-gradient(180deg,rgba(56,189,248,0.10)_0%,rgba(24,24,27,0.92)_100%)]"
                 : "border-dashed border-border/70 bg-background/85"
             }`}
           >
             <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               Ready to dial
             </div>
-            <div className="mt-1 truncate font-mono text-base font-semibold text-slate-950">
+            <div className="mt-1 truncate font-mono text-base font-semibold text-slate-950 dark:text-zinc-100">
               {selectedHandoffAttorneyDid || "DID pending"}
             </div>
           </div>
@@ -2742,12 +2742,12 @@ const CallResultUpdate = () => {
             variant="outline"
             onClick={() => void handleCopyHandoffDid()}
             disabled={!selectedHandoffAttorneyDid}
-            className="h-10 rounded-lg border-slate-300 bg-white/92 px-3.5 text-slate-700 shadow-sm hover:border-slate-400 hover:bg-white disabled:border-slate-200 disabled:bg-white/70 disabled:text-slate-400"
+            className="h-10 rounded-lg border-slate-300 bg-white/92 px-3.5 text-slate-700 shadow-sm hover:border-slate-400 hover:bg-white disabled:border-slate-200 disabled:bg-white/70 disabled:text-slate-400 dark:border-white/15 dark:bg-white/10 dark:text-zinc-100 dark:hover:border-white/30 dark:hover:bg-white/15 dark:disabled:border-white/10 dark:disabled:bg-white/5 dark:disabled:text-zinc-500"
           >
             {handoffDidCopied ? (
               <>
-                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                <span className="text-emerald-600">Copied</span>
+                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-300" />
+                <span className="text-emerald-600 dark:text-emerald-300">Copied</span>
               </>
             ) : (
               <>
@@ -2815,7 +2815,7 @@ const CallResultUpdate = () => {
               {myCasesHandoffSections.map((section) => (
                 <div
                   key={section.audience}
-                  className="group/step rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm transition-all duration-200 hover:border-[#4b5666]/35 hover:bg-[linear-gradient(180deg,rgba(96,111,131,0.08)_0%,rgba(255,255,255,0.98)_100%)] hover:shadow-[0_18px_36px_-28px_rgba(30,41,59,0.34)]"
+                  className="group/step rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm transition-all duration-200 hover:border-[#4b5666]/35"
                 >
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -2859,16 +2859,16 @@ const CallResultUpdate = () => {
   );
 
   const attorneyRecommendationCard = lead ? (
-    <Card className="overflow-hidden border-[#f2d5c1] shadow-sm">
+    <Card className="overflow-hidden border-[#f2d5c1] shadow-sm dark:border-orange-400/20 dark:bg-zinc-950 dark:shadow-black/30">
       <Collapsible
         open={!isAttorneyRecommendationCollapsed}
         onOpenChange={(open) => setIsAttorneyRecommendationCollapsed(!open)}
       >
-        <CardHeader className="border-b border-[#f2d5c1] bg-[#fff2e8] px-5 py-3.5">
+        <CardHeader className="border-b border-[#f2d5c1] bg-[#fff2e8] px-5 py-3.5 dark:border-orange-400/20 dark:bg-orange-500/10">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white text-[#b85a20] shadow-[0_8px_20px_-16px_rgba(184,90,32,0.35)]">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#efbb93]/70 bg-white text-[#b85a20] shadow-[0_8px_20px_-16px_rgba(184,90,32,0.35)] dark:border-orange-300/40 dark:bg-orange-500/15 dark:text-orange-200">
                   <Scale className="h-4 w-4" />
                 </div>
                 <CardTitle className="text-sm font-bold tracking-tight text-foreground">
@@ -2878,7 +2878,7 @@ const CallResultUpdate = () => {
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#f0c9af] bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea]"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#f0c9af] bg-white/85 text-[#9a5a33] transition-colors hover:bg-[#fff3ea] dark:border-orange-300/30 dark:bg-white/10 dark:text-orange-100 dark:hover:bg-white/20"
                       aria-label="Attorney recommendation info"
                     >
                       <Info className="h-3.5 w-3.5" />
@@ -2902,7 +2902,7 @@ const CallResultUpdate = () => {
                 value={attorneyFulfillmentMode}
                 onValueChange={(value) => setAttorneyFulfillmentMode(value as "internal" | "broker")}
               >
-                <SelectTrigger className="h-8.5 min-w-[220px] bg-white/90 text-sm">
+                <SelectTrigger className="h-8.5 min-w-[220px] bg-white/90 text-sm dark:bg-zinc-900/70">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2971,7 +2971,7 @@ const CallResultUpdate = () => {
   ) : null;
 
   const attorneyDisclosureCard = (
-    <Card className="border-amber-200/60 bg-amber-50/20 shadow-sm">
+    <Card className="border-amber-200/60 bg-amber-50/20 shadow-sm dark:border-amber-400/25 dark:bg-amber-500/5">
       <Collapsible
         open={!isAttorneyDisclosureCollapsed}
         onOpenChange={(open) => setIsAttorneyDisclosureCollapsed(!open)}
@@ -2979,46 +2979,46 @@ const CallResultUpdate = () => {
         <CollapsibleTrigger asChild>
           <button
             type="button"
-            className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/40"
+            className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-amber-50/40 dark:hover:bg-amber-500/10"
           >
             <div className="flex items-center gap-2.5">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              <span className="text-sm font-semibold text-amber-900">Partner Law Firm Disclosure</span>
-              <span className="hidden text-xs text-amber-700/70 sm:inline">Verbal agreement required</span>
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+              <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">Partner Law Firm Disclosure</span>
+              <span className="hidden text-xs text-amber-700/70 sm:inline dark:text-amber-300/70">Verbal agreement required</span>
             </div>
             <ChevronDown
-              className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform ${
+              className={`h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform dark:text-amber-300 ${
                 !isAttorneyDisclosureCollapsed ? "rotate-180" : ""
               }`}
             />
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="space-y-2.5 border-t border-amber-200/40 px-5 pb-4 pt-3">
-            <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-              <p className="text-[11px] leading-4 text-amber-800">
+          <div className="space-y-2.5 border-t border-amber-200/40 px-5 pb-4 pt-3 dark:border-amber-400/20">
+            <div className="flex items-start gap-2 rounded-md bg-amber-100/40 px-3.5 py-2 dark:bg-amber-500/10">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600 dark:text-amber-300" />
+              <p className="text-[11px] leading-4 text-amber-800 dark:text-amber-200">
                 Use this after a law firm has been selected above and before moving into documentation or handoff.
               </p>
             </div>
 
-            <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground">
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+            <div className="rounded-md border border-amber-200/80 bg-white px-3.5 py-2.5 text-[13px] leading-6 text-foreground dark:border-amber-400/20 dark:bg-zinc-900/70">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700 dark:text-amber-300">
                 Read to Caller
               </div>
               <ul className="space-y-2">
                 {attorneyDisclosureBullets.map((line) => (
                   <li key={line} className="flex gap-2">
-                    <span className="mt-[0.7rem] h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                    <span className="mt-[0.7rem] h-1 w-1 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400" />
                     <span>{line}</span>
                   </li>
                 ))}
               </ul>
             </div>
 
-            <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2">
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700" />
-              <p className="text-[13px] font-semibold text-amber-900">
+            <div className="flex items-center gap-2 rounded-md border border-amber-400/60 bg-amber-400/10 px-3.5 py-2 dark:border-amber-400/35 dark:bg-amber-500/15">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+              <p className="text-[13px] font-semibold text-amber-900 dark:text-amber-100">
                 Get a clear verbal YES to the selected law firm and to case-related communication between our team and that firm.
               </p>
             </div>
@@ -3179,12 +3179,12 @@ const CallResultUpdate = () => {
                                 </div>
                               ) : null}
                               {section.tips?.length ? (
-                                <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-4 py-3">
-                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-800">Verification Tips</div>
-                                  <ul className="space-y-2 text-sm leading-6 text-sky-950">
+                                <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-4 py-3 dark:border-sky-400/30 dark:bg-sky-500/10">
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-800 dark:text-sky-300">Verification Tips</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-sky-950 dark:text-sky-100">
                                     {section.tips.map((item) => (
                                       <li key={item} className="flex gap-2">
-                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500 dark:bg-sky-400" />
                                         <span>{item}</span>
                                       </li>
                                     ))}
@@ -3192,12 +3192,12 @@ const CallResultUpdate = () => {
                                 </div>
                               ) : null}
                               {section.redFlags?.length ? (
-                                <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-4 py-3">
-                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800">Red Flags</div>
-                                  <ul className="space-y-2 text-sm leading-6 text-rose-950">
+                                <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-4 py-3 dark:border-rose-400/30 dark:bg-rose-500/10">
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800 dark:text-rose-300">Red Flags</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-rose-950 dark:text-rose-100">
                                     {section.redFlags.map((item) => (
                                       <li key={item} className="flex gap-2">
-                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-300" />
                                         <span>{item}</span>
                                       </li>
                                     ))}
@@ -3205,12 +3205,12 @@ const CallResultUpdate = () => {
                                 </div>
                               ) : null}
                               {section.notes?.length ? (
-                                <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3">
-                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">Internal Notes</div>
-                                  <ul className="space-y-2 text-sm leading-6 text-amber-950">
+                                <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3 dark:border-amber-400/30 dark:bg-amber-500/10">
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 dark:text-amber-300">Internal Notes</div>
+                                  <ul className="space-y-2 text-sm leading-6 text-amber-950 dark:text-amber-100">
                                     {section.notes.map((item) => (
                                       <li key={item} className="flex gap-2">
-                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400" />
                                         <span>{item}</span>
                                       </li>
                                     ))}
@@ -4002,13 +4002,13 @@ const CallResultUpdate = () => {
                   {lead?.customer_full_name || "Unknown Lead"}
                 </h1>
                 {(screeningPhone || lead?.phone_number) && (
-                  <div className="flex items-center gap-0 rounded-lg border border-amber-300/80 bg-amber-50/60 shadow-sm">
-                    <div className="px-3 py-1.5 font-mono text-sm font-semibold tracking-wide text-amber-900">
+                  <div className="flex items-center gap-0 rounded-lg border border-amber-300/80 bg-amber-50/60 shadow-sm dark:border-amber-400/30 dark:bg-amber-500/10">
+                    <div className="px-3 py-1.5 font-mono text-sm font-semibold tracking-wide text-amber-900 dark:text-amber-200">
                       {screeningPhone || lead?.phone_number}
                     </div>
                     <button
                       type="button"
-                      className="flex items-center gap-1 border-l border-amber-300/80 px-2.5 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100/80 active:bg-amber-200/60"
+                      className="flex items-center gap-1 border-l border-amber-300/80 px-2.5 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100/80 active:bg-amber-200/60 dark:border-amber-400/30 dark:text-amber-200 dark:hover:bg-amber-500/15 dark:active:bg-amber-500/25"
                       onClick={() => {
                         void navigator.clipboard.writeText(screeningPhone || lead?.phone_number || "");
                         setPhoneCopied(true);
@@ -4088,7 +4088,7 @@ const CallResultUpdate = () => {
 
             <div className={`space-y-8 transition-all duration-500 ${!dncLookupSummary ? "pointer-events-none select-none opacity-30" : "opacity-100"}`} aria-disabled={!dncLookupSummary}>
               {!dncLookupSummary && (
-                <div className="rounded-lg border border-dashed border-amber-400/60 bg-amber-50/30 px-4 py-3 text-center text-sm font-medium text-amber-800">
+                <div className="rounded-lg border border-dashed border-amber-400/60 bg-amber-50/30 px-4 py-3 text-center text-sm font-medium text-amber-800 dark:border-amber-400/35 dark:bg-amber-500/10 dark:text-amber-200">
                   Complete the DNC lookup above to unlock the sections below
                 </div>
               )}

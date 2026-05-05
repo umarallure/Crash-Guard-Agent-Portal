@@ -629,7 +629,7 @@ export function DocumentUploadCard({
               size="sm"
               onClick={() => void fetchDocuments()}
               disabled={loadingDocuments}
-              className="gap-2 rounded-md border-[#efbb93]/80 bg-white/92 text-[#9a5a33] shadow-sm transition-colors hover:border-[#e1893b] hover:bg-[#e1893b] hover:text-white"
+              className="gap-2 rounded-md border-[#efbb93]/80 bg-white/92 text-[#9a5a33] shadow-sm transition-colors hover:border-[#e1893b] hover:bg-[#e1893b] hover:text-white dark:border-orange-300/25 dark:bg-orange-500/10 dark:text-orange-200 dark:hover:bg-orange-500/20 dark:hover:text-orange-100"
             >
               {loadingDocuments ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Refresh
@@ -637,10 +637,10 @@ export function DocumentUploadCard({
           </div>
 
           <div className="grid gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <div className="rounded-[18px] border border-[#f2d5c1] bg-[linear-gradient(180deg,rgba(255,245,236,0.95)_0%,rgba(255,255,255,1)_100%)] p-4 shadow-[0_14px_30px_-26px_rgba(234,117,38,0.4)]">
+            <div className="rounded-[18px] border border-[#f2d5c1] bg-[linear-gradient(180deg,rgba(255,245,236,0.95)_0%,rgba(255,255,255,1)_100%)] p-4 shadow-[0_14px_30px_-26px_rgba(234,117,38,0.4)] dark:border-orange-300/20 dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.12)_0%,rgba(24,24,27,0.96)_100%)] dark:shadow-black/30">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-foreground">Portal Upload Link</div>
-                <div className="shrink-0 whitespace-nowrap rounded-full border border-[#efbb93]/70 bg-white/85 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#9a5a33]">
+                <div className="shrink-0 whitespace-nowrap rounded-full border border-[#efbb93]/70 bg-white/85 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#9a5a33] dark:border-orange-300/25 dark:bg-orange-500/15 dark:text-orange-100">
                   Live Link
                 </div>
               </div>
@@ -651,12 +651,12 @@ export function DocumentUploadCard({
 
               <div className="mt-3 space-y-2">
                 <Label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Portal URL</Label>
-                <Input value={getUploadUrl()} readOnly className="h-9 rounded-xl border-[#ecd6c5] bg-white/90 text-xs" />
+                <Input value={getUploadUrl()} readOnly className="h-9 rounded-xl border-[#ecd6c5] bg-white/90 text-xs dark:border-white/10 dark:bg-zinc-950/70 dark:text-zinc-100" />
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                 <span>Passcode uses the caller's last phone digits.</span>
-                <span className="text-[#d28a54]">PDF, JPG, PNG accepted.</span>
+                <span className="text-[#d28a54] dark:text-orange-300">PDF, JPG, PNG accepted.</span>
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -669,10 +669,10 @@ export function DocumentUploadCard({
               </div>
             </div>
 
-            <div className="rounded-[18px] border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(255,255,255,1)_100%)] p-4 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.35)]">
+            <div className="rounded-[18px] border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(255,255,255,1)_100%)] p-4 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(63,63,70,0.35)_0%,rgba(24,24,27,0.96)_100%)] dark:shadow-black/30">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-foreground">Direct Upload</div>
-                <div className="shrink-0 whitespace-nowrap rounded-full border border-slate-300/90 bg-white/88 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-700">
+                <div className="shrink-0 whitespace-nowrap rounded-full border border-slate-300/90 bg-white/88 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-zinc-200">
                   Manual Upload
                 </div>
               </div>
@@ -687,7 +687,7 @@ export function DocumentUploadCard({
                     Document Category
                   </Label>
                   <Select value={selectedUploadCategory} onValueChange={(value) => setSelectedUploadCategory(value as DocumentCategory)}>
-                    <SelectTrigger id={`document-upload-category-${submissionId}`} className="h-9 rounded-xl border-slate-200 bg-white/90 text-sm">
+                    <SelectTrigger id={`document-upload-category-${submissionId}`} className="h-9 rounded-xl border-slate-200 bg-white/90 text-sm dark:border-white/10 dark:bg-zinc-950/70 dark:text-zinc-100">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -704,7 +704,7 @@ export function DocumentUploadCard({
                   <Button
                     type="button"
                     variant="outline"
-                    className="rounded-md border-slate-200 bg-white/90 text-slate-700 transition-[border-color,color,box-shadow] hover:border-[#2c3440] hover:bg-[#2c3440] hover:text-white focus-visible:ring-[#2c3440]/25"
+                    className="rounded-md border-slate-200 bg-white/90 text-slate-700 transition-[border-color,color,box-shadow] hover:border-[#2c3440] hover:bg-[#2c3440] hover:text-white focus-visible:ring-[#2c3440]/25 dark:border-white/15 dark:bg-white/5 dark:text-zinc-200 dark:hover:border-white/30 dark:hover:bg-white/10 dark:hover:text-zinc-50"
                     onClick={handleOpenDirectUpload}
                   >
                     <Upload className="mr-2 h-4 w-4" />
@@ -712,7 +712,7 @@ export function DocumentUploadCard({
                   </Button>
                   <Button
                     type="button"
-                    className="rounded-md bg-[linear-gradient(135deg,#45505f_0%,#2c3440_48%,#161c24_100%)] text-white shadow-[0_16px_28px_-18px_rgba(15,23,42,0.9)] hover:bg-[linear-gradient(135deg,#4b5666_0%,#313947_48%,#1a2028_100%)]"
+                    className="rounded-md bg-[linear-gradient(135deg,#45505f_0%,#2c3440_48%,#161c24_100%)] text-white shadow-[0_16px_28px_-18px_rgba(15,23,42,0.9)] hover:bg-[linear-gradient(135deg,#4b5666_0%,#313947_48%,#1a2028_100%)] dark:bg-[linear-gradient(135deg,#f08a37_0%,#d96d1f_55%,#b55216_100%)] dark:shadow-[0_16px_28px_-18px_rgba(240,138,55,0.7)] dark:hover:bg-[linear-gradient(135deg,#fb9848_0%,#e9782a_55%,#c65f20_100%)]"
                     onClick={() => void handleUploadFiles()}
                     disabled={uploadingFiles || selectedUploadFiles.length === 0}
                   >
@@ -737,7 +737,7 @@ export function DocumentUploadCard({
                 onChange={handleSelectedFiles}
               />
 
-              <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white/80 px-3 py-2.5">
+              <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white/80 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.03]">
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="text-sm font-medium text-foreground">
@@ -780,10 +780,10 @@ export function DocumentUploadCard({
                   key={documentType.key}
                   className={`rounded-xl border px-3 py-3 ${
                     isUploaded
-                      ? "border-emerald-200 bg-emerald-50/85"
+                      ? "border-emerald-200 bg-emerald-50/85 dark:border-emerald-400/25 dark:bg-emerald-500/10"
                       : isRequired
-                        ? "border-amber-200 bg-amber-50/85"
-                        : "border-slate-200 bg-slate-50/70"
+                        ? "border-amber-200 bg-amber-50/85 dark:border-amber-400/25 dark:bg-amber-500/10"
+                        : "border-slate-200 bg-slate-50/70 dark:border-white/10 dark:bg-white/[0.03]"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -794,9 +794,9 @@ export function DocumentUploadCard({
                       </div>
                     </div>
                     {isUploaded ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 dark:text-emerald-300" />
                     ) : (
-                      <XCircle className={`h-5 w-5 shrink-0 ${isRequired ? "text-amber-600" : "text-muted-foreground"}`} />
+                      <XCircle className={`h-5 w-5 shrink-0 ${isRequired ? "text-amber-600 dark:text-amber-300" : "text-muted-foreground"}`} />
                     )}
                   </div>
                   <div className="mt-1.5 text-xs font-medium">
@@ -830,7 +830,7 @@ export function DocumentUploadCard({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="gap-2 rounded-md border-[#efbb93]/80 bg-white/92 text-[#9a5a33] shadow-sm transition-colors hover:border-[#e1893b] hover:bg-[#e1893b] hover:text-white"
+                    className="gap-2 rounded-md border-[#efbb93]/80 bg-white/92 text-[#9a5a33] shadow-sm transition-colors hover:border-[#e1893b] hover:bg-[#e1893b] hover:text-white dark:border-orange-300/25 dark:bg-orange-500/10 dark:text-orange-200 dark:hover:bg-orange-500/20 dark:hover:text-orange-100"
                   >
                     {isUploadedDocumentsOpen ? "Hide uploads" : "Show uploads"}
                     <ChevronDown
@@ -849,7 +849,7 @@ export function DocumentUploadCard({
                 Loading documents...
               </div>
             ) : documents.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.03]">
                 No documents have been uploaded into this live stream yet.
               </div>
             ) : (
@@ -860,13 +860,13 @@ export function DocumentUploadCard({
                     const fileType = document.file_type || "";
                     const uploadSourceLabel = document.uploaded_by ? "Direct Upload" : "Portal Upload";
                     const uploadSourceClass = document.uploaded_by
-                      ? "border-transparent bg-[linear-gradient(135deg,#45505f_0%,#2c3440_48%,#161c24_100%)] text-white shadow-[0_12px_24px_-18px_rgba(15,23,42,0.95)]"
-                      : "border-[#efbb93]/70 bg-[#fff2e8] text-[#9a5a33]";
+                      ? "border-transparent bg-[linear-gradient(135deg,#45505f_0%,#2c3440_48%,#161c24_100%)] text-white shadow-[0_12px_24px_-18px_rgba(15,23,42,0.95)] dark:bg-orange-500/20 dark:text-orange-100 dark:shadow-none"
+                      : "border-[#efbb93]/70 bg-[#fff2e8] text-[#9a5a33] dark:border-orange-300/25 dark:bg-orange-500/15 dark:text-orange-100";
                     const shouldShowStatusBadge = Boolean(document.status && document.status !== "uploaded");
 
                     return (
-                      <div key={document.id} className="rounded-lg border bg-background overflow-hidden">
-                        <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+                      <div key={document.id} className="rounded-lg border bg-background overflow-hidden dark:border-white/10 dark:bg-zinc-950/70">
+                        <div className="flex items-center justify-between gap-2 border-b px-3 py-2 dark:border-white/10">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-medium">{document.file_name}</div>
                             <div className="text-xs text-muted-foreground">
@@ -887,7 +887,7 @@ export function DocumentUploadCard({
                           </div>
                         </div>
 
-                        <div className="h-48 overflow-hidden bg-muted/30">
+                        <div className="h-48 overflow-hidden bg-muted/30 dark:bg-black/20">
                           {publicUrl && isPreviewableImage(fileType) ? (
                             <img
                               src={publicUrl}
@@ -942,7 +942,7 @@ export function DocumentUploadCard({
 
   return (
     <>
-      {embedded ? content : <Card>{content}</Card>}
+      {embedded ? content : <Card className="dark:border-white/10 dark:bg-zinc-950">{content}</Card>}
       <DocumentUploadModal
         open={showModal}
         onOpenChange={setShowModal}
