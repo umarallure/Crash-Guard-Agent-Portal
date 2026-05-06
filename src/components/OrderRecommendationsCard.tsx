@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CheckCircle2, Info, InfoIcon, Loader2, MapPin, RefreshCw, Undo2, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, InfoIcon, Loader2, MapPin, RefreshCw, Undo2, XCircle } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useAttorneys } from "@/hooks/useAttorneys";
 import { getAttorneyRecommendations, type AttorneyRecommendation } from "@/lib/attorneyRecommendations";
+import { getTodayDateEST } from "@/lib/dateUtils";
 import { formatStateFilterLabel, getStateMatchToken } from "@/lib/stateFilter";
 
 type LeadOverrides = {
@@ -52,6 +53,7 @@ type SupabaseQueryBuilderUntyped = {
   limit: (count: number) => SupabaseQueryBuilderUntyped;
   maybeSingle: () => Promise<{ data: unknown; error: { message?: string } | null }>;
   delete: () => SupabaseQueryBuilderUntyped;
+  insert: (values: Record<string, unknown>) => SupabaseQueryBuilderUntyped;
   update: (values: Record<string, unknown>) => SupabaseQueryBuilderUntyped;
 };
 
@@ -189,7 +191,7 @@ export const OrderRecommendationsCard = (props: {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<Recommendation[]>([]);
 
-  const [dealFlowStatus, setDealFlowStatus] = useState<"loading" | "not_found" | "already_assigned" | "eligible">("loading");
+  const [dealFlowStatus, setDealFlowStatus] = useState<"loading" | "already_assigned" | "eligible">("loading");
   const [assignedAttorneyName, setAssignedAttorneyName] = useState<string | null>(null);
   const [dealFlowRowId, setDealFlowRowId] = useState<string | null>(null);
 
@@ -250,8 +252,8 @@ export const OrderRecommendationsCard = (props: {
     if (!props.submissionId) {
       setDealFlowRowId(null);
       setAssignedAttorneyName(null);
-      setDealFlowStatus("not_found");
-      return "not_found" as const;
+      setDealFlowStatus("eligible");
+      return "eligible" as const;
     }
 
     if (isDeferredAssignment) {
@@ -274,8 +276,8 @@ export const OrderRecommendationsCard = (props: {
       if (dealError || !dealRow) {
         setDealFlowRowId(null);
         setAssignedAttorneyName(null);
-        setDealFlowStatus("not_found");
-        return "not_found" as const;
+        setDealFlowStatus("eligible");
+        return "eligible" as const;
       }
 
       const row = dealRow as unknown as { id?: string | null; assigned_attorney_id?: string | null };
@@ -296,14 +298,124 @@ export const OrderRecommendationsCard = (props: {
     } catch {
       setDealFlowRowId(null);
       setAssignedAttorneyName(null);
-      setDealFlowStatus("not_found");
-      return "not_found" as const;
+      setDealFlowStatus("eligible");
+      return "eligible" as const;
     }
   }, [props.currentAssignedAttorneyId, props.submissionId, attorneyById, isDeferredAssignment]);
 
   useEffect(() => {
     void refreshDealFlowStatus();
   }, [refreshDealFlowStatus]);
+
+  const ensureDealFlowRowId = useCallback(async () => {
+    const sid = String(props.submissionId || "").trim();
+    if (!sid) return null;
+
+    const supabaseUntyped = supabase as unknown as SupabaseFromUntyped;
+
+    const { data: existingRow, error: existingError } = await supabase
+      .from("daily_deal_flow")
+      .select("id")
+      .eq("submission_id", sid)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!existingError && existingRow) {
+      const rowId = String((existingRow as { id?: string | null }).id ?? "");
+      if (rowId) {
+        setDealFlowRowId(rowId);
+        return rowId;
+      }
+    }
+
+    const { data: leadRow, error: leadError } = await supabaseUntyped
+      .from("leads")
+      .select(
+        "customer_full_name,phone_number,lead_vendor,status,state,zip_code,email,accident_date,prior_attorney_involved,prior_attorney_details,medical_attention,police_attended,accident_location,accident_scenario,insured,injuries,vehicle_registration,insurance_company,third_party_vehicle_registration,other_party_admit_fault,passengers_count,contact_name,contact_number,contact_address,tag"
+      )
+      .eq("submission_id", sid)
+      .maybeSingle();
+
+    if (leadError) {
+      throw leadError;
+    }
+
+    const lead = (leadRow ?? {}) as Record<string, unknown>;
+    const text = (key: string) => {
+      const value = lead[key];
+      return typeof value === "string" && value.trim() ? value.trim() : null;
+    };
+    const bool = (key: string) => (typeof lead[key] === "boolean" ? lead[key] : null);
+    const number = (key: string) => {
+      const value = Number(lead[key]);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const insertValues: Record<string, unknown> = {
+      submission_id: sid,
+      date: getTodayDateEST(),
+      insured_name: text("customer_full_name"),
+      client_phone_number: text("phone_number"),
+      lead_vendor: text("lead_vendor"),
+      status: text("status"),
+      state: text("state") || getStateMatchToken(props.leadOverrides?.state) || null,
+      zip_code: text("zip_code"),
+      email: text("email"),
+      accident_date: text("accident_date") || props.leadOverrides?.accident_date || null,
+      prior_attorney_involved: bool("prior_attorney_involved") ?? props.leadOverrides?.prior_attorney_involved ?? false,
+      prior_attorney_details: text("prior_attorney_details"),
+      medical_attention: text("medical_attention"),
+      police_attended: bool("police_attended") ?? false,
+      accident_location: text("accident_location"),
+      accident_scenario: text("accident_scenario"),
+      insured: bool("insured") ?? props.leadOverrides?.insured ?? false,
+      injuries: text("injuries"),
+      vehicle_registration: text("vehicle_registration"),
+      insurance_company: text("insurance_company"),
+      third_party_vehicle_registration: text("third_party_vehicle_registration"),
+      other_party_admit_fault: bool("other_party_admit_fault") ?? false,
+      passengers_count: number("passengers_count"),
+      contact_name: text("contact_name"),
+      contact_number: text("contact_number"),
+      contact_address: text("contact_address"),
+      tag: text("tag"),
+    };
+
+    const { data: insertedRow, error: insertError } = await supabaseUntyped
+      .from("daily_deal_flow")
+      .insert(insertValues)
+      .select("id")
+      .maybeSingle();
+
+    if (insertError) {
+      const { data: racedRow, error: racedError } = await supabase
+        .from("daily_deal_flow")
+        .select("id")
+        .eq("submission_id", sid)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (racedError || !racedRow) {
+        throw insertError;
+      }
+
+      const rowId = String((racedRow as { id?: string | null }).id ?? "");
+      if (rowId) {
+        setDealFlowRowId(rowId);
+        return rowId;
+      }
+    }
+
+    const rowId = String((insertedRow as { id?: string | null } | null)?.id ?? "");
+    if (rowId) {
+      setDealFlowRowId(rowId);
+      setDealFlowStatus("eligible");
+    }
+
+    return rowId || null;
+  }, [props.leadOverrides, props.submissionId]);
 
   const fetchLeadIdIfNeeded = useCallback(async () => {
     if (resolvedLeadId) return resolvedLeadId;
@@ -391,7 +503,11 @@ export const OrderRecommendationsCard = (props: {
   }, [fetchLeadIdIfNeeded, leadOverrideAccidentDate, leadOverrideState, props.submissionId]);
 
   useEffect(() => {
-    if (dealFlowStatus !== "eligible") {
+    if (dealFlowStatus === "loading") {
+      return;
+    }
+
+    if (dealFlowStatus === "already_assigned") {
       setHasResolvedRecommendations(false);
       setLoading(false);
       return;
@@ -428,11 +544,7 @@ export const OrderRecommendationsCard = (props: {
       let rowId = dealFlowRowId;
 
       if (!rowId) {
-        const latestStatus = await refreshDealFlowStatus();
-        if (latestStatus === "not_found") {
-          throw new Error("Daily Deal Flow entry not found for this submission.");
-        }
-
+        await refreshDealFlowStatus();
         rowId = dealFlowRowId;
 
         if (!rowId) {
@@ -575,30 +687,6 @@ export const OrderRecommendationsCard = (props: {
     }
   };
 
-  const ensureDealExists = async () => {
-    if (!props.submissionId) return false;
-
-    const sid = String(props.submissionId || "").trim();
-    if (!sid) return false;
-
-    const { count, error: dealError } = await supabase
-      .from("daily_deal_flow")
-      .select("id", { count: "exact", head: true })
-      .eq("submission_id", sid);
-
-    if (dealError || !count) {
-      toast({
-        title: "Cannot assign yet",
-        description:
-          "This submission is not in Daily Deal Flow. Create a deal (Daily Deal Flow entry) first, then assign it to an order.",
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    return true;
-  };
-
   const assign = async (rec: Recommendation) => {
     const attorneyLabel = rec.attorney_name || attorneyById.get(rec.lawyer_id) || rec.lawyer_id;
 
@@ -622,8 +710,26 @@ export const OrderRecommendationsCard = (props: {
       return;
     }
 
-    const hasDeal = await ensureDealExists();
-    if (!hasDeal) return;
+    let ensuredDealFlowRowId: string | null = null;
+    try {
+      ensuredDealFlowRowId = await ensureDealFlowRowId();
+    } catch (e) {
+      toast({
+        title: "Cannot assign yet",
+        description: e instanceof Error ? e.message : "Unable to create or resolve the Daily Deal Flow entry.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!ensuredDealFlowRowId) {
+      toast({
+        title: "Cannot assign yet",
+        description: "Unable to create or resolve the Daily Deal Flow entry.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const leadId = await fetchLeadIdIfNeeded();
     if (!leadId) {
@@ -655,8 +761,17 @@ export const OrderRecommendationsCard = (props: {
           });
           return;
         }
+
+        const { error: assignDealFlowError } = await supabase
+          .from("daily_deal_flow")
+          .update({ assigned_attorney_id: rec.lawyer_id } as unknown as Record<string, unknown>)
+          .eq("id", ensuredDealFlowRowId);
+
+        if (assignDealFlowError) {
+          throw assignDealFlowError;
+        }
       } else {
-        let rowId = dealFlowRowId;
+        let rowId = ensuredDealFlowRowId || dealFlowRowId;
         if (!rowId) {
           const { data: dealRow, error: dealError } = await supabase
             .from("daily_deal_flow")
