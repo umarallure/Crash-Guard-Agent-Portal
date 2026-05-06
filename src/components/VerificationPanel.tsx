@@ -1456,16 +1456,16 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
         onScroll={updateLinkedVerificationStep}
       >
 
-        <div className="rounded-lg border border-orange-200/70 bg-[linear-gradient(180deg,rgba(255,244,236,0.95)_0%,rgba(255,250,246,0.92)_100%)] px-4 py-3 shadow-[0_10px_24px_-20px_rgba(203,106,42,0.55)]">
+        <div className="rounded-lg border border-orange-200/70 bg-[linear-gradient(180deg,rgba(255,244,236,0.95)_0%,rgba(255,250,246,0.92)_100%)] px-4 py-3 shadow-[0_10px_24px_-20px_rgba(203,106,42,0.55)] dark:border-orange-300/20 dark:bg-[linear-gradient(180deg,rgba(234,117,38,0.14)_0%,rgba(24,24,27,0.96)_100%)] dark:shadow-black/30">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
-                className="rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]"
+                className="shrink-0 rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221] dark:border-orange-300/30 dark:bg-orange-500/15 dark:text-orange-100"
               >
                 Accident Date
               </Badge>
-              <span className="text-sm font-semibold text-foreground">
+              <span className="min-w-0 break-words text-sm font-semibold text-foreground dark:text-zinc-100">
                 {accidentDate || "Not available"}
               </span>
             </div>
@@ -1473,11 +1473,11 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
-                className="rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]"
+                className="shrink-0 rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221] dark:border-orange-300/30 dark:bg-orange-500/15 dark:text-orange-100"
               >
                 Accident Scenario
               </Badge>
-              <span className="text-sm font-semibold text-foreground">
+              <span className="min-w-0 break-words text-sm font-semibold text-foreground dark:text-zinc-100">
                 {accidentScenario || "Not available"}
               </span>
             </div>
@@ -1485,11 +1485,11 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
-                className="rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221]"
+                className="shrink-0 rounded-full border-orange-300/80 bg-white/70 px-2 py-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a85221] dark:border-orange-300/30 dark:bg-orange-500/15 dark:text-orange-100"
               >
                 Accident Address
               </Badge>
-              <span className="text-sm font-semibold text-foreground">
+              <span className="min-w-0 break-words text-sm font-semibold text-foreground dark:text-zinc-100">
                 {accidentAddress || "Not available"}
               </span>
             </div>
