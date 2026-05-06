@@ -20,6 +20,7 @@ export interface CloserTask {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  portal?: "closer" | "lawyer_onboarding";
   lead_name?: string | null;
   lead_phone_number?: string | null;
 }
