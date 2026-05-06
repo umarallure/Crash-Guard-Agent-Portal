@@ -200,6 +200,7 @@ export function LeadTaskCreateButton({ lead, className }: LeadTaskCreateButtonPr
       assigned_date: toDateKey(new Date()),
       created_by: user.id,
       created_by_name: currentUserAssignee.label,
+      portal: "closer",
     };
 
     try {

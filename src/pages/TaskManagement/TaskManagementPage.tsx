@@ -91,6 +91,9 @@ type LeadRow = Pick<
 type TaskManagementDbClient = {
   from(table: "closer_tasks"): {
     select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        order: (column: string, options?: { ascending: boolean }) => QueryResult<CloserTask[]>;
+      };
       order: (column: string, options?: { ascending: boolean }) => QueryResult<CloserTask[]>;
     };
     update: (values: Partial<CloserTask>) => {
@@ -276,6 +279,7 @@ const TaskManagementPage = () => {
     const { data, error } = await taskDb
       .from("closer_tasks")
       .select("*")
+      .eq("portal", "closer")
       .order("deadline_date", { ascending: true });
 
     if (error) {
@@ -486,7 +490,12 @@ const TaskManagementPage = () => {
       .channel("closer-task-management")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "closer_tasks" },
+        {
+          event: "*",
+          schema: "public",
+          table: "closer_tasks",
+          filter: "portal=eq.closer",
+        },
         () => {
           void loadData();
         },
@@ -817,6 +826,7 @@ const TaskManagementPage = () => {
           .from("closer_tasks")
           .insert({
             ...payload,
+            portal: "closer",
             assigned_date: todayDateKey,
             created_by: user.id,
             created_by_name: currentUserLabel,
