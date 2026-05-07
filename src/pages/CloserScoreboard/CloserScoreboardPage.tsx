@@ -132,7 +132,12 @@ const CALL_LOG_TABLES = ["call_logs", "call_update_logs"] as const;
 const LEAD_STATUS_QUERY_BATCH_SIZE = 500;
 const ATTORNEY_REVIEW_STATUS = "attorney_review";
 const SUBMITTED_ATTORNEY_STATUS = "submitted";
-const CLOSED_DEAL_LEAD_STATUS = "attorney_approved";
+const CLOSED_DEAL_LEAD_STATUSES = new Set([
+  "attorney_approved",
+  "qualified_payable",
+  "paid_to_agency",
+  "paid_to_bpo",
+]);
 const COMMISSION_PAID_PER_CLOSED_DEAL = 50;
 const DATE_FILTER_LABEL: Record<DateFilter, string> = {
   today: "Today",
@@ -311,7 +316,7 @@ const isSubmittedAttorneyStatus = (value: string | null | undefined) =>
   normalizeText(value) === SUBMITTED_ATTORNEY_STATUS;
 
 const isClosedDealLeadStatus = (value: string | null | undefined) =>
-  normalizeText(value) === CLOSED_DEAL_LEAD_STATUS;
+  CLOSED_DEAL_LEAD_STATUSES.has(normalizeText(value));
 
 const isLostDealStatus = (value: string | null | undefined) =>
   LOST_STATUSES.has(normalizeText(value));
