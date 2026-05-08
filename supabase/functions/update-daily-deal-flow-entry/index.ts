@@ -211,15 +211,21 @@ serve(async (req)=>{
     if (!submission_id) {
       throw new Error('Missing required field: submission_id');
     }
-    if (!call_source) {
+    const normalizedCallSource = String(call_source || '').trim();
+    if (!normalizedCallSource) {
       throw new Error('Missing required field: call_source');
     }
-    console.log('Updating daily deal flow for submission:', submission_id, 'call source:', call_source);
+    const isAgentCallbackSource = normalizedCallSource === 'Agent Callback';
+    const isBpoTransferSource = normalizedCallSource === 'BPO Transfer';
+    const dealFlowIsCallback = isAgentCallbackSource ? true : isBpoTransferSource ? false : Boolean(is_callback);
+    const dealFlowFromCallback = isAgentCallbackSource ? true : isBpoTransferSource ? false : from_callback;
+
+    console.log('Updating daily deal flow for submission:', submission_id, 'call source:', normalizedCallSource);
     // Get today's date in EST YYYY-MM-DD format
     const todayDate = getTodayDateEST();
     // Fetch lead data for insertions
     const { data: leadData, error: leadError } = await supabase.from('leads').select('customer_full_name, phone_number, lead_vendor').eq('submission_id', submission_id).single();
-    if (leadError && call_source !== 'First Time Transfer') {
+    if (leadError && normalizedCallSource !== 'First Time Transfer') {
       console.error('Error fetching lead data:', leadError);
       throw new Error('Failed to fetch lead data');
     }
@@ -237,7 +243,7 @@ serve(async (req)=>{
             ? "Not Qualified"
             : ""
     );
-    if (call_source === 'First Time Transfer') {
+    if (normalizedCallSource === 'First Time Transfer') {
       // Check existing entry and decide whether to create new or update
       const { data: existingEntry, error: existingError } = await supabase.from('daily_deal_flow').select('date').eq('submission_id', submission_id).order('created_at', {
         ascending: false
@@ -277,8 +283,8 @@ serve(async (req)=>{
           carrier_audit,
           product_type_carrier,
           level_or_gi,
-          from_callback,
-          is_callback,
+          from_callback: dealFlowFromCallback,
+          is_callback: dealFlowIsCallback,
           is_retention_call,
           assigned_attorney_id,
           medical_treatment_proof,
@@ -335,8 +341,8 @@ serve(async (req)=>{
             carrier_audit,
             product_type_carrier,
             level_or_gi,
-            from_callback,
-            is_callback,
+            from_callback: dealFlowFromCallback,
+            is_callback: dealFlowIsCallback,
             is_retention_call,
             assigned_attorney_id,
             medical_treatment_proof,
@@ -376,8 +382,8 @@ serve(async (req)=>{
             carrier_audit,
             product_type_carrier,
             level_or_gi,
-            from_callback,
-            is_callback,
+            from_callback: dealFlowFromCallback,
+            is_callback: dealFlowIsCallback,
             is_retention_call,
             carrier_attempted_1,
             carrier_attempted_2,
@@ -439,8 +445,8 @@ serve(async (req)=>{
           carrier_audit,
           product_type_carrier,
           level_or_gi,
-          from_callback,
-          is_callback,
+          from_callback: dealFlowFromCallback,
+          is_callback: dealFlowIsCallback,
           is_retention_call,
           carrier_attempted_1,
           carrier_attempted_2,
@@ -497,8 +503,8 @@ serve(async (req)=>{
           carrier_audit,
           product_type_carrier,
           level_or_gi,
-          from_callback,
-          is_callback,
+          from_callback: dealFlowFromCallback,
+          is_callback: dealFlowIsCallback,
           is_retention_call,
           carrier_attempted_1,
           carrier_attempted_2,
@@ -575,7 +581,7 @@ serve(async (req)=>{
       // Determine which sheet to update based on call source
       let sheetName = '';
       let sheetId = '';
-      switch(call_source){
+      switch(normalizedCallSource){
         case 'Agent Callback':
           sheetName = 'Agent Callback';
           sheetId = Deno.env.get('GOOGLE_SHEETS_AGENT_CALLBACK_ID') ?? '';
@@ -585,7 +591,7 @@ serve(async (req)=>{
           sheetId = Deno.env.get('GOOGLE_SHEETS_DAILY_DEAL_FLOW_ID') ?? '';
           break;
         default:
-          console.log('No Google Sheets update needed for call source:', call_source);
+          console.log('No Google Sheets update needed for call source:', normalizedCallSource);
           break;
       }
       if (sheetName && sheetId) {
@@ -617,7 +623,7 @@ serve(async (req)=>{
             carrier_audit,
             product_type_carrier,
             level_or_gi,
-            from_callback
+            from_callback: dealFlowFromCallback
           })
         });
         if (!sheetsResponse.ok) {
@@ -652,7 +658,7 @@ serve(async (req)=>{
             coverage_amount: face_amount,
             draft_date,
             sent_to_underwriting,
-            call_source
+            call_source: normalizedCallSource
           })
         });
         if (!slackResponse.ok) {
@@ -680,7 +686,7 @@ serve(async (req)=>{
             customer_name: leadData?.customer_full_name,
             lead_vendor: leadData?.lead_vendor,
             status: finalStatus,
-            call_source,
+            call_source: normalizedCallSource,
             notes
           })
         });
@@ -709,7 +715,7 @@ serve(async (req)=>{
             customer_name: leadData?.customer_full_name,
             lead_vendor: leadData?.lead_vendor,
             agent,
-            call_source
+            call_source: normalizedCallSource
           })
         });
         if (!disconnectedResponse.ok) {
