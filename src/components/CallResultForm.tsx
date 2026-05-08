@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -47,6 +48,22 @@ const callResultRequiredFieldClass =
   "border-red-300 bg-white/95 text-slate-950 shadow-sm placeholder:text-slate-500 focus:border-red-500 dark:border-red-500/70 dark:bg-zinc-950/70 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-red-400";
 const callResultCarrierFieldClass =
   "border-[#e7c9c1] bg-white/95 text-slate-950 shadow-sm placeholder:text-slate-500 dark:border-red-400/20 dark:bg-zinc-950/70 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-red-300/60";
+
+const BPO_TRANSFER_CALL_SOURCE = "BPO Transfer";
+const AGENT_CALLBACK_CALL_SOURCE = "Agent Callback";
+const CALL_SOURCE_OPTIONS = [
+  BPO_TRANSFER_CALL_SOURCE,
+  AGENT_CALLBACK_CALL_SOURCE,
+] as const;
+type CallSource = (typeof CALL_SOURCE_OPTIONS)[number];
+
+const normalizeCallSource = (value: string | null | undefined): CallSource => {
+  return value === AGENT_CALLBACK_CALL_SOURCE ? AGENT_CALLBACK_CALL_SOURCE : BPO_TRANSFER_CALL_SOURCE;
+};
+
+const isAgentCallbackCallSource = (value: string | null | undefined) => {
+  return normalizeCallSource(value) === AGENT_CALLBACK_CALL_SOURCE;
+};
 
 const statusOptions = [
   "Incomplete Transfer",
@@ -433,7 +450,7 @@ export const CallResultForm = ({
   const [leadVendor, setLeadVendor] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [callSource, setCallSource] = useState("");
+  const [callSource, setCallSource] = useState<CallSource>(BPO_TRANSFER_CALL_SOURCE);
   const [newDraftDate, setNewDraftDate] = useState<Date>();
   const [isRetentionCall, setIsRetentionCall] = useState(false);
   const [carrierAttempted1, setCarrierAttempted1] = useState("");
@@ -467,10 +484,7 @@ export const CallResultForm = ({
   const [qualifiedStageReason, setQualifiedStageReason] = useState("");
   
   const handleCallSourceChange = (value: string) => {
-    setCallSource(value);
-    if (value === "Internal Ads" || value === "Internal Data") {
-      setLeadVendor("Internal Team");
-    }
+    setCallSource(normalizeCallSource(value));
   };
 
   const { toast } = useToast();
@@ -783,7 +797,7 @@ export const CallResultForm = ({
           setInternalNotes(existingResult.internal_notes || '');
           setBufferAgent(existingResult.buffer_agent || '');
           setAgentWhoTookCall(existingResult.agent_who_took_call || '');
-          setCallSource(existingResult.call_source || '');
+          setCallSource(normalizeCallSource(existingResult.call_source));
           setIsRetentionCall(Boolean(existingResult.is_retention_call));
           
           // Load accident-related fields
@@ -1399,7 +1413,7 @@ export const CallResultForm = ({
         buffer_agent: bufferAgent,
         agent_who_took_call: agentWhoTookCall,
         new_draft_date: status === "Updated Banking/draft date" && newDraftDate ? format(newDraftDate, "yyyy-MM-dd") : null,
-        is_callback: submissionId.startsWith('CB') || submissionId.startsWith('CBB'), // Track if this is a callback based on submission ID
+        is_callback: isAgentCallbackCallSource(callSource),
         is_retention_call: isRetentionCall,
         carrier_attempted_1: status === "GI - Currently DQ" ? carrierAttempted1 : null,
         carrier_attempted_2: status === "GI - Currently DQ" ? carrierAttempted2 : null,
@@ -1550,8 +1564,8 @@ export const CallResultForm = ({
                 call_result: applicationSubmitted === true ? "Qualified" : "Not Qualified",
                 notes: finalNotes,
                 tag: (selectedTag || "").trim() || null,
-                from_callback: callSource === "Agent Callback",
-                is_callback: submissionId.startsWith('CB') || submissionId.startsWith('CBB'),
+                from_callback: isAgentCallbackCallSource(callSource),
+                is_callback: isAgentCallbackCallSource(callSource),
                 is_retention_call: isRetentionCall,
                 application_submitted: applicationSubmitted,
                 assigned_attorney_id: assignedAttorneyId || null,
@@ -1741,7 +1755,7 @@ export const CallResultForm = ({
           setBufferAgent("");
           setAgentWhoTookCall("");
           setLeadVendor("");
-          setCallSource("");
+          setCallSource(BPO_TRANSFER_CALL_SOURCE);
           setNewDraftDate(undefined);
           setIsRetentionCall(false);
           setCarrierAttempted1("");
@@ -1857,6 +1871,43 @@ export const CallResultForm = ({
     </div>
   );
 
+  const renderCallSourceRadioGroup = (idPrefix: string) => (
+    <div className="space-y-2">
+      <Label>
+        Call Source <span className="text-red-500">*</span>
+      </Label>
+      <RadioGroup
+        value={callSource}
+        onValueChange={handleCallSourceChange}
+        className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+      >
+        {CALL_SOURCE_OPTIONS.map((option) => {
+          const inputId = `${idPrefix}-${option.toLowerCase().replace(/\s+/g, "-")}`;
+          const selected = callSource === option;
+
+          return (
+            <div
+              key={option}
+              className={cn(
+                "flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 transition-colors",
+                selected
+                  ? "border-[#d97231] bg-[#fff4ea] text-[#7a2d0d] dark:border-orange-400/70 dark:bg-orange-950/35 dark:text-orange-100"
+                  : "border-[#ead9ce] bg-white/95 text-slate-900 hover:bg-[#fff9f4] dark:border-white/10 dark:bg-zinc-950/70 dark:text-zinc-100 dark:hover:bg-zinc-900"
+              )}
+            >
+              <RadioGroupItem id={inputId} value={option} />
+              <Label htmlFor={inputId} className="cursor-pointer text-sm font-medium">
+                {option}
+              </Label>
+            </div>
+          );
+        })}
+      </RadioGroup>
+    </div>
+  );
+
+  const showLegacyNotSubmittedFields = false;
+
   const submittedApplicationDetailsSection = showSubmittedFields ? (
     <div className="space-y-4">
       <div className="space-y-3 pt-0.5">
@@ -1865,25 +1916,7 @@ export const CallResultForm = ({
         </h3>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="callSourceQualified">
-                Call Source <span className="text-red-500">*</span>
-              </Label>
-              <Select value={callSource || undefined} onValueChange={handleCallSourceChange}>
-                <SelectTrigger className={cn(!callSource ? callResultRequiredFieldClass : callResultFieldClass)}>
-                  <SelectValue placeholder="Select call source (required)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
-                  <SelectItem value="Agent Callback">Agent Callback</SelectItem>
-                  <SelectItem value="Internal Ads">Internal Ads</SelectItem>
-                  <SelectItem value="Internal Data">Internal Data</SelectItem>
-                </SelectContent>
-              </Select>
-              {!callSource && (
-                <p className="text-sm text-red-500">Call source is required</p>
-              )}
-            </div>
+            {renderCallSourceRadioGroup("call-source-qualified")}
 
             <div className="space-y-2">
               <Label htmlFor="agentWhoTookCall">
@@ -2043,25 +2076,7 @@ export const CallResultForm = ({
         </h3>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="callSource" className="text-sm font-semibold">
-              Call Source <span className="text-red-500">*</span>
-            </Label>
-            <Select value={callSource || undefined} onValueChange={handleCallSourceChange} required>
-              <SelectTrigger className={cn(!callSource ? callResultRequiredFieldClass : callResultFieldClass)}>
-                <SelectValue placeholder="Select call source (required)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
-                <SelectItem value="Agent Callback">Agent Callback</SelectItem>
-                <SelectItem value="Internal Ads">Internal Ads</SelectItem>
-                <SelectItem value="Internal Data">Internal Data</SelectItem>
-              </SelectContent>
-            </Select>
-            {!callSource && (
-              <p className="text-sm text-red-500">Call source is required</p>
-            )}
-          </div>
+          {renderCallSourceRadioGroup("call-source-not-submitted")}
 
           <div className="space-y-2">
             <Label htmlFor="agentWhoTookCallNotSubmitted">
@@ -2383,31 +2398,8 @@ export const CallResultForm = ({
 
           {showNotSubmittedFields && notSubmittedDetailsSection}
 
-          {/* Call Source Dropdown - REQUIRED (for non-qualified leads layout stays the same) */}
-          {false && showNotSubmittedFields && (
-            <div>
-              <Label htmlFor="callSource" className="text-base font-semibold">
-                Call Source <span className="text-red-500">*</span>
-              </Label>
-              <Select value={callSource || undefined} onValueChange={handleCallSourceChange} required>
-                <SelectTrigger className={`${!callSource ? 'border-red-300 focus:border-red-500' : ''}`}>
-                  <SelectValue placeholder="Select call source (required)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BPO Transfer">BPO Transfer</SelectItem>
-                  <SelectItem value="Agent Callback">Agent Callback</SelectItem>
-                  <SelectItem value="Internal Ads">Internal Ads</SelectItem>
-                  <SelectItem value="Internal Data">Internal Data</SelectItem>
-                </SelectContent>
-              </Select>
-              {!callSource && (
-                <p className="text-sm text-red-500 mt-1">Call source is required</p>
-              )}
-            </div>
-          )}
-
           {/* Fields for not submitted applications */}
-	          {false && showNotSubmittedFields && (
+	          {showLegacyNotSubmittedFields && showNotSubmittedFields && (
 	            <div className="space-y-4 p-4 border rounded-lg bg-orange-50">
 	              <h3 className="font-semibold text-orange-800">Application Not Submitted</h3>
 	              
