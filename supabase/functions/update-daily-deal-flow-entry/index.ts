@@ -46,6 +46,9 @@ type RequestBody = {
   other_party_admit_fault?: boolean | null;
   passengers_count?: number | null;
   assigned_attorney_id?: string | null;
+  email?: string | null;
+  state?: string | null;
+  zip_code?: string | null;
   medical_treatment_proof?: string | null;
   insurance_documents?: string | null;
   police_report?: string | null;
@@ -200,6 +203,9 @@ serve(async (req)=>{
       third_party_vehicle_registration = null,
       other_party_admit_fault = null,
       passengers_count = null,
+      email = null,
+      state = null,
+      zip_code = null,
       medical_treatment_proof = null,
       insurance_documents = null,
       police_report = null,
@@ -224,7 +230,9 @@ serve(async (req)=>{
     // Get today's date in EST YYYY-MM-DD format
     const todayDate = getTodayDateEST();
     // Fetch lead data for insertions
-    const { data: leadData, error: leadError } = await supabase.from('leads').select('customer_full_name, phone_number, lead_vendor').eq('submission_id', submission_id).single();
+    const leadSelect =
+      'customer_full_name, phone_number, lead_vendor, email, state, zip_code, tag';
+    const { data: leadData, error: leadError } = await supabase.from('leads').select(leadSelect).eq('submission_id', submission_id).single();
     if (leadError && normalizedCallSource !== 'First Time Transfer') {
       console.error('Error fetching lead data:', leadError);
       throw new Error('Failed to fetch lead data');
@@ -243,6 +251,109 @@ serve(async (req)=>{
             ? "Not Qualified"
             : ""
     );
+    const buildLeadContext = (leadRow = leadData)=>({
+      lead_vendor: lead_vendor || leadRow?.lead_vendor || null,
+      insured_name: leadRow?.customer_full_name || null,
+      client_phone_number: leadRow?.phone_number || null,
+      email: email || leadRow?.email || null,
+      state: state || leadRow?.state || null,
+      zip_code: zip_code || leadRow?.zip_code || null,
+      tag: tag || leadRow?.tag || null
+    });
+    const leadContext = buildLeadContext();
+    const hasBodyField = (key: keyof RequestBody)=>
+      Object.prototype.hasOwnProperty.call(body, key);
+    const addBodyField = <K extends keyof RequestBody>(
+      payload: Record<string, unknown>,
+      key: K,
+      column = key as string
+    )=>{
+      if (hasBodyField(key)) {
+        payload[column] = body[key] ?? null;
+      }
+    };
+    const addContextField = (
+      payload: Record<string, unknown>,
+      key: string,
+      value: unknown,
+      force = false
+    )=>{
+      if (force || (value !== null && value !== undefined)) {
+        payload[key] = value;
+      }
+    };
+    const providedDealFlowFields = [
+      'buffer_agent',
+      'agent',
+      'licensed_agent_account',
+      'carrier',
+      'product_type',
+      'draft_date',
+      'monthly_premium',
+      'face_amount',
+      'notes',
+      'policy_number',
+      'carrier_audit',
+      'product_type_carrier',
+      'level_or_gi',
+      'is_retention_call',
+      'carrier_attempted_1',
+      'carrier_attempted_2',
+      'carrier_attempted_3',
+      'accident_date',
+      'prior_attorney_involved',
+      'prior_attorney_details',
+      'medical_attention',
+      'police_attended',
+      'accident_location',
+      'accident_scenario',
+      'insured',
+      'injuries',
+      'vehicle_registration',
+      'insurance_company',
+      'third_party_vehicle_registration',
+      'other_party_admit_fault',
+      'passengers_count',
+      'assigned_attorney_id',
+      'medical_treatment_proof',
+      'insurance_documents',
+      'police_report',
+      'submitted_attorney',
+      'submitted_attorney_status'
+    ] as const;
+    const buildDailyDealFlowUpdate = (leadRow = leadData)=>{
+      const payload: Record<string, unknown> = {};
+      const context = buildLeadContext(leadRow);
+
+      addContextField(payload, 'lead_vendor', context.lead_vendor);
+      addContextField(payload, 'insured_name', context.insured_name);
+      addContextField(payload, 'client_phone_number', context.client_phone_number);
+      addContextField(payload, 'email', context.email);
+      addContextField(payload, 'state', context.state);
+      addContextField(payload, 'zip_code', context.zip_code);
+      addContextField(payload, 'tag', context.tag, hasBodyField('tag'));
+
+      providedDealFlowFields.forEach((key)=>addBodyField(payload, key));
+
+      if (hasBodyField('status') || hasBodyField('application_submitted') || hasBodyField('sent_to_underwriting')) {
+        payload.status = finalStatus;
+      }
+
+      if (hasBodyField('call_result') || hasBodyField('application_submitted') || hasBodyField('sent_to_underwriting')) {
+        payload.call_result = callResultStatus;
+      }
+
+      if (isAgentCallbackSource || isBpoTransferSource || hasBodyField('from_callback')) {
+        payload.from_callback = dealFlowFromCallback;
+      }
+
+      if (isAgentCallbackSource || isBpoTransferSource || hasBodyField('is_callback')) {
+        payload.is_callback = dealFlowIsCallback;
+      }
+
+      payload.updated_at = getCurrentTimestampEST();
+      return payload;
+    };
     if (normalizedCallSource === 'First Time Transfer') {
       // Check existing entry and decide whether to create new or update
       const { data: existingEntry, error: existingError } = await supabase.from('daily_deal_flow').select('date').eq('submission_id', submission_id).order('created_at', {
@@ -256,22 +367,20 @@ serve(async (req)=>{
       }
       if (shouldCreateNew) {
         // Create new entry with today's date
-        const { data: leadData, error: leadError } = await supabase.from('leads').select('customer_full_name, phone_number, lead_vendor').eq('submission_id', submission_id).single();
+        const { data: leadData, error: leadError } = await supabase.from('leads').select(leadSelect).eq('submission_id', submission_id).single();
         if (leadError) {
           console.error('Error fetching lead data for new entry:', leadError);
           throw new Error('Failed to fetch lead data for new entry');
         }
         const { data, error } = await supabase.from('daily_deal_flow').insert({
           submission_id: finalSubmissionId,
-          lead_vendor: leadData?.lead_vendor,
-          insured_name: leadData?.customer_full_name,
-          client_phone_number: leadData?.phone_number,
+          ...buildLeadContext(leadData),
           date: todayDate,
           buffer_agent,
           agent,
           licensed_agent_account,
           status: finalStatus,
-          tag,
+          tag: tag || buildLeadContext(leadData).tag,
           call_result: callResultStatus,
           carrier,
           product_type,
@@ -307,51 +416,7 @@ serve(async (req)=>{
             console.error('Error finding most recent entry:', fetchError);
             throw new Error(`Failed to find existing entry: ${fetchError.message}`);
           }
-          const { data, error } = await supabase.from('daily_deal_flow').update({
-            buffer_agent,
-            agent,
-            licensed_agent_account,
-            status: finalStatus,
-            tag,
-            call_result: callResultStatus,
-            carrier,
-            product_type,
-            draft_date,
-            monthly_premium,
-            face_amount,
-            notes,
-            policy_number,
-            carrier_attempted_1,
-            carrier_attempted_2,
-            carrier_attempted_3,
-            accident_date,
-            prior_attorney_involved,
-            prior_attorney_details,
-            medical_attention,
-            police_attended,
-            accident_location,
-            accident_scenario,
-            insured,
-            injuries,
-            vehicle_registration,
-            insurance_company,
-            third_party_vehicle_registration,
-            other_party_admit_fault,
-            passengers_count,
-            carrier_audit,
-            product_type_carrier,
-            level_or_gi,
-            from_callback: dealFlowFromCallback,
-            is_callback: dealFlowIsCallback,
-            is_retention_call,
-            assigned_attorney_id,
-            medical_treatment_proof,
-            insurance_documents,
-            police_report,
-            submitted_attorney,
-            submitted_attorney_status,
-            updated_at: getCurrentTimestampEST()
-          }).eq('id', mostRecentEntry.id).select().single();
+          const { data, error } = await supabase.from('daily_deal_flow').update(buildDailyDealFlowUpdate()).eq('id', mostRecentEntry.id).select().single();
           if (error) {
             console.error('Error updating daily deal flow:', error);
             throw new Error(`Failed to update entry: ${error.message}`);
@@ -362,15 +427,13 @@ serve(async (req)=>{
           // Create new entry
           const { data, error } = await supabase.from('daily_deal_flow').insert({
             submission_id,
-            lead_vendor: leadData?.lead_vendor,
-            insured_name: leadData?.customer_full_name,
-            client_phone_number: leadData?.phone_number,
+            ...leadContext,
             date: todayDate,
             buffer_agent,
             agent,
             licensed_agent_account,
             status: finalStatus,
-            tag,
+            tag: leadContext.tag,
             call_result: callResultStatus,
             carrier,
             product_type,
@@ -428,51 +491,7 @@ serve(async (req)=>{
       }
       if (existingEntry) {
         // Update existing entry for today
-        const { data, error } = await supabase.from('daily_deal_flow').update({
-          buffer_agent,
-          agent,
-          licensed_agent_account,
-          status: finalStatus,
-          tag,
-          call_result: callResultStatus,
-          carrier,
-          product_type,
-          draft_date,
-          monthly_premium,
-          face_amount,
-          notes,
-          policy_number,
-          carrier_audit,
-          product_type_carrier,
-          level_or_gi,
-          from_callback: dealFlowFromCallback,
-          is_callback: dealFlowIsCallback,
-          is_retention_call,
-          carrier_attempted_1,
-          carrier_attempted_2,
-          carrier_attempted_3,
-          accident_date,
-          prior_attorney_involved,
-          prior_attorney_details,
-          medical_attention,
-          police_attended,
-          accident_location,
-          accident_scenario,
-          insured,
-          injuries,
-          vehicle_registration,
-          insurance_company,
-          third_party_vehicle_registration,
-          other_party_admit_fault,
-          passengers_count,
-          assigned_attorney_id,
-          medical_treatment_proof,
-          insurance_documents,
-          police_report,
-          submitted_attorney,
-          submitted_attorney_status,
-          updated_at: getCurrentTimestampEST()
-        }).eq('id', existingEntry.id).select().single();
+        const { data, error } = await supabase.from('daily_deal_flow').update(buildDailyDealFlowUpdate()).eq('id', existingEntry.id).select().single();
         if (error) {
           console.error('Error updating daily deal flow:', error);
           throw new Error(`Failed to update entry: ${error.message}`);
@@ -483,15 +502,13 @@ serve(async (req)=>{
         // Create new entry for today
         const { data, error } = await supabase.from('daily_deal_flow').insert({
           submission_id,
-          lead_vendor: leadData?.lead_vendor,
-          insured_name: leadData?.customer_full_name,
-          client_phone_number: leadData?.phone_number,
+          ...leadContext,
           date: todayDate,
           buffer_agent,
           agent,
           licensed_agent_account,
           status: finalStatus,
-          tag,
+          tag: leadContext.tag,
           call_result: callResultStatus,
           carrier,
           product_type,

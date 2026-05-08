@@ -1296,6 +1296,7 @@ export const CallResultForm = ({
     ]);
 
     const updates: LeadsUpdate = {};
+    const updateRecord = updates as Record<string, unknown>;
     const normalizedStatusOverride = (statusOverride || "").trim();
 
     if (normalizedStatusOverride) {
@@ -1334,22 +1335,22 @@ export const CallResultForm = ({
 
         const raw = (item.verified_value ?? item.original_value ?? "").toString().trim();
         if (!raw.length) {
-          (updates as any)[fieldName] = null;
+          updateRecord[fieldName] = null;
           continue;
         }
 
         if (booleanFields.has(fieldName)) {
-          (updates as any)[fieldName] = raw.toLowerCase() === "true";
+          updateRecord[fieldName] = raw.toLowerCase() === "true";
           continue;
         }
 
         if (numberFields.has(fieldName)) {
           const parsed = Number(raw);
-          (updates as any)[fieldName] = Number.isFinite(parsed) ? parsed : null;
+          updateRecord[fieldName] = Number.isFinite(parsed) ? parsed : null;
           continue;
         }
 
-        (updates as any)[fieldName] = raw;
+        updateRecord[fieldName] = raw;
       }
     }
 
@@ -1550,6 +1551,21 @@ export const CallResultForm = ({
         // Don't fail the entire process if logging fails
       }
 
+      try {
+        await syncModifiedVerifiedFieldsToLeads(finalStatus, selectedTag);
+      } catch (leadSyncError: unknown) {
+        console.error("Failed to sync verification edits to leads:", leadSyncError);
+        const leadSyncMessage =
+          leadSyncError instanceof Error ? leadSyncError.message : null;
+        toast({
+          title: "Warning",
+          description:
+            leadSyncMessage ||
+            "Call result saved, but updating the lead record failed. Please try saving again.",
+          variant: "destructive",
+        });
+      }
+
           // Sync daily_deal_flow using the Edge Function
           try {
             console.log('DEBUG: Calling update-daily-deal-flow-entry for daily_deal_flow update');
@@ -1569,6 +1585,9 @@ export const CallResultForm = ({
                 is_retention_call: isRetentionCall,
                 application_submitted: applicationSubmitted,
                 assigned_attorney_id: assignedAttorneyId || null,
+                email: verifiedFieldValues?.email || null,
+                state: verifiedFieldValues?.state || null,
+                zip_code: verifiedFieldValues?.zip_code || null,
                 carrier_attempted_1: status === "GI - Currently DQ" ? carrierAttempted1 : null,
                 carrier_attempted_2: status === "GI - Currently DQ" ? carrierAttempted2 : null,
                 carrier_attempted_3: status === "GI - Currently DQ" ? carrierAttempted3 : null,
@@ -1725,19 +1744,6 @@ export const CallResultForm = ({
           console.error("Disconnected call notification failed:", disconnectedError);
         }
       }
-      try {
-        await syncModifiedVerifiedFieldsToLeads(finalStatus, selectedTag);
-      } catch (leadSyncError: any) {
-        console.error("Failed to sync verification edits to leads:", leadSyncError);
-        toast({
-          title: "Warning",
-          description:
-            leadSyncError?.message ||
-            "Call result saved, but updating the lead record failed. Please try saving again.",
-          variant: "destructive",
-        });
-      }
-
       toast({
         title: "Success",
         description: existingResult ? "Call result updated successfully" : "Call result saved successfully",

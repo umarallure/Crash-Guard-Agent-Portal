@@ -31,6 +31,27 @@ interface FilteredRow {
   notes: string | null;
 }
 
+interface ScoreboardMetricRow {
+  status: string | null;
+  call_result: string | null;
+  submitted_attorney: string | null;
+  submitted_attorney_status: string | null;
+}
+
+type AppUserRoleRow = {
+  role: string | null;
+};
+
+type AppUsersRoleClient = {
+  from: (table: 'app_users') => {
+    select: (columns: 'role') => {
+      eq: (column: 'user_id', value: string) => {
+        single: () => Promise<{ data: AppUserRoleRow | null; error: unknown }>;
+      };
+    };
+  };
+};
+
 interface DashboardMetrics {
   totalTransfers: number;
   pendingApproval: number;
@@ -83,7 +104,7 @@ const ScoreboardDashboard = () => {
       day: '2-digit',
     }).format(date);
   }, []);
-  
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics>({
@@ -124,7 +145,7 @@ const ScoreboardDashboard = () => {
     billableRateChange: 0,
     returnBackRateChange: 0,
   });
-  
+
   const [activityType, setActivityType] = useState<'inbound' | 'followup'>('inbound');
   const [dateFilter, setDateFilter] = useState<string>('today');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -175,10 +196,10 @@ const ScoreboardDashboard = () => {
       } catch {
         console.log("User is not admin");
       }
-      
+
       try {
         // Check if user has admin role in app_users table
-        const { data, error } = await (supabase as any)
+        const { data, error } = await (supabase as unknown as AppUsersRoleClient)
           .from('app_users')
           .select('role')
           .eq('user_id', user.id)
@@ -308,117 +329,128 @@ const ScoreboardDashboard = () => {
 
   const fetchMetrics = useCallback(async () => {
     if (!isAdmin) return;
-    
+
     setRefreshing(true);
     try {
       const { startKey, endKey } = getDateRange();
       const { startKey: prevStartKey, endKey: prevEndKey } = getPreviousDateRange();
 
       // Fetch current period data
-      const { data, error } = await (supabase
+      const currentMetricQuery = supabase
         .from('daily_deal_flow')
-        .select('status, call_result')
+        .select('status, call_result, submitted_attorney, submitted_attorney_status')
         .not('insured_name', 'ilike', 'Test -%')
         .gte('date', startKey)
         .lte('date', endKey)
-        .eq('is_callback', activityType === 'followup'))
+        .eq('is_callback', activityType === 'followup');
+      const { data, error } = await (currentMetricQuery as unknown as PromiseLike<{
+        data: ScoreboardMetricRow[] | null;
+        error: unknown;
+      }>);
 
       if (error) throw error;
 
       // Fetch previous period data for comparison
-      const { data: prevData, error: prevError } = await (supabase
+      const previousMetricQuery = supabase
         .from('daily_deal_flow')
-        .select('status, call_result')
+        .select('status, call_result, submitted_attorney, submitted_attorney_status')
         .not('insured_name', 'ilike', 'Test -%')
         .gte('date', prevStartKey)
         .lte('date', prevEndKey)
-        .eq('is_callback', activityType === 'followup'));
+        .eq('is_callback', activityType === 'followup');
+      const { data: prevData, error: prevError } = await (previousMetricQuery as unknown as PromiseLike<{
+        data: ScoreboardMetricRow[] | null;
+        error: unknown;
+      }>);
 
       if (prevError) throw prevError;
 
-      const totalTransfers = data?.length || 0;
-      const prevTotalTransfers = prevData?.length || 0;
-      
+      const currentRows = (data || []) as ScoreboardMetricRow[];
+      const previousRows = (prevData || []) as ScoreboardMetricRow[];
+
+      const totalTransfers = currentRows.length;
+      const prevTotalTransfers = previousRows.length;
+
       // Count by status field from daily_deal_flow
-      const pendingApproval = data?.filter(d => 
+      const pendingApproval = currentRows.filter(d =>
         d.status?.toLowerCase().includes('pending approval') ||
         d.status?.toLowerCase().includes('pending_approval')
-      ).length || 0;
-      
-      const approved = data?.filter(d => 
+      ).length;
+
+      const approved = currentRows.filter(d =>
         d.status?.toLowerCase().includes('approved') ||
         d.status?.toLowerCase().includes('qualified_approved')
-      ).length || 0;
-      
-      const qualified = data?.filter(d => 
+      ).length;
+
+      const qualified = currentRows.filter(d =>
         d.call_result?.toLowerCase() === 'qualified' ||
         d.status?.toLowerCase().includes('qualified')
-      ).length || 0;
+      ).length;
 
-      const missingInfo = data?.filter(d => {
+      const missingInfo = currentRows.filter(d => {
         const status = (d.status || '').toLowerCase();
         return (
           status === 'qualified_missing_info' ||
           status.includes('qualified: missing information') ||
           status.includes('missing information')
         );
-      }).length || 0;
-      
-      const notQualified = data?.filter(d => 
+      }).length;
+
+      const notQualified = currentRows.filter(d =>
         d.call_result?.toLowerCase() === 'not qualified' ||
         d.status?.toLowerCase().includes('not_qualified')
-      ).length || 0;
-      
-      const returnedToCenter = data?.filter(d => 
+      ).length;
+
+      const returnedToCenter = currentRows.filter(d =>
         d.status?.toLowerCase().includes('returned to center') ||
         d.status?.toLowerCase().includes('returned_to_center')
-      ).length || 0;
+      ).length;
 
       // Submitted to Attorney: submitted_attorney is not null AND not "No Coverage"
-      const submittedToAttorney = data?.filter(d => 
-        d.submitted_attorney && 
+      const submittedToAttorney = currentRows.filter(d =>
+        d.submitted_attorney &&
         d.submitted_attorney_status !== 'nocoverage'
-      ).length || 0;
+      ).length;
 
       // Qualified Payable: status is "qualified_payable"
-      const qualifiedPayable = data?.filter(d => 
+      const qualifiedPayable = currentRows.filter(d =>
         d.status?.toLowerCase() === 'qualified_payable'
-      ).length || 0;
+      ).length;
 
       // No Coverage: submitted_attorney_status is "nocoverage"
-      const noCoverage = data?.filter(d => 
+      const noCoverage = currentRows.filter(d =>
         d.submitted_attorney_status === 'nocoverage'
-      ).length || 0;
+      ).length;
 
       // Approved Attorney: submitted_attorney_status is "approved"
-      const approvedAttorney = data?.filter(d => 
+      const approvedAttorney = currentRows.filter(d =>
         d.submitted_attorney_status === 'approved'
-      ).length || 0;
+      ).length;
 
       // Denied Attorney: submitted_attorney_status is "denied"
-      const deniedAttorney = data?.filter(d => 
+      const deniedAttorney = currentRows.filter(d =>
         d.submitted_attorney_status === 'denied'
-      ).length || 0;
+      ).length;
 
       // Calculate performance rates based on status field
       // Transfer Rate: Total transfers that moved forward / Total Transfers
-      const transferCount = data?.filter(d => 
-        d.status && !d.status.toLowerCase().includes('incomplete') && 
+      const transferCount = currentRows.filter(d =>
+        d.status && !d.status.toLowerCase().includes('incomplete') &&
         !d.status.toLowerCase().includes('not_qualified')
-      ).length || 0;
+      ).length;
       const transferTotal = totalTransfers;
       const transferRate = transferTotal > 0 ? (transferCount / transferTotal) * 100 : 0;
 
       // Qualifying Rate: call_result is qualified / Total Transfers
-      const qualifyingCount = data?.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length || 0;
+      const qualifyingCount = currentRows.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length;
       const qualifyingTotal = totalTransfers;
       const qualifyingRate = qualifyingTotal > 0 ? (qualifyingCount / qualifyingTotal) * 100 : 0;
 
       // Billable Rate: Status is qualified_payable OR label is Qualified/Payable
-      const billableCount = data?.filter(d => {
+      const billableCount = currentRows.filter(d => {
         const status = (d.status || '').toLowerCase();
         return status === 'qualified_payable' || status.includes('qualified/payable');
-      }).length || 0;
+      }).length;
       const billableTotal = totalTransfers;
       const billableRate = billableTotal > 0 ? (billableCount / billableTotal) * 100 : 0;
 
@@ -428,76 +460,76 @@ const ScoreboardDashboard = () => {
       const returnBackRate = returnBackTotal > 0 ? (returnBackCount / returnBackTotal) * 100 : 0;
 
       // Calculate previous period metrics for comparison
-      const prevPendingApproval = prevData?.filter(d => 
+      const prevPendingApproval = previousRows.filter(d =>
         d.status?.toLowerCase().includes('pending approval') ||
         d.status?.toLowerCase().includes('pending_approval')
-      ).length || 0;
-      
-      const prevApproved = prevData?.filter(d => 
+      ).length;
+
+      const prevApproved = previousRows.filter(d =>
         d.status?.toLowerCase().includes('approved') ||
         d.status?.toLowerCase().includes('qualified_approved')
-      ).length || 0;
-      
-      const prevQualified = prevData?.filter(d => 
+      ).length;
+
+      const prevQualified = previousRows.filter(d =>
         d.call_result?.toLowerCase() === 'qualified' ||
         d.status?.toLowerCase().includes('qualified')
-      ).length || 0;
+      ).length;
 
-      const prevMissingInfo = prevData?.filter(d => {
+      const prevMissingInfo = previousRows.filter(d => {
         const status = (d.status || '').toLowerCase();
         return (
           status === 'qualified_missing_info' ||
           status.includes('qualified: missing information') ||
           status.includes('missing information')
         );
-      }).length || 0;
-      
-      const prevNotQualified = prevData?.filter(d => 
+      }).length;
+
+      const prevNotQualified = previousRows.filter(d =>
         d.call_result?.toLowerCase() === 'not qualified' ||
         d.status?.toLowerCase().includes('not_qualified')
-      ).length || 0;
-      
-      const prevReturnedToCenter = prevData?.filter(d => 
+      ).length;
+
+      const prevReturnedToCenter = previousRows.filter(d =>
         d.status?.toLowerCase().includes('returned to center') ||
         d.status?.toLowerCase().includes('returned_to_center')
-      ).length || 0;
+      ).length;
 
       // Previous period calculations for new metrics
-      const prevSubmittedToAttorney = prevData?.filter(d => 
-        d.submitted_attorney && 
+      const prevSubmittedToAttorney = previousRows.filter(d =>
+        d.submitted_attorney &&
         d.submitted_attorney_status !== 'nocoverage'
-      ).length || 0;
+      ).length;
 
-      const prevQualifiedPayable = prevData?.filter(d => 
+      const prevQualifiedPayable = previousRows.filter(d =>
         d.status?.toLowerCase() === 'qualified_payable'
-      ).length || 0;
+      ).length;
 
       // Previous period calculations for new metrics
-      const prevNoCoverage = prevData?.filter(d => 
+      const prevNoCoverage = previousRows.filter(d =>
         d.submitted_attorney_status === 'nocoverage'
-      ).length || 0;
+      ).length;
 
-      const prevApprovedAttorney = prevData?.filter(d => 
+      const prevApprovedAttorney = previousRows.filter(d =>
         d.submitted_attorney_status === 'approved'
-      ).length || 0;
+      ).length;
 
-      const prevDeniedAttorney = prevData?.filter(d => 
+      const prevDeniedAttorney = previousRows.filter(d =>
         d.submitted_attorney_status === 'denied'
-      ).length || 0;
+      ).length;
 
-      const prevTransferCount = prevData?.filter(d => 
-        d.status && !d.status.toLowerCase().includes('incomplete') && 
+      const prevTransferCount = previousRows.filter(d =>
+        d.status && !d.status.toLowerCase().includes('incomplete') &&
         !d.status.toLowerCase().includes('not_qualified')
-      ).length || 0;
+      ).length;
       const prevTransferRate = prevTotalTransfers > 0 ? (prevTransferCount / prevTotalTransfers) * 100 : 0;
 
-      const prevQualifyingCount = prevData?.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length || 0;
+      const prevQualifyingCount = previousRows.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length;
       const prevQualifyingRate = prevTotalTransfers > 0 ? (prevQualifyingCount / prevTotalTransfers) * 100 : 0;
 
-      const prevBillableCount = prevData?.filter(d => {
+      const prevBillableCount = previousRows.filter(d => {
         const status = (d.status || '').toLowerCase();
         return status === 'qualified_payable' || status.includes('qualified/payable');
-      }).length || 0;
+      }).length;
       const prevBillableRate = prevTotalTransfers > 0 ? (prevBillableCount / prevTotalTransfers) * 100 : 0;
 
       const prevReturnBackRate = prevTotalTransfers > 0 ? (prevReturnedToCenter / prevTotalTransfers) * 100 : 0;
@@ -581,10 +613,10 @@ const ScoreboardDashboard = () => {
         const now = new Date();
         const anchorNow = new Date(now);
         anchorNow.setUTCHours(12, 0, 0, 0);
-        
+
         let startKey: string;
         let endKey: string;
-        
+
         switch (dateFilter) {
           case 'today': {
             startKey = formatNYDateKey(anchorNow);
@@ -627,60 +659,65 @@ const ScoreboardDashboard = () => {
             endKey = startKey;
           }
         }
-        
-        const { data, error } = await (supabase
+
+        const filteredQuery = supabase
           .from('daily_deal_flow')
           .select('id, date, insured_name, client_phone_number, state, lead_vendor, agent, status, call_result, submitted_attorney, submitted_attorney_status, notes')
           .gte('date', startKey)
           .lte('date', endKey)
-          .eq('is_callback', activityType === 'followup') as any);
+          .eq('is_callback', activityType === 'followup');
+        const { data, error } = await (filteredQuery as unknown as PromiseLike<{
+          data: FilteredRow[] | null;
+          error: unknown;
+        }>);
 
         if (error) {
           console.error('Query error:', error);
           throw error;
         }
 
+        const rows = data || [];
         let filtered: FilteredRow[] = [];
-        
+
         switch (selectedFilter) {
           case 'total_transfers':
-            filtered = (data || []);
+            filtered = rows;
             break;
           case 'qualified':
-            filtered = (data || []).filter((d: any) => 
+            filtered = rows.filter((d) =>
               d.call_result?.toLowerCase() === 'qualified' ||
               d.status?.toLowerCase().includes('qualified')
             );
             break;
           case 'not_qualified':
-            filtered = (data || []).filter((d: any) => 
+            filtered = rows.filter((d) =>
               d.call_result?.toLowerCase() === 'not qualified' ||
               d.status?.toLowerCase().includes('not_qualified')
             );
             break;
           case 'submitted_to_attorney':
-            filtered = (data || []).filter((d: any) => 
-              d.submitted_attorney && 
+            filtered = rows.filter((d) =>
+              d.submitted_attorney &&
               d.submitted_attorney_status !== 'nocoverage'
             );
             break;
           case 'qualified_payable':
-            filtered = (data || []).filter((d: any) => 
+            filtered = rows.filter((d) =>
               d.status?.toLowerCase() === 'qualified_payable'
             );
             break;
           case 'no_coverage':
-            filtered = (data || []).filter((d: any) => 
+            filtered = rows.filter((d) =>
               d.submitted_attorney_status === 'nocoverage'
             );
             break;
           case 'approved_attorney':
-            filtered = (data || []).filter((d: any) => 
+            filtered = rows.filter((d) =>
               d.submitted_attorney_status === 'approved'
             );
             break;
           case 'denied_attorney':
-            filtered = (data || []).filter((d: any) => 
+            filtered = rows.filter((d) =>
               d.submitted_attorney_status === 'denied'
             );
             break;
@@ -726,7 +763,7 @@ const ScoreboardDashboard = () => {
 
   const handleDetailsClick = async (phoneNumber: string | null, notes: string | null = null) => {
     if (!phoneNumber) return;
-    
+
     setSelectedNotes(notes);
     setShowCallDialog(true);
     setCallsLoading(true);
@@ -735,7 +772,7 @@ const ScoreboardDashboard = () => {
     try {
       // Get date range from current filter and convert to timestamps
       const { startKey, endKey } = getDateRange();
-      
+
       // Parse the date keys (yyyy-MM-dd format) to timestamps
       // Start of day for startKey, end of day for endKey
       const fromTimestamp = Math.floor(new Date(`${startKey}T00:00:00Z`).getTime() / 1000);
@@ -763,7 +800,7 @@ const ScoreboardDashboard = () => {
     }
   };
 
-  const showInboundBpoStateColumn = selectedFilter === 'total_transfers' && activityType === 'inbound';
+  const showLeadStateColumn = true;
 
   if (loading || !isAdmin) {
     return (
@@ -842,15 +879,15 @@ const ScoreboardDashboard = () => {
             <CardContent className="pt-4 sm:pt-6">
               <Tabs value={activityType} onValueChange={(value) => setActivityType(value as 'inbound' | 'followup')} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger 
-                    value="inbound" 
+                  <TabsTrigger
+                    value="inbound"
                     className={`flex items-center gap-2 transition-all ${activityType === 'inbound' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-blue-900' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900'}`}
                   >
                     <Phone className="h-4 w-4" />
                     Publisher Activity
                   </TabsTrigger>
-                  <TabsTrigger 
-                    value="followup" 
+                  <TabsTrigger
+                    value="followup"
                     className={`flex items-center gap-2 transition-all ${activityType === 'followup' ? 'bg-orange-500 text-white shadow-lg shadow-orange-200 dark:shadow-orange-900' : 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:hover:bg-orange-900'}`}
                   >
                     <Clock className="h-4 w-4" />
@@ -881,8 +918,8 @@ const ScoreboardDashboard = () => {
                     </p>
                     <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-blue-900 dark:text-blue-100' : 'text-orange-900 dark:text-orange-100'}`}>{metrics.totalTransfers}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.totalTransfersChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.totalTransfersChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.totalTransfersChange > 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.totalTransfersChange < 0 ? 'text-red-600 dark:text-red-400' :
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.totalTransfersChange > 0 ? '+' : ''}{metrics.totalTransfersChange.toFixed(1)}%
@@ -905,8 +942,8 @@ const ScoreboardDashboard = () => {
                     </p>
                     <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-emerald-900 dark:text-emerald-100' : 'text-teal-900 dark:text-teal-100'}`}>{metrics.qualified}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.qualifiedChange > 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.qualifiedChange < 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.qualifiedChange > 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.qualifiedChange < 0 ? 'text-red-600 dark:text-red-400' :
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.qualifiedChange > 0 ? '+' : ''}{metrics.qualifiedChange.toFixed(1)}%
@@ -929,8 +966,8 @@ const ScoreboardDashboard = () => {
                     </p>
                     <p className="text-3xl sm:text-4xl font-bold text-red-900 dark:text-red-100 mt-2">{metrics.notQualified}</p>
                     <p className={`text-xs mt-1 font-medium ${
-                      metrics.notQualifiedChange < 0 ? 'text-green-600 dark:text-green-400' : 
-                      metrics.notQualifiedChange > 0 ? 'text-red-600 dark:text-red-400' : 
+                      metrics.notQualifiedChange < 0 ? 'text-green-600 dark:text-green-400' :
+                      metrics.notQualifiedChange > 0 ? 'text-red-600 dark:text-red-400' :
                       'text-gray-600 dark:text-gray-400'
                     }`}>
                       {metrics.notQualifiedChange > 0 ? '+' : ''}{metrics.notQualifiedChange.toFixed(1)}%
@@ -1082,7 +1119,7 @@ const ScoreboardDashboard = () => {
                   Clear
                 </Button>
               </div>
-              
+
               <Card className="border-2 border-gray-200 dark:border-gray-700">
                 <CardContent className="p-0">
                   {filteredLoading ? (
@@ -1102,7 +1139,7 @@ const ScoreboardDashboard = () => {
                               <TableHead className="font-semibold">Date</TableHead>
                               <TableHead className="font-semibold">Customer Name</TableHead>
                               <TableHead className="font-semibold">Phone</TableHead>
-                              {showInboundBpoStateColumn && <TableHead className="font-semibold">State</TableHead>}
+                              {showLeadStateColumn && <TableHead className="font-semibold">State</TableHead>}
                               <TableHead className="font-semibold">Agent</TableHead>
                               <TableHead className="font-semibold">Status</TableHead>
                               <TableHead className="font-semibold">Call Result</TableHead>
@@ -1119,7 +1156,7 @@ const ScoreboardDashboard = () => {
                                   <TableCell className="font-medium">{row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}</TableCell>
                                   <TableCell>{row.insured_name || '-'}</TableCell>
                                   <TableCell>{row.client_phone_number || '-'}</TableCell>
-                                  {showInboundBpoStateColumn && <TableCell>{row.state || '-'}</TableCell>}
+                                  {showLeadStateColumn && <TableCell>{row.state || '-'}</TableCell>}
                                   <TableCell>{row.agent || '-'}</TableCell>
                                   <TableCell>{row.status || '-'}</TableCell>
                                   <TableCell>{row.call_result || '-'}</TableCell>
@@ -1136,9 +1173,9 @@ const ScoreboardDashboard = () => {
                                     </span>
                                   </TableCell>
                                   <TableCell className="text-center">
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm" 
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
                                       className="h-8 w-8 p-0"
                                       onClick={() => {
                                         setSelectedNotes(row.notes);
@@ -1157,7 +1194,7 @@ const ScoreboardDashboard = () => {
                           </TableBody>
                         </Table>
                       </div>
-                      
+
                       {/* Pagination */}
                       {filteredData.length > recordsPerPage && (
                         <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50 dark:bg-gray-800/50">
@@ -1215,14 +1252,14 @@ const ScoreboardDashboard = () => {
               </DialogHeader>
               <Tabs defaultValue="notes" className="w-full">
                 <TabsList className="w-full">
-                  <TabsTrigger 
-                    value="notes" 
+                  <TabsTrigger
+                    value="notes"
                     className="flex-1 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 dark:data-[state=active]:bg-blue-900 dark:data-[state=active]:text-blue-300"
                   >
                     Notes
                   </TabsTrigger>
-                  <TabsTrigger 
-                    value="recordings" 
+                  <TabsTrigger
+                    value="recordings"
                     className="flex-1 data-[state=active]:bg-green-100 data-[state=active]:text-green-700 dark:data-[state=active]:bg-green-900 dark:data-[state=active]:text-green-300"
                   >
                     Call Recordings
