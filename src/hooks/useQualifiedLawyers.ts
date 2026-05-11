@@ -55,6 +55,8 @@ const normalizeLawyerType = (value: unknown): LawyerRequirementType | null => {
 
 const getSolLimitMonths = (sol: string | null): number | null => {
   switch (sol) {
+    case "3month":
+      return 3;
     case "6month":
       return 6;
     case "12month":
