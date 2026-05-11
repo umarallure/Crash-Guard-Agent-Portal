@@ -14,7 +14,7 @@ import { WeeklyReports } from "@/components/WeeklyReports";
 import { GHLExport } from "@/components/GHLExport";
 import { Loader2, RefreshCw, Download, FileSpreadsheet, ChevronDown, FileText, Calendar, BarChart3, UserCheck } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { dateObjectToESTString } from "@/lib/dateUtils";
+import { dateObjectToESTString, formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -414,7 +414,7 @@ const DailyDealFlowPage = () => {
         headers.join(','),
         ...nonTestExportData.map(row => [
           (row.submission_id as string) || '',
-          (row.date as string) || '',
+          formatDateUS(row.date as string | null | undefined),
           (row.insured_name as string) || '',
           (row.lead_vendor as string) || '',
           (row.client_phone_number as string) || '',
@@ -424,7 +424,7 @@ const DailyDealFlowPage = () => {
           (row.call_result as string) || '',
           (row.carrier as string) || '',
           (row.product_type as string) || '',
-          (row.draft_date as string) || '',
+          formatDateUS(row.draft_date as string | null | undefined),
           (row.monthly_premium as string) || '',
           (row.face_amount as string) || '',
           (row.from_callback as boolean) ? 'Yes' : 'No',
@@ -436,8 +436,8 @@ const DailyDealFlowPage = () => {
           (row.level_or_gi as string) || '',
           (row["submitted_attorney"] as string) || '',
           (row["submitted_attorney_status"] as string) || '',
-          (row.created_at as string) || '',
-          (row.updated_at as string) || ''
+          formatDateTimeUS(row.created_at as string | null | undefined),
+          formatDateTimeUS(row.updated_at as string | null | undefined)
         ].map(field => `"${field}"`).join(','))
       ].join('\n');
 

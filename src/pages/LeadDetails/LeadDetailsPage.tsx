@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LeadDocumentsTab } from "@/components/LeadDocumentsTab";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
@@ -33,10 +34,19 @@ type CallUpdate = {
 
 const EMPTY_VALUE_LABEL = "N/A";
 
-const displayValue = (value: unknown) => {
+const displayValue = (value: unknown, key?: string) => {
   if (value === null || value === undefined) return EMPTY_VALUE_LABEL;
   if (typeof value === "string" && value.trim().length === 0) return EMPTY_VALUE_LABEL;
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (key) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey === "created_at" || normalizedKey === "updated_at") {
+      return formatDateTimeUS(value instanceof Date || typeof value === "string" ? value : null, EMPTY_VALUE_LABEL);
+    }
+    if (normalizedKey === "date" || normalizedKey.endsWith("_date") || normalizedKey === "date_of_birth") {
+      return formatDateUS(value instanceof Date || typeof value === "string" ? value : null, EMPTY_VALUE_LABEL);
+    }
+  }
   return String(value);
 };
 
@@ -72,10 +82,7 @@ const formatColumnLabel = (key: string) => {
 };
 
 const formatDateIfPresent = (value: string | null | undefined) => {
-  if (!value) return EMPTY_VALUE_LABEL;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return format(parsed, "MMM dd, yyyy");
+  return formatDateUS(value, EMPTY_VALUE_LABEL);
 };
 
 const maskSsn = (ssn: string | null | undefined) => {
@@ -770,7 +777,7 @@ const LeadDetailsPage = () => {
                                             : 'whitespace-nowrap'
                                         }
                                       >
-                                        {displayValue(row[col])}
+                                        {displayValue(row[col], col)}
                                       </TableCell>
                                     ))}
                                   </TableRow>

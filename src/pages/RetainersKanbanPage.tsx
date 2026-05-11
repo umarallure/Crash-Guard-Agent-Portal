@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { formatDateUS } from "@/lib/dateUtils";
 
 type RetainerStageKey = "paid_retainer" | "non_paid_retainer" | "chargeback";
 
@@ -194,7 +195,7 @@ const RetainersKanbanPage = () => {
                                   <Badge variant="secondary" className="text-xs">
                                     {row.lead_vendor || "Unknown"}
                                   </Badge>
-                                  <div className="text-xs text-muted-foreground">{row.date || ""}</div>
+                                  <div className="text-xs text-muted-foreground">{formatDateUS(row.date)}</div>
                                 </div>
                               </CardContent>
                             </Card>

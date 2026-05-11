@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { format, parseISO, subDays } from 'date-fns';
+import { subDays } from 'date-fns';
 import { Loader2, Eye, Phone, Play, Pause, Clock, Users, Briefcase } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,6 +16,7 @@ import { QualificationDonutCard } from './components/QualificationDonutCard';
 import { AttorneyZonesCard } from './components/AttorneyZonesCard';
 import { OpportunitiesAreaCard } from './components/OpportunitiesAreaCard';
 import { QuickLinkCard } from './components/QuickLinkCard';
+import { formatDateUS } from '@/lib/dateUtils';
 import {
   bucketizeByDay,
   formatNYDateKey,
@@ -277,7 +278,7 @@ const ScoreboardDashboard = () => {
         return 'All Time';
       case 'custom':
         return customStartDate && customEndDate
-          ? `${customStartDate} → ${customEndDate}`
+          ? `${formatDateUS(customStartDate)} → ${formatDateUS(customEndDate)}`
           : 'Custom Range';
       default:
         return '';
@@ -712,7 +713,7 @@ const ScoreboardDashboard = () => {
                                 }`}
                               >
                                 <TableCell className="font-medium tabular-nums text-white">
-                                  {row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}
+                                  {row.date ? formatDateUS(row.date, '-') : '-'}
                                 </TableCell>
                                 <TableCell>{row.insured_name || '-'}</TableCell>
                                 <TableCell className="tabular-nums text-white/70">{row.client_phone_number || '-'}</TableCell>

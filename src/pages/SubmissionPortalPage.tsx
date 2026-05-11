@@ -41,6 +41,7 @@ import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
+import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 
 export interface SubmissionPortalRow {
   id: string;
@@ -89,6 +90,9 @@ interface CallLog {
   created_at: string;
 }
 
+const formatPortalDate = (value?: string | null) => formatDateUS(value, "");
+const formatPortalDateTime = (value?: string | null) => formatDateTimeUS(value, "");
+
 interface ColumnInfoDetail {
   label: string;
   value: string;
@@ -99,6 +103,7 @@ interface ColumnInfo {
 }
 
 const SHARED_PIPELINE_FILTER_STORAGE_KEY = "shared-pipeline-filters";
+const SUBMISSION_FILTER_STORAGE_KEY = "submission-portal-filters";
 
 type SharedPipelineFilterStorage = {
   datePreset: DateRangePreset;
@@ -108,6 +113,22 @@ type SharedPipelineFilterStorage = {
   selectedStates: string[];
   searchTerm: string;
 };
+
+type SubmissionFilterStorage = {
+  publisherFilters: string[];
+};
+
+const toStringArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? Array.from(
+        new Set(
+          value
+            .filter((item): item is string => typeof item === "string")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        ),
+      )
+    : [];
 
 const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
   if (typeof window === "undefined") return null;
@@ -124,6 +145,22 @@ const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
       leadVendorFilter: typeof parsed.leadVendorFilter === "string" ? parsed.leadVendorFilter : "__ALL__",
       selectedStates: Array.isArray(parsed.selectedStates) ? parsed.selectedStates.filter((state): state is string => typeof state === "string") : [],
       searchTerm: typeof parsed.searchTerm === "string" ? parsed.searchTerm : "",
+    };
+  } catch {
+    return null;
+  }
+};
+
+const readSubmissionFilters = (): SubmissionFilterStorage | null => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(SUBMISSION_FILTER_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<SubmissionFilterStorage>;
+    return {
+      publisherFilters: toStringArray(parsed.publisherFilters),
     };
   } catch {
     return null;
@@ -380,11 +417,17 @@ const SubmissionPortalPage = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const savedSharedFilters = useMemo(() => readSharedPipelineFilters(), []);
+  const savedSubmissionFilters = useMemo(() => readSubmissionFilters(), []);
+  const savedPublisherFilters = useMemo(() => {
+    if (savedSubmissionFilters?.publisherFilters.length) return savedSubmissionFilters.publisherFilters;
+    const legacyPublisher = savedSharedFilters?.leadVendorFilter;
+    return legacyPublisher && legacyPublisher !== "__ALL__" ? [legacyPublisher] : [];
+  }, [savedSharedFilters, savedSubmissionFilters]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(savedSharedFilters?.datePreset ?? "all");
   const [customStartDate, setCustomStartDate] = useState(savedSharedFilters?.customStartDate ?? "");
   const [customEndDate, setCustomEndDate] = useState(savedSharedFilters?.customEndDate ?? "");
   const [statusFilter, setStatusFilter] = useState("__ALL__");
-  const [leadVendorFilter, setLeadVendorFilter] = useState(savedSharedFilters?.leadVendorFilter ?? "__ALL__");
+  const [publisherFilters, setPublisherFilters] = useState<string[]>(savedPublisherFilters);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
   const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
@@ -492,9 +535,10 @@ const SubmissionPortalPage = () => {
       filtered = filtered.filter((record) => deriveStageKey(record) === statusFilter);
     }
 
-    // Apply lead vendor filter
-    if (leadVendorFilter !== "__ALL__") {
-      filtered = filtered.filter((record) => (record.lead_vendor || '') === leadVendorFilter);
+    // Apply publisher filter
+    if (publisherFilters.length > 0) {
+      const selectedPublishers = new Set(publisherFilters);
+      filtered = filtered.filter((record) => selectedPublishers.has((record.lead_vendor || '').trim()));
     }
 
     if (tagFilter !== ALL_LEAD_TAGS_VALUE) {
@@ -523,7 +567,7 @@ const SubmissionPortalPage = () => {
     return filtered;
   };
 
-  const leadVendorOptions = useMemo(() => {
+  const publisherOptions = useMemo(() => {
     const set = new Set<string>();
     (data || []).forEach((r) => {
       const v = (r.lead_vendor || '').trim();
@@ -858,7 +902,7 @@ const SubmissionPortalPage = () => {
   // Update filtered data whenever data or filters change
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, datePreset, customStartDate, customEndDate, statusFilter, leadVendorFilter, selectedStates, searchTerm, tagFilter]);
+  }, [data, datePreset, customStartDate, customEndDate, statusFilter, publisherFilters, selectedStates, searchTerm, tagFilter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -867,13 +911,23 @@ const SubmissionPortalPage = () => {
       datePreset,
       customStartDate,
       customEndDate,
-      leadVendorFilter,
+      leadVendorFilter: publisherFilters.length === 1 ? publisherFilters[0] : "__ALL__",
       selectedStates,
       searchTerm: "",
     };
 
     window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
-  }, [datePreset, customStartDate, customEndDate, leadVendorFilter, selectedStates]);
+  }, [datePreset, customStartDate, customEndDate, publisherFilters, selectedStates]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const submissionFiltersToPersist: SubmissionFilterStorage = {
+      publisherFilters,
+    };
+
+    window.localStorage.setItem(SUBMISSION_FILTER_STORAGE_KEY, JSON.stringify(submissionFiltersToPersist));
+  }, [publisherFilters]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -900,7 +954,7 @@ const SubmissionPortalPage = () => {
       'Submission ID',
       'Date',
       'Customer Name',
-      'Lead Vendor',
+      'Publisher',
       'Phone Number',
       'Buffer Agent',
       'Agent',
@@ -921,7 +975,7 @@ const SubmissionPortalPage = () => {
       headers.join(','),
       ...boardVisibleRows.map((row) => [
         row.submission_id,
-        row.date || row.submission_date || '',
+        formatPortalDate(row.date || row.submission_date || ''),
         row.insured_name || '',
         row.lead_vendor || '',
         row.client_phone_number || '',
@@ -932,12 +986,12 @@ const SubmissionPortalPage = () => {
         row.call_result || '',
         row.carrier || '',
         row.product_type || '',
-        row.draft_date || '',
+        formatPortalDate(row.draft_date),
         row.monthly_premium || '',
         row.face_amount || '',
         row.from_callback ? 'Yes' : 'No',
         row.source_type || '',
-        row.created_at || ''
+        formatPortalDateTime(row.created_at)
       ].map((field) => `"${field}"`).join(','))
     ].join('\n');
 
@@ -1441,7 +1495,7 @@ const SubmissionPortalPage = () => {
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by name, phone, vendor…"
+                placeholder="Search by name, phone, publisher…"
               />
             </div>
 
@@ -1453,7 +1507,7 @@ const SubmissionPortalPage = () => {
             >
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Filters
-              {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__") && (
+              {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0) && (
                 <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
               )}
             </Button>
@@ -1480,7 +1534,7 @@ const SubmissionPortalPage = () => {
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-foreground">Filters</span>
-                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
+                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1489,7 +1543,7 @@ const SubmissionPortalPage = () => {
                           setCustomEndDate("");
                           setStatusFilter("__ALL__");
                           setSelectedStates([]);
-                          setLeadVendorFilter("__ALL__");
+                          setPublisherFilters([]);
                           setTagFilter(ALL_LEAD_TAGS_VALUE);
                         }}
                         className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
@@ -1525,20 +1579,17 @@ const SubmissionPortalPage = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Vendor</label>
-                    <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All Vendors" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="__ALL__">All Vendors</SelectItem>
-                          {leadVendorOptions.map((vendor) => (
-                            <SelectItem key={vendor} value={vendor}>{vendor}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Publisher</label>
+                    <MultiSelect
+                      options={publisherOptions}
+                      selected={publisherFilters}
+                      onChange={setPublisherFilters}
+                      placeholder="All Publishers"
+                      className="w-full"
+                      maxVisibleBadges={null}
+                      selectedDisplayMode="scroll"
+                      highlightSelectedOptions={false}
+                    />
                   </div>
 
                   <div className="space-y-1.5">

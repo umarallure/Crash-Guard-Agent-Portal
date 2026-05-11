@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { Search, Phone, Calendar, DollarSign, FileText, Building2, User } from 'lucide-react';
+import { formatDateUS } from '@/lib/dateUtils';
 
 interface DealFlowResult {
   id: string;
@@ -586,7 +587,7 @@ export default function DealFlowLookup() {
                                         Draft Date
                                       </p>
                                       <p className="font-medium">
-                                        {new Date(result.draft_date).toLocaleDateString()}
+                                        {formatDateUS(result.draft_date)}
                                       </p>
                                     </div>
                                   )}

@@ -4,6 +4,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Copy, User, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { formatDateUS } from "@/lib/dateUtils";
 
 interface DetailedLead {
   id: string;
@@ -49,12 +50,14 @@ interface DetailedLeadInfoCardProps {
 export const DetailedLeadInfoCard = ({ lead }: DetailedLeadInfoCardProps) => {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
+  const dateOfBirth = formatDateUS(lead.date_of_birth, "N/A");
+  const accidentDate = formatDateUS(lead.accident_date, "N/A");
 
   const copyToClipboard = () => {
     const leadInfo = `${lead.lead_vendor || 'Lead Vendor'}: ${lead.customer_full_name}
 
 PERSONAL INFORMATION:
-Date of Birth: ${lead.date_of_birth}
+Date of Birth: ${dateOfBirth}
 Age: ${lead.age}
 Birth State: ${lead.birth_state || ''}
 Social Security: ${lead.social_security}
@@ -66,7 +69,7 @@ Phone: ${lead.phone_number}
 Email: ${lead.email}
 
 ACCIDENT/INCIDENT INFORMATION:
-Accident Date: ${lead.accident_date || 'N/A'}
+Accident Date: ${accidentDate}
 Accident Location: ${lead.accident_location || 'N/A'}
 Accident Scenario: ${lead.accident_scenario || 'N/A'}
 Injuries: ${lead.injuries || 'N/A'}
@@ -129,7 +132,7 @@ ${lead.additional_notes}`;
               <br />
               
               <div><strong>PERSONAL INFORMATION:</strong></div>
-              <div><strong>Date of Birth:</strong> {lead.date_of_birth}</div>
+              <div><strong>Date of Birth:</strong> {dateOfBirth}</div>
               <div><strong>Age:</strong> {lead.age}</div>
               <div><strong>Birth State:</strong> {formatValue(lead.birth_state)}</div>
               <div><strong>Social Security:</strong> {lead.social_security}</div>
@@ -143,7 +146,7 @@ ${lead.additional_notes}`;
               
               <br />
               <div><strong>ACCIDENT/INCIDENT INFORMATION:</strong></div>
-              <div><strong>Accident Date:</strong> {formatValue(lead.accident_date)}</div>
+              <div><strong>Accident Date:</strong> {accidentDate}</div>
               <div><strong>Accident Location:</strong> {formatValue(lead.accident_location)}</div>
               <div><strong>Accident Scenario:</strong> {formatValue(lead.accident_scenario)}</div>
               <div><strong>Injuries:</strong> {formatValue(lead.injuries)}</div>
