@@ -149,6 +149,7 @@ const supabaseUntyped = supabase as unknown as SupabaseUntyped;
 const KNOWN_STATE_CODES = new Set(US_STATES.map((state) => state.code));
 
 const SOL_MONTHS: Record<string, number> = {
+  "3month": 3,
   "6month": 6,
   "12month": 12,
   "24month": 24,

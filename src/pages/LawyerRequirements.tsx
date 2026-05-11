@@ -998,6 +998,7 @@ export default function LawyerRequirements() {
                     <SelectValue placeholder="Select SOL period" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="3month">3 Month</SelectItem>
                     <SelectItem value="6month">6 Month</SelectItem>
                     <SelectItem value="12month">12 Month</SelectItem>
                     <SelectItem value="24month">24 Month</SelectItem>
