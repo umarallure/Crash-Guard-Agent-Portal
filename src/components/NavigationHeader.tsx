@@ -169,7 +169,7 @@ export const NavigationHeader = ({ title, showBackButton = false, backTo }: Navi
                       <>
                         <DropdownMenuItem onClick={() => navigate('/scoreboard-dashboard')}>
                           <TrendingUp className="mr-2 h-4 w-4" />
-                          Score Board
+                          Dashboard
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigate('/lawyer-requirements')}>
                           <Scale className="mr-2 h-4 w-4" />

@@ -1,20 +1,37 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, RefreshCw, Send, FileText, CheckCircle, XCircle, AlertCircle, TrendingUp, TrendingDown, Minus, DollarSign, Eye, Phone, Play, Pause, Clock } from 'lucide-react';
-import { subDays, format, parseISO } from 'date-fns';
-import { Loader2 } from 'lucide-react';
+import { format, parseISO, subDays } from 'date-fns';
+import { Loader2, Eye, Phone, Play, Pause, Clock, Users, Briefcase } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { searchAircallCalls, formatDuration, formatTimestamp } from '@/lib/aircall';
+import { FilterBar } from './components/FilterBar';
+import { WeeklyCallsCard } from './components/WeeklyCallsCard';
+import { QualificationDonutCard } from './components/QualificationDonutCard';
+import { AttorneyZonesCard } from './components/AttorneyZonesCard';
+import { OpportunitiesAreaCard } from './components/OpportunitiesAreaCard';
+import { QuickLinkCard } from './components/QuickLinkCard';
+import {
+  bucketizeByDay,
+  formatNYDateKey,
+  isApprovedAttorney,
+  isDeniedAttorney,
+  isNoCoverage,
+  isNotQualified,
+  isQualified,
+  isQualifiedPayable,
+  isSubmittedToAttorney,
+  lastNDayKeys,
+  type ActivityType,
+  type DailyBucket,
+  type DateFilter,
+  type ScoreboardDailyRow,
+} from './utils';
 
 interface FilteredRow {
   id: string;
@@ -31,13 +48,6 @@ interface FilteredRow {
   notes: string | null;
 }
 
-interface ScoreboardMetricRow {
-  status: string | null;
-  call_result: string | null;
-  submitted_attorney: string | null;
-  submitted_attorney_status: string | null;
-}
-
 type AppUserRoleRow = {
   role: string | null;
 };
@@ -52,108 +62,47 @@ type AppUsersRoleClient = {
   };
 };
 
-interface DashboardMetrics {
-  totalTransfers: number;
-  pendingApproval: number;
-  approved: number;
+interface RangeMetrics {
+  total: number;
   qualified: number;
   notQualified: number;
-  submittedToAttorney: number;
-  qualifiedPayable: number;
   noCoverage: number;
+  submittedToAttorney: number;
   approvedAttorney: number;
   deniedAttorney: number;
-  transferRate: number;
-  qualifyingRate: number;
-  billableRate: number;
-  returnBackRate: number;
-  transferCount: number;
-  transferTotal: number;
-  qualifyingCount: number;
-  qualifyingTotal: number;
-  billableCount: number;
-  billableTotal: number;
-  returnBackCount: number;
-  returnBackTotal: number;
-  totalTransfersChange: number;
-  pendingApprovalChange: number;
-  approvedChange: number;
-  qualifiedChange: number;
-  notQualifiedChange: number;
-  submittedToAttorneyChange: number;
-  qualifiedPayableChange: number;
-  noCoverageChange: number;
-  approvedAttorneyChange: number;
-  deniedAttorneyChange: number;
-  transferRateChange: number;
-  qualifyingRateChange: number;
-  billableRateChange: number;
-  returnBackRateChange: number;
+  qualifiedPayable: number;
 }
+
+const EMPTY_RANGE_METRICS: RangeMetrics = {
+  total: 0,
+  qualified: 0,
+  notQualified: 0,
+  noCoverage: 0,
+  submittedToAttorney: 0,
+  approvedAttorney: 0,
+  deniedAttorney: 0,
+  qualifiedPayable: 0,
+};
 
 const ScoreboardDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const formatNYDateKey = useCallback((date: Date): string => {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(date);
-  }, []);
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [metrics, setMetrics] = useState<DashboardMetrics>({
-    totalTransfers: 0,
-    pendingApproval: 0,
-    approved: 0,
-    qualified: 0,
-    notQualified: 0,
-    submittedToAttorney: 0,
-    qualifiedPayable: 0,
-    noCoverage: 0,
-    approvedAttorney: 0,
-    deniedAttorney: 0,
-    transferRate: 0,
-    qualifyingRate: 0,
-    billableRate: 0,
-    returnBackRate: 0,
-    transferCount: 0,
-    transferTotal: 0,
-    qualifyingCount: 0,
-    qualifyingTotal: 0,
-    billableCount: 0,
-    billableTotal: 0,
-    returnBackCount: 0,
-    returnBackTotal: 0,
-    totalTransfersChange: 0,
-    pendingApprovalChange: 0,
-    approvedChange: 0,
-    qualifiedChange: 0,
-    notQualifiedChange: 0,
-    submittedToAttorneyChange: 0,
-    qualifiedPayableChange: 0,
-    noCoverageChange: 0,
-    approvedAttorneyChange: 0,
-    deniedAttorneyChange: 0,
-    transferRateChange: 0,
-    qualifyingRateChange: 0,
-    billableRateChange: 0,
-    returnBackRateChange: 0,
-  });
+  const [rangeMetrics, setRangeMetrics] = useState<RangeMetrics>(EMPTY_RANGE_METRICS);
+  const [prevRangeTotal, setPrevRangeTotal] = useState(0);
+  const [weekly, setWeekly] = useState<DailyBucket[]>([]);
+  const [prevWeekly, setPrevWeekly] = useState<DailyBucket[]>([]);
 
-  const [activityType, setActivityType] = useState<'inbound' | 'followup'>('inbound');
-  const [dateFilter, setDateFilter] = useState<string>('today');
+  const [activityType, setActivityType] = useState<ActivityType>('inbound');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('today');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('total_transfers');
   const [filteredData, setFilteredData] = useState<FilteredRow[]>([]);
   const [filteredLoading, setFilteredLoading] = useState(false);
-  const [showNotesDialog, setShowNotesDialog] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 20;
@@ -198,7 +147,6 @@ const ScoreboardDashboard = () => {
       }
 
       try {
-        // Check if user has admin role in app_users table
         const { data, error } = await (supabase as unknown as AppUsersRoleClient)
           .from('app_users')
           .select('role')
@@ -232,7 +180,6 @@ const ScoreboardDashboard = () => {
   }, [user, navigate, toast]);
 
   const getDateRange = useCallback((): { startKey: string; endKey: string } => {
-    // Use a UTC-midday anchor to avoid DST boundary issues when shifting days.
     const now = new Date();
     const anchorNow = new Date(now);
     anchorNow.setUTCHours(12, 0, 0, 0);
@@ -264,7 +211,6 @@ const ScoreboardDashboard = () => {
       }
       case 'custom': {
         if (customStartDate && customEndDate) {
-          // These are already yyyy-MM-dd; treat them as NY-local date keys.
           return { startKey: customStartDate, endKey: customEndDate };
         }
         const key = formatNYDateKey(anchorNow);
@@ -275,59 +221,70 @@ const ScoreboardDashboard = () => {
         return { startKey: key, endKey: key };
       }
     }
-  }, [customEndDate, customStartDate, dateFilter, formatNYDateKey]);
+  }, [customEndDate, customStartDate, dateFilter]);
 
+  /** Mirror of the active date range, shifted back by one period — used to compute % change. */
   const getPreviousDateRange = useCallback((): { startKey: string; endKey: string } => {
     const now = new Date();
     const anchorNow = new Date(now);
     anchorNow.setUTCHours(12, 0, 0, 0);
 
     switch (dateFilter) {
-      case 'today': {
-        const key = formatNYDateKey(subDays(anchorNow, 1));
-        return { startKey: key, endKey: key };
-      }
-      case 'yesterday': {
-        const twoDaysAgo = subDays(anchorNow, 2);
-        const key = formatNYDateKey(twoDaysAgo);
-        return { startKey: key, endKey: key };
-      }
-      case '7days': {
+      case 'today':
+        return { startKey: formatNYDateKey(subDays(anchorNow, 1)), endKey: formatNYDateKey(subDays(anchorNow, 1)) };
+      case 'yesterday':
+        return { startKey: formatNYDateKey(subDays(anchorNow, 2)), endKey: formatNYDateKey(subDays(anchorNow, 2)) };
+      case '7days':
         return {
           startKey: formatNYDateKey(subDays(anchorNow, 13)),
           endKey: formatNYDateKey(subDays(anchorNow, 7)),
         };
-      }
-      case '30days': {
+      case '30days':
         return {
           startKey: formatNYDateKey(subDays(anchorNow, 59)),
           endKey: formatNYDateKey(subDays(anchorNow, 30)),
         };
-      }
-      case 'alltime': {
+      case 'alltime':
         return { startKey: '2019-01-01', endKey: '2019-12-31' };
-      }
       case 'custom': {
         if (customStartDate && customEndDate) {
           const startAnchor = new Date(`${customStartDate}T12:00:00Z`);
           const endAnchor = new Date(`${customEndDate}T12:00:00Z`);
-          const daysDiff = Math.round((endAnchor.getTime() - startAnchor.getTime()) / (1000 * 60 * 60 * 24));
+          const days = Math.round((endAnchor.getTime() - startAnchor.getTime()) / 86_400_000);
           return {
-            startKey: formatNYDateKey(subDays(startAnchor, daysDiff + 1)),
+            startKey: formatNYDateKey(subDays(startAnchor, days + 1)),
             endKey: formatNYDateKey(subDays(startAnchor, 1)),
           };
         }
-        const key = formatNYDateKey(subDays(anchorNow, 1));
-        return { startKey: key, endKey: key };
+        return { startKey: formatNYDateKey(subDays(anchorNow, 1)), endKey: formatNYDateKey(subDays(anchorNow, 1)) };
       }
-      default: {
-        const key = formatNYDateKey(subDays(anchorNow, 1));
-        return { startKey: key, endKey: key };
-      }
+      default:
+        return { startKey: formatNYDateKey(subDays(anchorNow, 1)), endKey: formatNYDateKey(subDays(anchorNow, 1)) };
     }
-  }, [customEndDate, customStartDate, dateFilter, formatNYDateKey]);
+  }, [customEndDate, customStartDate, dateFilter]);
 
-  const fetchMetrics = useCallback(async () => {
+  const rangeLabel = useMemo(() => {
+    switch (dateFilter) {
+      case 'today':
+        return 'Today';
+      case 'yesterday':
+        return 'Yesterday';
+      case '7days':
+        return 'Last 7 Days';
+      case '30days':
+        return 'Last 30 Days';
+      case 'alltime':
+        return 'All Time';
+      case 'custom':
+        return customStartDate && customEndDate
+          ? `${customStartDate} → ${customEndDate}`
+          : 'Custom Range';
+      default:
+        return '';
+    }
+  }, [dateFilter, customStartDate, customEndDate]);
+
+  const fetchAllMetrics = useCallback(async () => {
     if (!isAdmin) return;
 
     setRefreshing(true);
@@ -335,249 +292,70 @@ const ScoreboardDashboard = () => {
       const { startKey, endKey } = getDateRange();
       const { startKey: prevStartKey, endKey: prevEndKey } = getPreviousDateRange();
 
-      // Fetch current period data
-      const currentMetricQuery = supabase
-        .from('daily_deal_flow')
-        .select('status, call_result, submitted_attorney, submitted_attorney_status')
-        .not('insured_name', 'ilike', 'Test -%')
-        .gte('date', startKey)
-        .lte('date', endKey)
-        .eq('is_callback', activityType === 'followup');
-      const { data, error } = await (currentMetricQuery as unknown as PromiseLike<{
-        data: ScoreboardMetricRow[] | null;
-        error: unknown;
-      }>);
+      const weekKeys = lastNDayKeys(7);
+      const prevWeekKeys = lastNDayKeys(7, subDays(new Date(), 7));
+      const fourteenStart = prevWeekKeys[0];
+      const fourteenEnd = weekKeys[weekKeys.length - 1];
 
-      if (error) throw error;
+      const baseSelect = 'date, status, call_result, submitted_attorney, submitted_attorney_status';
 
-      // Fetch previous period data for comparison
-      const previousMetricQuery = supabase
-        .from('daily_deal_flow')
-        .select('status, call_result, submitted_attorney, submitted_attorney_status')
-        .not('insured_name', 'ilike', 'Test -%')
-        .gte('date', prevStartKey)
-        .lte('date', prevEndKey)
-        .eq('is_callback', activityType === 'followup');
-      const { data: prevData, error: prevError } = await (previousMetricQuery as unknown as PromiseLike<{
-        data: ScoreboardMetricRow[] | null;
-        error: unknown;
-      }>);
+      // Run all three queries in parallel:
+      //   1) the selected-range rows (drives the donut + zone numbers + headline total)
+      //   2) the previous-range rows (drives the headline % delta)
+      //   3) the 14-day window for the weekly candles + opportunities area chart
+      const [rangeRes, prevRangeRes, weeklyRes] = await Promise.all([
+        (supabase
+          .from('daily_deal_flow')
+          .select(baseSelect)
+          .not('insured_name', 'ilike', 'Test -%')
+          .gte('date', startKey)
+          .lte('date', endKey)
+          .eq('is_callback', activityType === 'followup')) as unknown as PromiseLike<{
+            data: ScoreboardDailyRow[] | null; error: unknown;
+          }>,
+        (supabase
+          .from('daily_deal_flow')
+          .select('date')
+          .not('insured_name', 'ilike', 'Test -%')
+          .gte('date', prevStartKey)
+          .lte('date', prevEndKey)
+          .eq('is_callback', activityType === 'followup')) as unknown as PromiseLike<{
+            data: Array<{ date: string | null }> | null; error: unknown;
+          }>,
+        (supabase
+          .from('daily_deal_flow')
+          .select(baseSelect)
+          .not('insured_name', 'ilike', 'Test -%')
+          .gte('date', fourteenStart)
+          .lte('date', fourteenEnd)
+          .eq('is_callback', activityType === 'followup')) as unknown as PromiseLike<{
+            data: ScoreboardDailyRow[] | null; error: unknown;
+          }>,
+      ]);
 
-      if (prevError) throw prevError;
+      if (rangeRes.error) throw rangeRes.error;
+      if (prevRangeRes.error) throw prevRangeRes.error;
+      if (weeklyRes.error) throw weeklyRes.error;
 
-      const currentRows = (data || []) as ScoreboardMetricRow[];
-      const previousRows = (prevData || []) as ScoreboardMetricRow[];
+      const rangeRows = (rangeRes.data || []) as ScoreboardDailyRow[];
+      const prevRangeRows = prevRangeRes.data || [];
+      const weeklyRows = (weeklyRes.data || []) as ScoreboardDailyRow[];
 
-      const totalTransfers = currentRows.length;
-      const prevTotalTransfers = previousRows.length;
-
-      // Count by status field from daily_deal_flow
-      const pendingApproval = currentRows.filter(d =>
-        d.status?.toLowerCase().includes('pending approval') ||
-        d.status?.toLowerCase().includes('pending_approval')
-      ).length;
-
-      const approved = currentRows.filter(d =>
-        d.status?.toLowerCase().includes('approved') ||
-        d.status?.toLowerCase().includes('qualified_approved')
-      ).length;
-
-      const qualified = currentRows.filter(d =>
-        d.call_result?.toLowerCase() === 'qualified' ||
-        d.status?.toLowerCase().includes('qualified')
-      ).length;
-
-      const missingInfo = currentRows.filter(d => {
-        const status = (d.status || '').toLowerCase();
-        return (
-          status === 'qualified_missing_info' ||
-          status.includes('qualified: missing information') ||
-          status.includes('missing information')
-        );
-      }).length;
-
-      const notQualified = currentRows.filter(d =>
-        d.call_result?.toLowerCase() === 'not qualified' ||
-        d.status?.toLowerCase().includes('not_qualified')
-      ).length;
-
-      const returnedToCenter = currentRows.filter(d =>
-        d.status?.toLowerCase().includes('returned to center') ||
-        d.status?.toLowerCase().includes('returned_to_center')
-      ).length;
-
-      // Submitted to Attorney: submitted_attorney is not null AND not "No Coverage"
-      const submittedToAttorney = currentRows.filter(d =>
-        d.submitted_attorney &&
-        d.submitted_attorney_status !== 'nocoverage'
-      ).length;
-
-      // Qualified Payable: status is "qualified_payable"
-      const qualifiedPayable = currentRows.filter(d =>
-        d.status?.toLowerCase() === 'qualified_payable'
-      ).length;
-
-      // No Coverage: submitted_attorney_status is "nocoverage"
-      const noCoverage = currentRows.filter(d =>
-        d.submitted_attorney_status === 'nocoverage'
-      ).length;
-
-      // Approved Attorney: submitted_attorney_status is "approved"
-      const approvedAttorney = currentRows.filter(d =>
-        d.submitted_attorney_status === 'approved'
-      ).length;
-
-      // Denied Attorney: submitted_attorney_status is "denied"
-      const deniedAttorney = currentRows.filter(d =>
-        d.submitted_attorney_status === 'denied'
-      ).length;
-
-      // Calculate performance rates based on status field
-      // Transfer Rate: Total transfers that moved forward / Total Transfers
-      const transferCount = currentRows.filter(d =>
-        d.status && !d.status.toLowerCase().includes('incomplete') &&
-        !d.status.toLowerCase().includes('not_qualified')
-      ).length;
-      const transferTotal = totalTransfers;
-      const transferRate = transferTotal > 0 ? (transferCount / transferTotal) * 100 : 0;
-
-      // Qualifying Rate: call_result is qualified / Total Transfers
-      const qualifyingCount = currentRows.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length;
-      const qualifyingTotal = totalTransfers;
-      const qualifyingRate = qualifyingTotal > 0 ? (qualifyingCount / qualifyingTotal) * 100 : 0;
-
-      // Billable Rate: Status is qualified_payable OR label is Qualified/Payable
-      const billableCount = currentRows.filter(d => {
-        const status = (d.status || '').toLowerCase();
-        return status === 'qualified_payable' || status.includes('qualified/payable');
-      }).length;
-      const billableTotal = totalTransfers;
-      const billableRate = billableTotal > 0 ? (billableCount / billableTotal) * 100 : 0;
-
-      // Return Back Rate: Returned to Center / Total Transfers
-      const returnBackCount = returnedToCenter;
-      const returnBackTotal = totalTransfers;
-      const returnBackRate = returnBackTotal > 0 ? (returnBackCount / returnBackTotal) * 100 : 0;
-
-      // Calculate previous period metrics for comparison
-      const prevPendingApproval = previousRows.filter(d =>
-        d.status?.toLowerCase().includes('pending approval') ||
-        d.status?.toLowerCase().includes('pending_approval')
-      ).length;
-
-      const prevApproved = previousRows.filter(d =>
-        d.status?.toLowerCase().includes('approved') ||
-        d.status?.toLowerCase().includes('qualified_approved')
-      ).length;
-
-      const prevQualified = previousRows.filter(d =>
-        d.call_result?.toLowerCase() === 'qualified' ||
-        d.status?.toLowerCase().includes('qualified')
-      ).length;
-
-      const prevMissingInfo = previousRows.filter(d => {
-        const status = (d.status || '').toLowerCase();
-        return (
-          status === 'qualified_missing_info' ||
-          status.includes('qualified: missing information') ||
-          status.includes('missing information')
-        );
-      }).length;
-
-      const prevNotQualified = previousRows.filter(d =>
-        d.call_result?.toLowerCase() === 'not qualified' ||
-        d.status?.toLowerCase().includes('not_qualified')
-      ).length;
-
-      const prevReturnedToCenter = previousRows.filter(d =>
-        d.status?.toLowerCase().includes('returned to center') ||
-        d.status?.toLowerCase().includes('returned_to_center')
-      ).length;
-
-      // Previous period calculations for new metrics
-      const prevSubmittedToAttorney = previousRows.filter(d =>
-        d.submitted_attorney &&
-        d.submitted_attorney_status !== 'nocoverage'
-      ).length;
-
-      const prevQualifiedPayable = previousRows.filter(d =>
-        d.status?.toLowerCase() === 'qualified_payable'
-      ).length;
-
-      // Previous period calculations for new metrics
-      const prevNoCoverage = previousRows.filter(d =>
-        d.submitted_attorney_status === 'nocoverage'
-      ).length;
-
-      const prevApprovedAttorney = previousRows.filter(d =>
-        d.submitted_attorney_status === 'approved'
-      ).length;
-
-      const prevDeniedAttorney = previousRows.filter(d =>
-        d.submitted_attorney_status === 'denied'
-      ).length;
-
-      const prevTransferCount = previousRows.filter(d =>
-        d.status && !d.status.toLowerCase().includes('incomplete') &&
-        !d.status.toLowerCase().includes('not_qualified')
-      ).length;
-      const prevTransferRate = prevTotalTransfers > 0 ? (prevTransferCount / prevTotalTransfers) * 100 : 0;
-
-      const prevQualifyingCount = previousRows.filter(d => (d.call_result || '').toLowerCase() === 'qualified').length;
-      const prevQualifyingRate = prevTotalTransfers > 0 ? (prevQualifyingCount / prevTotalTransfers) * 100 : 0;
-
-      const prevBillableCount = previousRows.filter(d => {
-        const status = (d.status || '').toLowerCase();
-        return status === 'qualified_payable' || status.includes('qualified/payable');
-      }).length;
-      const prevBillableRate = prevTotalTransfers > 0 ? (prevBillableCount / prevTotalTransfers) * 100 : 0;
-
-      const prevReturnBackRate = prevTotalTransfers > 0 ? (prevReturnedToCenter / prevTotalTransfers) * 100 : 0;
-
-      // Calculate percentage changes
-      const calculateChange = (current: number, previous: number): number => {
-        if (previous === 0) return current > 0 ? 100 : 0;
-        return ((current - previous) / previous) * 100;
+      const aggregated: RangeMetrics = {
+        total: rangeRows.length,
+        qualified: rangeRows.filter(isQualified).length,
+        notQualified: rangeRows.filter(isNotQualified).length,
+        noCoverage: rangeRows.filter(isNoCoverage).length,
+        submittedToAttorney: rangeRows.filter(isSubmittedToAttorney).length,
+        approvedAttorney: rangeRows.filter(isApprovedAttorney).length,
+        deniedAttorney: rangeRows.filter(isDeniedAttorney).length,
+        qualifiedPayable: rangeRows.filter(isQualifiedPayable).length,
       };
+      setRangeMetrics(aggregated);
+      setPrevRangeTotal(prevRangeRows.length);
 
-      setMetrics({
-        totalTransfers,
-        pendingApproval,
-        approved,
-        qualified,
-        notQualified,
-        submittedToAttorney,
-        qualifiedPayable,
-        noCoverage,
-        approvedAttorney,
-        deniedAttorney,
-        transferRate,
-        qualifyingRate,
-        billableRate,
-        returnBackRate,
-        transferCount,
-        transferTotal,
-        qualifyingCount,
-        qualifyingTotal,
-        billableCount,
-        billableTotal,
-        returnBackCount,
-        returnBackTotal,
-        totalTransfersChange: calculateChange(totalTransfers, prevTotalTransfers),
-        pendingApprovalChange: calculateChange(pendingApproval, prevPendingApproval),
-        approvedChange: calculateChange(approved, prevApproved),
-        qualifiedChange: calculateChange(qualified, prevQualified),
-        notQualifiedChange: calculateChange(notQualified, prevNotQualified),
-        submittedToAttorneyChange: calculateChange(submittedToAttorney, prevSubmittedToAttorney),
-        qualifiedPayableChange: calculateChange(qualifiedPayable, prevQualifiedPayable),
-        noCoverageChange: calculateChange(noCoverage, prevNoCoverage),
-        approvedAttorneyChange: calculateChange(approvedAttorney, prevApprovedAttorney),
-        deniedAttorneyChange: calculateChange(deniedAttorney, prevDeniedAttorney),
-        transferRateChange: calculateChange(transferRate, prevTransferRate),
-        qualifyingRateChange: calculateChange(qualifyingRate, prevQualifyingRate),
-        billableRateChange: calculateChange(billableRate, prevBillableRate),
-        returnBackRateChange: calculateChange(returnBackRate, prevReturnBackRate),
-      });
+      setWeekly(bucketizeByDay(weeklyRows, weekKeys));
+      setPrevWeekly(bucketizeByDay(weeklyRows, prevWeekKeys));
     } catch (error) {
       console.error('Error fetching metrics:', error);
       toast({
@@ -593,9 +371,9 @@ const ScoreboardDashboard = () => {
 
   useEffect(() => {
     if (isAdmin) {
-      fetchMetrics();
+      fetchAllMetrics();
     }
-  }, [fetchMetrics, isAdmin]);
+  }, [fetchAllMetrics, isAdmin]);
 
   // Fetch filtered data when selectedFilter or date filter changes
   useEffect(() => {
@@ -609,56 +387,7 @@ const ScoreboardDashboard = () => {
       setFilteredLoading(true);
       setCurrentPage(1);
       try {
-        // Calculate date range directly in the effect
-        const now = new Date();
-        const anchorNow = new Date(now);
-        anchorNow.setUTCHours(12, 0, 0, 0);
-
-        let startKey: string;
-        let endKey: string;
-
-        switch (dateFilter) {
-          case 'today': {
-            startKey = formatNYDateKey(anchorNow);
-            endKey = startKey;
-            break;
-          }
-          case 'yesterday': {
-            const yesterday = subDays(anchorNow, 1);
-            startKey = formatNYDateKey(yesterday);
-            endKey = startKey;
-            break;
-          }
-          case '7days': {
-            startKey = formatNYDateKey(subDays(anchorNow, 6));
-            endKey = formatNYDateKey(anchorNow);
-            break;
-          }
-          case '30days': {
-            startKey = formatNYDateKey(subDays(anchorNow, 29));
-            endKey = formatNYDateKey(anchorNow);
-            break;
-          }
-          case 'alltime': {
-            startKey = '2020-01-01';
-            endKey = formatNYDateKey(anchorNow);
-            break;
-          }
-          case 'custom': {
-            if (customStartDate && customEndDate) {
-              startKey = customStartDate;
-              endKey = customEndDate;
-            } else {
-              startKey = formatNYDateKey(anchorNow);
-              endKey = startKey;
-            }
-            break;
-          }
-          default: {
-            startKey = formatNYDateKey(anchorNow);
-            endKey = startKey;
-          }
-        }
+        const { startKey, endKey } = getDateRange();
 
         const filteredQuery = supabase
           .from('daily_deal_flow')
@@ -684,42 +413,25 @@ const ScoreboardDashboard = () => {
             filtered = rows;
             break;
           case 'qualified':
-            filtered = rows.filter((d) =>
-              d.call_result?.toLowerCase() === 'qualified' ||
-              d.status?.toLowerCase().includes('qualified')
-            );
+            filtered = rows.filter(isQualified);
             break;
           case 'not_qualified':
-            filtered = rows.filter((d) =>
-              d.call_result?.toLowerCase() === 'not qualified' ||
-              d.status?.toLowerCase().includes('not_qualified')
-            );
+            filtered = rows.filter(isNotQualified);
             break;
           case 'submitted_to_attorney':
-            filtered = rows.filter((d) =>
-              d.submitted_attorney &&
-              d.submitted_attorney_status !== 'nocoverage'
-            );
+            filtered = rows.filter(isSubmittedToAttorney);
             break;
           case 'qualified_payable':
-            filtered = rows.filter((d) =>
-              d.status?.toLowerCase() === 'qualified_payable'
-            );
+            filtered = rows.filter(isQualifiedPayable);
             break;
           case 'no_coverage':
-            filtered = rows.filter((d) =>
-              d.submitted_attorney_status === 'nocoverage'
-            );
+            filtered = rows.filter(isNoCoverage);
             break;
           case 'approved_attorney':
-            filtered = rows.filter((d) =>
-              d.submitted_attorney_status === 'approved'
-            );
+            filtered = rows.filter(isApprovedAttorney);
             break;
           case 'denied_attorney':
-            filtered = rows.filter((d) =>
-              d.submitted_attorney_status === 'denied'
-            );
+            filtered = rows.filter(isDeniedAttorney);
             break;
           default:
             filtered = [];
@@ -739,26 +451,14 @@ const ScoreboardDashboard = () => {
     };
 
     fetchFilteredData();
-  }, [selectedFilter, dateFilter, customStartDate, customEndDate, activityType, isAdmin, toast, formatNYDateKey]);
+  }, [selectedFilter, getDateRange, activityType, isAdmin, toast]);
 
   const handleRefresh = () => {
-    fetchMetrics();
+    fetchAllMetrics();
     toast({
       title: "Refreshing...",
       description: "Fetching latest metrics",
     });
-  };
-
-  const getPerformanceIcon = (rate: number, target: number) => {
-    if (rate > target) return <TrendingUp className="h-4 w-4 text-green-600" />;
-    if (rate < target) return <TrendingDown className="h-4 w-4 text-red-600" />;
-    return <Minus className="h-4 w-4 text-gray-600" />;
-  };
-
-  const getPerformanceColor = (rate: number, target: number) => {
-    if (rate > target) return 'text-green-600';
-    if (rate < target) return 'text-red-600';
-    return 'text-gray-600';
   };
 
   const handleDetailsClick = async (phoneNumber: string | null, notes: string | null = null) => {
@@ -770,11 +470,7 @@ const ScoreboardDashboard = () => {
     setCallRecordings([]);
 
     try {
-      // Get date range from current filter and convert to timestamps
       const { startKey, endKey } = getDateRange();
-
-      // Parse the date keys (yyyy-MM-dd format) to timestamps
-      // Start of day for startKey, end of day for endKey
       const fromTimestamp = Math.floor(new Date(`${startKey}T00:00:00Z`).getTime() / 1000);
       const toTimestamp = Math.floor(new Date(`${endKey}T23:59:59Z`).getTime() / 1000);
 
@@ -802,6 +498,30 @@ const ScoreboardDashboard = () => {
 
   const showLeadStateColumn = true;
 
+  const filteredTitle = useMemo(() => {
+    switch (selectedFilter) {
+      case 'total_transfers':
+        return activityType === 'inbound' ? 'All Inbound BPO Transfers' : 'All Followup Calls';
+      case 'qualified':
+        return 'Qualified Records';
+      case 'not_qualified':
+        return 'Not Qualified Records';
+      case 'qualified_payable':
+        return 'Qualified Payable Records';
+      case 'submitted_to_attorney':
+        return 'Submitted to Attorney Records';
+      case 'no_coverage':
+        return 'No Coverage Records';
+      case 'approved_attorney':
+        return 'Approved Attorney Records';
+      case 'denied_attorney':
+        return 'Denied Attorney Records';
+      default:
+        return '';
+    }
+  }, [selectedFilter, activityType]);
+  const isInboundTransferList = selectedFilter === 'total_transfers' && activityType === 'inbound';
+
   if (loading || !isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -814,435 +534,279 @@ const ScoreboardDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
-        <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-zinc-950 text-white">
+      <div className="relative min-h-screen">
+        {/* Dim orange wash from the top, fading to pure black */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_at_top,hsl(var(--primary)/0.18),transparent_60%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
 
-          {/* Date Filter - Compact */}
-          <Card className="border">
-            <CardContent className="pt-4 sm:pt-6">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <Label htmlFor="time-range" className="text-sm font-medium">Date Filter:</Label>
-                </div>
-                <Select value={dateFilter} onValueChange={setDateFilter}>
-                  <SelectTrigger id="time-range" className="w-full sm:w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="yesterday">Yesterday</SelectItem>
-                    <SelectItem value="7days">Last 7 Days</SelectItem>
-                    <SelectItem value="30days">Last 30 Days</SelectItem>
-                    <SelectItem value="alltime">All Time</SelectItem>
-                    <SelectItem value="custom">Custom Range</SelectItem>
-                  </SelectContent>
-                </Select>
+        <div className="relative container mx-auto px-2 sm:px-4 py-6 sm:py-8">
+          <div className="max-w-7xl mx-auto space-y-5">
+            <div className="flex flex-col gap-2">
+              <span className="inline-flex items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-wider text-primary">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
+                Dashboard
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
+                {activityType === 'inbound' ? 'Publisher activity' : 'Internal activity'}
+              </h1>
+            </div>
 
-                {dateFilter === 'custom' && (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-                    <Input
-                      id="start-date"
-                      type="date"
-                      value={customStartDate}
-                      onChange={(e) => setCustomStartDate(e.target.value)}
-                      className="w-full sm:w-[160px]"
-                      placeholder="Start Date"
-                    />
-                    <span className="text-muted-foreground hidden sm:inline">to</span>
-                    <Input
-                      id="end-date"
-                      type="date"
-                      value={customEndDate}
-                      onChange={(e) => setCustomEndDate(e.target.value)}
-                      className="w-full sm:w-[160px]"
-                      placeholder="End Date"
-                    />
-                  </div>
-                )}
-                <Button
-                  variant="outline"
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:ml-auto"
-                >
-                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
+            <div
+              className="animate-fade-in-up motion-reduce:animate-none"
+              style={{ animationDelay: "80ms" }}
+            >
+              <FilterBar
+                activityType={activityType}
+                onActivityTypeChange={setActivityType}
+                dateFilter={dateFilter}
+                onDateFilterChange={setDateFilter}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
+                onCustomStartChange={setCustomStartDate}
+                onCustomEndChange={setCustomEndDate}
+                onRefresh={handleRefresh}
+                refreshing={refreshing}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div
+                className="h-full animate-fade-in-up motion-reduce:animate-none"
+                style={{ animationDelay: "140ms" }}
+              >
+                <WeeklyCallsCard
+                  activityType={activityType}
+                  weekly={weekly}
+                  rangeTotal={rangeMetrics.total}
+                  prevRangeTotal={prevRangeTotal}
+                  rangeLabel={rangeLabel}
+                  loading={refreshing}
+                />
               </div>
-            </CardContent>
-          </Card>
+              <div
+                className="h-full animate-fade-in-up motion-reduce:animate-none"
+                style={{ animationDelay: "200ms" }}
+              >
+                <QualificationDonutCard
+                  qualified={rangeMetrics.qualified}
+                  notQualified={rangeMetrics.notQualified}
+                  noCoverage={rangeMetrics.noCoverage}
+                  selectedFilter={selectedFilter}
+                  onSegmentClick={setSelectedFilter}
+                  loading={refreshing}
+                />
+              </div>
+            </div>
 
-          {/* Activity Type Tabs */}
-          <Card className="border">
-            <CardContent className="pt-4 sm:pt-6">
-              <Tabs value={activityType} onValueChange={(value) => setActivityType(value as 'inbound' | 'followup')} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger
-                    value="inbound"
-                    className={`flex items-center gap-2 transition-all ${activityType === 'inbound' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-blue-900' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900'}`}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:items-stretch">
+              <div
+                className="h-full animate-fade-in-up motion-reduce:animate-none"
+                style={{ animationDelay: "260ms" }}
+              >
+                <AttorneyZonesCard
+                  submitted={rangeMetrics.submittedToAttorney}
+                  approved={rangeMetrics.approvedAttorney}
+                  denied={rangeMetrics.deniedAttorney}
+                  qualifiedPayable={rangeMetrics.qualifiedPayable}
+                  selectedFilter={selectedFilter}
+                  onZoneClick={setSelectedFilter}
+                  loading={refreshing}
+                />
+              </div>
+              <div className="flex h-full flex-col gap-4">
+                <div
+                  className="flex-1 animate-fade-in-up motion-reduce:animate-none"
+                  style={{ animationDelay: "320ms" }}
+                >
+                  <OpportunitiesAreaCard
+                    weekly={weekly}
+                    prevWeekly={prevWeekly}
+                    loading={refreshing}
+                  />
+                </div>
+                <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <div
+                    className="h-full min-w-0 animate-fade-in-up motion-reduce:animate-none"
+                    style={{ animationDelay: "370ms" }}
                   >
-                    <Phone className="h-4 w-4" />
-                    Publisher Activity
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="followup"
-                    className={`flex items-center gap-2 transition-all ${activityType === 'followup' ? 'bg-orange-500 text-white shadow-lg shadow-orange-200 dark:shadow-orange-900' : 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:hover:bg-orange-900'}`}
+                    <QuickLinkCard
+                      title="Recent Transfers"
+                      to="/closer-portal"
+                      icon={Briefcase}
+                    />
+                  </div>
+                  <div
+                    className="h-full min-w-0 animate-fade-in-up motion-reduce:animate-none"
+                    style={{ animationDelay: "410ms" }}
                   >
-                    <Clock className="h-4 w-4" />
-                    Internal Activity
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </CardContent>
-          </Card>
+                    <QuickLinkCard
+                      title="Team Performance"
+                      to="/closer-scoreboard"
+                      icon={Users}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
 
-          {/* Key Metrics */}
-          <div>
-            <h2 className="text-lg sm:text-xl font-semibold mb-4">
-              {activityType === 'inbound' ? 'Publisher Activity Metrics' : 'Internal Activity Metrics'}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Transfers */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'total_transfers' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900' : 'from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900'} border-2 ${selectedFilter === 'total_transfers' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-blue-200 dark:border-blue-800' : 'border-orange-200 dark:border-orange-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('total_transfers')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-blue-500' : 'bg-orange-500'}`}>
-                      <Send className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>
-                      {activityType === 'inbound' ? 'Total Inbound BPO Transfers' : 'Total FollowUp Calls'}
-                    </p>
-                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-blue-900 dark:text-blue-100' : 'text-orange-900 dark:text-orange-100'}`}>{metrics.totalTransfers}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.totalTransfersChange > 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.totalTransfersChange < 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.totalTransfersChange > 0 ? '+' : ''}{metrics.totalTransfersChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+          {/* Filtered records — always visible, mirrors the active card filter */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-semibold text-white">
+                  {filteredTitle || 'Records'}
+                </h2>
+                {!filteredLoading && (
+                  <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-primary">
+                    {filteredData.length.toLocaleString()} rows
+                  </span>
+                )}
+              </div>
+            </div>
 
-              {/* Qualified */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900' : 'from-teal-50 to-teal-100 dark:from-teal-950 dark:to-teal-900'} border-2 ${selectedFilter === 'qualified' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-emerald-200 dark:border-emerald-800' : 'border-teal-200 dark:border-teal-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-emerald-500' : 'bg-teal-500'}`}>
-                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-emerald-700 dark:text-emerald-300' : 'text-teal-700 dark:text-teal-300'}`}>
-                      {activityType === 'inbound' ? 'Qualified Inbound' : 'Qualified Followup'}
-                    </p>
-                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-emerald-900 dark:text-emerald-100' : 'text-teal-900 dark:text-teal-100'}`}>{metrics.qualified}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.qualifiedChange > 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.qualifiedChange < 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.qualifiedChange > 0 ? '+' : ''}{metrics.qualifiedChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+            <div
+              className="relative overflow-hidden rounded-2xl border border-primary/20 bg-zinc-900/60 backdrop-blur-xl shadow-xl shadow-black/30 transition-colors hover:border-primary/40 animate-fade-in-up motion-reduce:animate-none"
+              style={{ animationDelay: "460ms" }}
+            >
+              {filteredLoading ? (
+                <div className="flex items-center justify-center py-12 text-white/60">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : filteredData.length === 0 ? (
+                <div className="text-center py-12 text-white/55 text-sm">
+                  No records found for the selected filter.
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-white/[0.06] hover:bg-transparent">
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Date</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Customer</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Phone</TableHead>
+                          {showLeadStateColumn && <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">State</TableHead>}
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Agent</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Status</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Call Result</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Submitted Attorney</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wider text-white/45 font-medium">Attorney</TableHead>
+                          <TableHead className="w-16 text-center text-[10px] uppercase tracking-wider text-white/45 font-medium">Details</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredData
+                          .slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage)
+                          .map((row, rowIndex) => {
+                            const absoluteRowIndex = (currentPage - 1) * recordsPerPage + rowIndex;
+                            const useTransferStripe = isInboundTransferList && absoluteRowIndex % 2 === 0;
 
-              {/* Not Qualified */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'not_qualified' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-red-50 to-red-100 dark:from-red-950 dark:to-red-900'} border-2 ${selectedFilter === 'not_qualified' ? 'border-gray-400 dark:border-gray-500' : 'border-red-200 dark:border-red-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('not_qualified')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-red-500 flex items-center justify-center">
-                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
+                            return (
+                              <TableRow
+                                key={row.id}
+                                className={`border-white/[0.05] text-white/85 transition-colors ${
+                                  useTransferStripe
+                                    ? 'bg-primary/[0.2] hover:bg-primary/[0.13]'
+                                    : 'hover:bg-white/[0.04]'
+                                }`}
+                              >
+                                <TableCell className="font-medium tabular-nums text-white">
+                                  {row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}
+                                </TableCell>
+                                <TableCell>{row.insured_name || '-'}</TableCell>
+                                <TableCell className="tabular-nums text-white/70">{row.client_phone_number || '-'}</TableCell>
+                                {showLeadStateColumn && <TableCell className="text-white/70">{row.state || '-'}</TableCell>}
+                                <TableCell className="text-white/70">{row.agent || '-'}</TableCell>
+                                <TableCell className="text-white/70">{row.status || '-'}</TableCell>
+                                <TableCell className="text-white/70">{row.call_result || '-'}</TableCell>
+                                <TableCell className="text-white/70">{row.submitted_attorney || '-'}</TableCell>
+                                <TableCell>
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                                    row.submitted_attorney_status === 'submitted' ? 'border-primary/40 bg-primary/15 text-primary' :
+                                    row.submitted_attorney_status === 'approved' ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' :
+                                    row.submitted_attorney_status === 'denied' ? 'border-rose-500/40 bg-rose-500/15 text-rose-300' :
+                                    row.submitted_attorney_status === 'nocoverage' ? 'border-white/15 bg-white/[0.04] text-white/60' :
+                                    'border-white/15 bg-white/[0.04] text-white/60'
+                                  }`}>
+                                    {row.submitted_attorney_status || '-'}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 text-white/70 hover:bg-primary/15 hover:text-primary"
+                                    onClick={() => {
+                                      setSelectedNotes(row.notes);
+                                      setSelectedPhone(row.client_phone_number);
+                                      setShowCallDialog(true);
+                                      if (row.client_phone_number) {
+                                        handleDetailsClick(row.client_phone_number, row.notes);
+                                      }
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                      </TableBody>
+                    </Table>
                   </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-red-700 dark:text-red-300 uppercase tracking-wide">
-                      {activityType === 'inbound' ? 'Not Qualified Inbound' : 'Not Qualified Followup'}
-                    </p>
-                    <p className="text-3xl sm:text-4xl font-bold text-red-900 dark:text-red-100 mt-2">{metrics.notQualified}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.notQualifiedChange < 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.notQualifiedChange > 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.notQualifiedChange > 0 ? '+' : ''}{metrics.notQualifiedChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
 
-              {/* No Coverage */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'no_coverage' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900'} border-2 ${selectedFilter === 'no_coverage' ? 'border-gray-400 dark:border-gray-500' : 'border-gray-200 dark:border-gray-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('no_coverage')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-gray-500 flex items-center justify-center">
-                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                  {filteredData.length > recordsPerPage && (
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-white/[0.06] bg-white/[0.02]">
+                      <div className="text-xs text-white/55">
+                        Showing {((currentPage - 1) * recordsPerPage) + 1}–
+                        {Math.min(currentPage * recordsPerPage, filteredData.length)} of{' '}
+                        {filteredData.length.toLocaleString()}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-3 text-xs text-white/70 border border-white/10 bg-white/[0.04] hover:bg-primary/15 hover:text-white hover:border-primary/40"
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          Previous
+                        </Button>
+                        {Array.from({ length: Math.ceil(filteredData.length / recordsPerPage) }, (_, i) => i + 1).slice(
+                          Math.max(0, currentPage - 3),
+                          Math.min(Math.ceil(filteredData.length / recordsPerPage), currentPage + 2)
+                        ).map((page) => (
+                          <Button
+                            key={page}
+                            variant="ghost"
+                            size="sm"
+                            className={
+                              currentPage === page
+                                ? 'h-8 w-8 p-0 text-xs bg-primary text-primary-foreground hover:bg-primary/90'
+                                : 'h-8 w-8 p-0 text-xs text-white/70 border border-white/10 bg-white/[0.04] hover:bg-primary/15 hover:text-white hover:border-primary/40'
+                            }
+                            onClick={() => setCurrentPage(page)}
+                          >
+                            {page}
+                          </Button>
+                        ))}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-3 text-xs text-white/70 border border-white/10 bg-white/[0.04] hover:bg-primary/15 hover:text-white hover:border-primary/40"
+                          onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredData.length / recordsPerPage), p + 1))}
+                          disabled={currentPage >= Math.ceil(filteredData.length / recordsPerPage)}
+                        >
+                          Next
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                      {activityType === 'inbound' ? 'No Coverage (Inbound)' : 'No Coverage (Followup)'}
-                    </p>
-                    <p className="text-3xl sm:text-4xl font-bold text-foreground dark:text-gray-100 mt-2">{metrics.noCoverage}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.noCoverageChange < 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.noCoverageChange > 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.noCoverageChange > 0 ? '+' : ''}{metrics.noCoverageChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Submitted to Attorney */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'submitted_to_attorney' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-violet-50 to-violet-100 dark:from-violet-950 dark:to-violet-900'} border-2 ${selectedFilter === 'submitted_to_attorney' ? 'border-gray-400 dark:border-gray-500' : 'border-violet-200 dark:border-violet-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('submitted_to_attorney')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-violet-500 flex items-center justify-center">
-                      <Send className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-violet-700 dark:text-violet-300 uppercase tracking-wide">
-                      {activityType === 'inbound' ? 'Submitted to Attorney (Inbound)' : 'Submitted to Attorney (Followup)'}
-                    </p>
-                    <p className="text-3xl sm:text-4xl font-bold text-violet-900 dark:text-violet-100 mt-2">{metrics.submittedToAttorney}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.submittedToAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.submittedToAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.submittedToAttorneyChange > 0 ? '+' : ''}{metrics.submittedToAttorneyChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Approved Attorney */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'approved_attorney' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-green-50 to-green-100 dark:from-green-950 dark:to-green-900'} border-2 ${selectedFilter === 'approved_attorney' ? 'border-gray-400 dark:border-gray-500' : 'border-green-200 dark:border-green-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('approved_attorney')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-green-500 flex items-center justify-center">
-                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">
-                      {activityType === 'inbound' ? 'Approved Attorney (Inbound)' : 'Approved Attorney (Followup)'}
-                    </p>
-                    <p className="text-3xl sm:text-4xl font-bold text-green-900 dark:text-green-100 mt-2">{metrics.approvedAttorney}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.approvedAttorneyChange > 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.approvedAttorneyChange < 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.approvedAttorneyChange > 0 ? '+' : ''}{metrics.approvedAttorneyChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Denied Attorney */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'denied_attorney' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : 'from-pink-50 to-pink-100 dark:from-pink-950 dark:to-pink-900'} border-2 ${selectedFilter === 'denied_attorney' ? 'border-gray-400 dark:border-gray-500' : 'border-pink-200 dark:border-pink-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('denied_attorney')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-pink-500 flex items-center justify-center">
-                      <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-pink-700 dark:text-pink-300 uppercase tracking-wide">
-                      {activityType === 'inbound' ? 'Denied Attorney (Inbound)' : 'Denied Attorney (Followup)'}
-                    </p>
-                    <p className="text-3xl sm:text-4xl font-bold text-pink-900 dark:text-pink-100 mt-2">{metrics.deniedAttorney}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.deniedAttorneyChange < 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.deniedAttorneyChange > 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.deniedAttorneyChange > 0 ? '+' : ''}{metrics.deniedAttorneyChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Qualified Payable */}
-              <Card className={`bg-gradient-to-br ${selectedFilter === 'qualified_payable' ? 'from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' : activityType === 'inbound' ? 'from-indigo-50 to-indigo-100 dark:from-indigo-950 dark:to-indigo-900' : 'from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900'} border-2 ${selectedFilter === 'qualified_payable' ? 'border-gray-400 dark:border-gray-500' : activityType === 'inbound' ? 'border-indigo-200 dark:border-indigo-800' : 'border-purple-200 dark:border-purple-800'} hover:shadow-lg transition-all cursor-pointer`} onClick={() => setSelectedFilter('qualified_payable')}>
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex items-center justify-center mb-3">
-                    <div className={`h-10 w-10 sm:h-12 sm:w-12 rounded-full flex items-center justify-center ${activityType === 'inbound' ? 'bg-indigo-500' : 'bg-purple-500'}`}>
-                      <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className={`text-sm font-medium uppercase tracking-wide ${activityType === 'inbound' ? 'text-indigo-700 dark:text-indigo-300' : 'text-purple-700 dark:text-purple-300'}`}>
-                      {activityType === 'inbound' ? 'Qualified Payable Inbound' : 'Qualified Payable Followup'}
-                    </p>
-                    <p className={`text-3xl sm:text-4xl font-bold mt-2 ${activityType === 'inbound' ? 'text-indigo-900 dark:text-indigo-100' : 'text-purple-900 dark:text-purple-100'}`}>{metrics.qualifiedPayable}</p>
-                    <p className={`text-xs mt-1 font-medium ${
-                      metrics.qualifiedPayableChange > 0 ? 'text-green-600 dark:text-green-400' :
-                      metrics.qualifiedPayableChange < 0 ? 'text-red-600 dark:text-red-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {metrics.qualifiedPayableChange > 0 ? '+' : ''}{metrics.qualifiedPayableChange.toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+                  )}
+                </>
+              )}
             </div>
           </div>
-
-          {/* Filtered Data Grid */}
-          {selectedFilter && selectedFilter !== '' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl font-semibold">
-                  {selectedFilter === 'total_transfers' && (activityType === 'inbound' ? 'All Inbound BPO Transfers' : 'All FollowUp Calls')}
-                  {selectedFilter === 'qualified' && 'Qualified Records'}
-                  {selectedFilter === 'not_qualified' && 'Not Qualified Records'}
-                  {selectedFilter === 'qualified_payable' && 'Qualified Payable Records'}
-                  {selectedFilter === 'submitted_to_attorney' && 'Submitted to Attorney Records'}
-                  {selectedFilter === 'no_coverage' && 'No Coverage Records'}
-                  {selectedFilter === 'approved_attorney' && 'Approved Attorney Records'}
-                  {selectedFilter === 'denied_attorney' && 'Denied Attorney Records'}
-                </h2>
-                <Button variant="outline" size="sm" onClick={() => {
-                  setSelectedFilter('');
-                  setCurrentPage(1);
-                }}>
-                  Clear
-                </Button>
-              </div>
-
-              <Card className="border-2 border-gray-200 dark:border-gray-700">
-                <CardContent className="p-0">
-                  {filteredLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                    </div>
-                  ) : filteredData.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      No records found for the selected filter.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader className="bg-gray-50 dark:bg-gray-800">
-                            <TableRow>
-                              <TableHead className="font-semibold">Date</TableHead>
-                              <TableHead className="font-semibold">Customer Name</TableHead>
-                              <TableHead className="font-semibold">Phone</TableHead>
-                              {showLeadStateColumn && <TableHead className="font-semibold">State</TableHead>}
-                              <TableHead className="font-semibold">Agent</TableHead>
-                              <TableHead className="font-semibold">Status</TableHead>
-                              <TableHead className="font-semibold">Call Result</TableHead>
-                              <TableHead className="font-semibold">Submitted Attorney</TableHead>
-                              <TableHead className="font-semibold">Attorney Status</TableHead>
-                              <TableHead className="w-16 text-center">Details</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {filteredData
-                              .slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage)
-                              .map((row) => (
-                                <TableRow key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                                  <TableCell className="font-medium">{row.date ? format(parseISO(row.date), 'MMM dd, yyyy') : '-'}</TableCell>
-                                  <TableCell>{row.insured_name || '-'}</TableCell>
-                                  <TableCell>{row.client_phone_number || '-'}</TableCell>
-                                  {showLeadStateColumn && <TableCell>{row.state || '-'}</TableCell>}
-                                  <TableCell>{row.agent || '-'}</TableCell>
-                                  <TableCell>{row.status || '-'}</TableCell>
-                                  <TableCell>{row.call_result || '-'}</TableCell>
-                                  <TableCell>{row.submitted_attorney || '-'}</TableCell>
-                                  <TableCell>
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                      row.submitted_attorney_status === 'submitted' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                                      row.submitted_attorney_status === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                                      row.submitted_attorney_status === 'denied' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                                      row.submitted_attorney_status === 'nocoverage' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
-                                      'bg-gray-100 text-gray-800'
-                                    }`}>
-                                      {row.submitted_attorney_status || '-'}
-                                    </span>
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 w-8 p-0"
-                                      onClick={() => {
-                                        setSelectedNotes(row.notes);
-                                        setSelectedPhone(row.client_phone_number);
-                                        setShowCallDialog(true);
-                                        if (row.client_phone_number) {
-                                          handleDetailsClick(row.client_phone_number, row.notes);
-                                        }
-                                      }}
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-
-                      {/* Pagination */}
-                      {filteredData.length > recordsPerPage && (
-                        <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50 dark:bg-gray-800/50">
-                          <div className="text-sm text-muted-foreground">
-                            Showing {((currentPage - 1) * recordsPerPage) + 1} to {Math.min(currentPage * recordsPerPage, filteredData.length)} of {filteredData.length} entries
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                              disabled={currentPage === 1}
-                            >
-                              Previous
-                            </Button>
-                            <div className="flex items-center gap-1">
-                              {Array.from({ length: Math.ceil(filteredData.length / recordsPerPage) }, (_, i) => i + 1).slice(
-                                Math.max(0, currentPage - 3),
-                                Math.min(Math.ceil(filteredData.length / recordsPerPage), currentPage + 2)
-                              ).map((page) => (
-                                <Button
-                                  key={page}
-                                  variant={currentPage === page ? "default" : "outline"}
-                                  size="sm"
-                                  className="h-8 w-8 p-0"
-                                  onClick={() => setCurrentPage(page)}
-                                >
-                                  {page}
-                                </Button>
-                              ))}
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredData.length / recordsPerPage), p + 1))}
-                              disabled={currentPage >= Math.ceil(filteredData.length / recordsPerPage)}
-                            >
-                              Next
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
 
           {/* Call Recordings Dialog */}
           <Dialog open={showCallDialog} onOpenChange={setShowCallDialog}>
@@ -1260,7 +824,7 @@ const ScoreboardDashboard = () => {
                   </TabsTrigger>
                   <TabsTrigger
                     value="recordings"
-                    className="flex-1 data-[state=active]:bg-green-100 data-[state=active]:text-green-700 dark:data-[state=active]:bg-green-900 dark:data-[state=active]:text-green-300"
+                    className="flex-1 data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900 dark:data-[state=active]:text-emerald-300"
                   >
                     Call Recordings
                   </TabsTrigger>
@@ -1282,13 +846,13 @@ const ScoreboardDashboard = () => {
                   ) : (
                     <div className="space-y-3">
                       {callRecordings.map((call) => (
-                        <div key={call.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                        <div key={call.id} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
                           <div className="flex items-center gap-3">
                             <div className={`p-2 rounded-full ${
-                              call.direction === 'inbound' ? 'bg-blue-100 dark:bg-blue-900' : 'bg-green-100 dark:bg-green-900'
+                              call.direction === 'inbound' ? 'bg-blue-100 dark:bg-blue-900' : 'bg-emerald-100 dark:bg-emerald-900'
                             }`}>
                               <Phone className={`h-4 w-4 ${
-                                call.direction === 'inbound' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'
+                                call.direction === 'inbound' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
                               }`} />
                             </div>
                             <div>
@@ -1298,9 +862,9 @@ const ScoreboardDashboard = () => {
                               <div className="text-xs text-muted-foreground flex items-center gap-2">
                                 <Clock className="h-3 w-3" />
                                 {formatTimestamp(call.started_at)}
-                                <span className="text-gray-400">•</span>
+                                <span className="text-muted-foreground/60">•</span>
                                 {formatDuration(call.duration)}
-                                <span className="text-gray-400">•</span>
+                                <span className="text-muted-foreground/60">•</span>
                                 {call.user?.name || 'Unknown'}
                               </div>
                             </div>
@@ -1331,7 +895,7 @@ const ScoreboardDashboard = () => {
                         </div>
                       ))}
                       {playingRecording && callRecordings.find(c => c.id === playingRecording)?.recording && (
-                        <div className="mt-4 p-4 border rounded-lg bg-white dark:bg-gray-900">
+                        <div className="mt-4 p-4 border rounded-lg bg-card">
                           <audio
                             controls
                             autoPlay
@@ -1347,6 +911,7 @@ const ScoreboardDashboard = () => {
               </Tabs>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </div>
     </div>

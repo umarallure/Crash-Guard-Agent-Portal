@@ -413,7 +413,7 @@ const App = () => (
               path="/scoreboard-dashboard"
               element={
                 <ProtectedRoute>
-                  <AppShell title="Score Board">
+                  <AppShell title="Dashboard">
                     <ScoreboardDashboard />
                   </AppShell>
                 </ProtectedRoute>
