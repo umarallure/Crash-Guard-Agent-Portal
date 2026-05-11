@@ -23,6 +23,7 @@ export interface CloserTask {
   portal?: "closer" | "lawyer_onboarding";
   lead_name?: string | null;
   lead_phone_number?: string | null;
+  lead_status?: string | null;
 }
 
 export interface CloserTaskNote {
