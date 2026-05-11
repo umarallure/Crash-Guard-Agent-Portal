@@ -220,7 +220,7 @@ const AppShell = ({
     // Keep nav aligned with existing access rules.
     const items: NavItem[] = [
       {
-        label: 'Score Board',
+        label: 'Dashboard',
         to: '/scoreboard-dashboard',
         icon: <TrendingUp className="h-4 w-4 text-current" />,
         show: isAdmin && canAccessAgentPages,

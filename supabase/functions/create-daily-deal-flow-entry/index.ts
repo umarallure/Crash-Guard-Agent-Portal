@@ -21,6 +21,9 @@ serve(async (req)=>{
       ghl_location_id, 
       ghl_opportunity_id,
       ghl_contact_id,
+      email,
+      state,
+      zip_code,
       accident_date,
       prior_attorney_involved,
       prior_attorney_details,
@@ -39,7 +42,8 @@ serve(async (req)=>{
       contact_number,
       contact_address,
       status,
-      call_result
+      call_result,
+      tag
     } = await req.json();
     
     if (!submission_id) {
@@ -60,21 +64,7 @@ serve(async (req)=>{
     if (ghl_contact_id) {
       console.log('GHL Contact ID:', ghl_contact_id);
     }
-    const { data: existingEntry } = await supabase.from('daily_deal_flow').select('id').eq('submission_id', submission_id).maybeSingle();
-    if (existingEntry) {
-      return new Response(JSON.stringify({
-        success: true,
-        message: 'Entry already exists',
-        id: existingEntry.id,
-        submission_id: submission_id
-      }), {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    const { data, error } = await supabase.from('daily_deal_flow').insert({
+    const entryPayload = {
       submission_id,
       lead_vendor,
       insured_name,
@@ -83,6 +73,9 @@ serve(async (req)=>{
       ghl_location_id,
       ghl_opportunity_id,
       ghlcontactid: ghl_contact_id,
+      email: email ?? null,
+      state: state ?? null,
+      zip_code: zip_code ?? null,
       accident_date,
       prior_attorney_involved: prior_attorney_involved !== undefined ? prior_attorney_involved : false,
       prior_attorney_details,
@@ -105,6 +98,7 @@ serve(async (req)=>{
       licensed_agent_account: null,
       status: status ?? null,
       call_result: call_result ?? null,
+      tag: tag ?? null,
       carrier: null,
       product_type: null,
       draft_date: null,
@@ -117,7 +111,82 @@ serve(async (req)=>{
       carrier_audit: null,
       product_type_carrier: null,
       level_or_gi: null
-    }).select().single();
+    };
+    const { data: existingEntry } = await supabase
+      .from('daily_deal_flow')
+      .select('id')
+      .eq('submission_id', submission_id)
+      .eq('date', date)
+      .maybeSingle();
+    if (existingEntry) {
+      const existingUpdatePayload: Record<string, unknown> = {
+        lead_vendor,
+        insured_name,
+        client_phone_number: phone_number,
+        ghl_location_id,
+        ghl_opportunity_id,
+        ghlcontactid: ghl_contact_id,
+        email,
+        state,
+        zip_code,
+        accident_date,
+        prior_attorney_involved,
+        prior_attorney_details,
+        medical_attention,
+        police_attended,
+        accident_location,
+        accident_scenario,
+        insured,
+        injuries,
+        vehicle_registration,
+        insurance_company,
+        third_party_vehicle_registration,
+        other_party_admit_fault,
+        passengers_count,
+        contact_name,
+        contact_number,
+        contact_address,
+        tag,
+        updated_at: new Date().toISOString()
+      };
+
+      if (status !== undefined) {
+        existingUpdatePayload.status = status ?? null;
+      }
+      if (call_result !== undefined) {
+        existingUpdatePayload.call_result = call_result ?? null;
+      }
+
+      Object.keys(existingUpdatePayload).forEach((key)=>{
+        if (existingUpdatePayload[key] === undefined) {
+          delete existingUpdatePayload[key];
+        }
+      });
+
+      const { data, error } = await supabase
+        .from('daily_deal_flow')
+        .update(existingUpdatePayload)
+        .eq('id', existingEntry.id)
+        .select()
+        .single();
+      if (error) {
+        console.error('Error updating daily deal flow entry:', error);
+        throw new Error(`Failed to update entry: ${error.message}`);
+      }
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Entry updated successfully',
+        id: existingEntry.id,
+        submission_id: submission_id,
+        data
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+    const { data, error } = await supabase.from('daily_deal_flow').insert(entryPayload).select().single();
     if (error) {
       console.error('Error inserting daily deal flow entry:', error);
       throw new Error(`Failed to create entry: ${error.message}`);
