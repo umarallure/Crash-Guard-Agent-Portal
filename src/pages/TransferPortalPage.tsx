@@ -86,7 +86,20 @@ type SharedPipelineFilterStorage = {
 
 type TransferFilterStorage = {
   sourceTypeFilter: string;
+  publisherFilters: string[];
 };
+
+const toStringArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? Array.from(
+        new Set(
+          value
+            .filter((item): item is string => typeof item === "string")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        ),
+      )
+    : [];
 
 const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
   if (typeof window === "undefined") return null;
@@ -119,6 +132,7 @@ const readTransferFilters = (): TransferFilterStorage | null => {
     const parsed = JSON.parse(raw) as Partial<TransferFilterStorage>;
     return {
       sourceTypeFilter: typeof parsed.sourceTypeFilter === "string" ? parsed.sourceTypeFilter : "__ALL__",
+      publisherFilters: toStringArray(parsed.publisherFilters),
     };
   } catch {
     return null;
@@ -354,11 +368,16 @@ const TransferPortalPage = () => {
   const [allTimeTransfers, setAllTimeTransfers] = useState(0);
   const savedSharedFilters = useMemo(() => readSharedPipelineFilters(), []);
   const savedTransferFilters = useMemo(() => readTransferFilters(), []);
+  const savedPublisherFilters = useMemo(() => {
+    if (savedTransferFilters?.publisherFilters.length) return savedTransferFilters.publisherFilters;
+    const legacyPublisher = savedSharedFilters?.leadVendorFilter;
+    return legacyPublisher && legacyPublisher !== "__ALL__" ? [legacyPublisher] : [];
+  }, [savedSharedFilters, savedTransferFilters]);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(savedSharedFilters?.datePreset ?? "all");
   const [customStartDate, setCustomStartDate] = useState(savedSharedFilters?.customStartDate ?? "");
   const [customEndDate, setCustomEndDate] = useState(savedSharedFilters?.customEndDate ?? "");
   const [sourceTypeFilter, setSourceTypeFilter] = useState(savedTransferFilters?.sourceTypeFilter ?? "__ALL__");
-  const [leadVendorFilter, setLeadVendorFilter] = useState(savedSharedFilters?.leadVendorFilter ?? "__ALL__");
+  const [publisherFilters, setPublisherFilters] = useState<string[]>(savedPublisherFilters);
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
@@ -408,9 +427,10 @@ const TransferPortalPage = () => {
       filtered = filtered.filter(record => record.source_type === sourceTypeFilter);
     }
 
-    // Apply lead vendor filter
-    if (leadVendorFilter !== "__ALL__") {
-      filtered = filtered.filter((record) => (record.lead_vendor || '') === leadVendorFilter);
+    // Apply publisher filter
+    if (publisherFilters.length > 0) {
+      const selectedPublishers = new Set(publisherFilters);
+      filtered = filtered.filter((record) => selectedPublishers.has((record.lead_vendor || '').trim()));
     }
 
     if (tagFilter !== ALL_LEAD_TAGS_VALUE) {
@@ -439,7 +459,7 @@ const TransferPortalPage = () => {
     return filtered;
   };
 
-  const leadVendorOptions = useMemo(() => {
+  const publisherOptions = useMemo(() => {
     const set = new Set<string>();
     (data || []).forEach((r) => {
       const v = (r.lead_vendor || '').trim();
@@ -564,7 +584,7 @@ const TransferPortalPage = () => {
   useEffect(() => {
     setFilteredData(applyFilters(data));
     setCurrentPage(1); // Reset to first page when filters change
-  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, leadVendorFilter, selectedStates, searchTerm, tagFilter]);
+  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, publisherFilters, selectedStates, searchTerm, tagFilter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -573,23 +593,24 @@ const TransferPortalPage = () => {
       datePreset,
       customStartDate,
       customEndDate,
-      leadVendorFilter,
+      leadVendorFilter: publisherFilters.length === 1 ? publisherFilters[0] : "__ALL__",
       selectedStates,
       searchTerm: "",
     };
 
     window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
-  }, [datePreset, customStartDate, customEndDate, leadVendorFilter, selectedStates]);
+  }, [datePreset, customStartDate, customEndDate, publisherFilters, selectedStates]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const transferFiltersToPersist: TransferFilterStorage = {
       sourceTypeFilter,
+      publisherFilters,
     };
 
     window.localStorage.setItem(TRANSFER_FILTER_STORAGE_KEY, JSON.stringify(transferFiltersToPersist));
-  }, [sourceTypeFilter]);
+  }, [sourceTypeFilter, publisherFilters]);
 
   // Pagination calculations
   const stageFilteredData = useMemo(() => {
@@ -1107,7 +1128,7 @@ const TransferPortalPage = () => {
       'Submission ID',
       'Date',
       'Customer Name',
-      'Lead Vendor',
+      'Publisher',
       'Phone Number',
       'Buffer Agent',
       'Agent',
@@ -1235,7 +1256,7 @@ const TransferPortalPage = () => {
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by name, phone, vendor…"
+                placeholder="Search by name, phone, publisher…"
                 className="pr-4"
               />
             </div>
@@ -1249,7 +1270,7 @@ const TransferPortalPage = () => {
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Filters
               {/* active-filter dot */}
-              {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || selectedStage !== "all") && (
+              {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0 || selectedStage !== "all") && (
                 <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
               )}
             </Button>
@@ -1297,7 +1318,7 @@ const TransferPortalPage = () => {
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-foreground">Filters</span>
-                    {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || leadVendorFilter !== "__ALL__" || selectedStage !== "all" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
+                    {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0 || selectedStage !== "all" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1306,7 +1327,7 @@ const TransferPortalPage = () => {
                           setCustomEndDate("");
                           setSourceTypeFilter("__ALL__");
                           setSelectedStates([]);
-                          setLeadVendorFilter("__ALL__");
+                          setPublisherFilters([]);
                           setTagFilter(ALL_LEAD_TAGS_VALUE);
                           setSelectedStage("all");
                           setCurrentPage(1);
@@ -1343,26 +1364,21 @@ const TransferPortalPage = () => {
                     />
                   </div>
 
-                  {/* Lead Vendor */}
+                  {/* Publisher */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Lead Vendor
+                      Publisher
                     </label>
-                    <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All Vendors" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="__ALL__">All Vendors</SelectItem>
-                          {leadVendorOptions.map((vendor) => (
-                            <SelectItem key={vendor} value={vendor}>
-                              {vendor}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+                    <MultiSelect
+                      options={publisherOptions}
+                      selected={publisherFilters}
+                      onChange={setPublisherFilters}
+                      placeholder="All Publishers"
+                      className="w-full"
+                      maxVisibleBadges={null}
+                      selectedDisplayMode="scroll"
+                      highlightSelectedOptions={false}
+                    />
                   </div>
 
                   <div className="space-y-1.5">
