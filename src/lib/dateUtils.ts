@@ -3,6 +3,7 @@
  * All date operations across the application should use these functions
  * to ensure consistency with EST timezone.
  */
+import { format, isValid } from 'date-fns';
 
 /**
  * Get current EST date as YYYY-MM-DD string
@@ -95,6 +96,54 @@ export const parseESTDate = (dateString: string): Date => {
   return date;
 };
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const parseDateForDisplay = (value: Date | string | null | undefined): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return isValid(value) ? value : null;
+
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+
+  const parsed = DATE_ONLY_PATTERN.test(trimmed)
+    ? parseESTDate(trimmed)
+    : new Date(trimmed);
+
+  return isValid(parsed) ? parsed : null;
+};
+
+const fallbackDateDisplay = (value: Date | string | null | undefined, fallback: string) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || fallback;
+  }
+
+  return fallback;
+};
+
+/**
+ * Format a stored date for user-facing US display.
+ * Keeps YYYY-MM-DD storage values timezone-safe while rendering as MM/DD/YYYY.
+ */
+export const formatDateUS = (
+  value: Date | string | null | undefined,
+  fallback = ''
+): string => {
+  const parsed = parseDateForDisplay(value);
+  return parsed ? format(parsed, 'MM/dd/yyyy') : fallbackDateDisplay(value, fallback);
+};
+
+/**
+ * Format a stored timestamp for user-facing US display.
+ */
+export const formatDateTimeUS = (
+  value: Date | string | null | undefined,
+  fallback = ''
+): string => {
+  const parsed = parseDateForDisplay(value);
+  return parsed ? format(parsed, 'MM/dd/yyyy h:mm a') : fallbackDateDisplay(value, fallback);
+};
+
 /**
  * Get EST date range for queries (start and end of day in EST)
  * @param date - Target date
@@ -143,6 +192,6 @@ export const formatDateESTLocale = (): string => {
 // Export commonly used date formats
 export const DATE_FORMATS = {
   DATABASE: 'YYYY-MM-DD',           // For database storage
-  DISPLAY: 'MMM DD, YYYY',          // For user display
+  DISPLAY: 'MM/DD/YYYY',            // For user display
   TIMESTAMP: 'YYYY-MM-DDTHH:mm:ss.sssZ' // For timestamps
 } as const;

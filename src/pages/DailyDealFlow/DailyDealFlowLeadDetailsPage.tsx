@@ -9,6 +9,7 @@ import { useAttorneys } from "@/hooks/useAttorneys";
 import { fetchLicensedCloserOptions } from "@/lib/agentOptions";
 import { OrderRecommendationsCard } from "@/components/OrderRecommendationsCard";
 import { LeadDocumentsTab } from "@/components/LeadDocumentsTab";
+import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -134,10 +135,7 @@ const formatColumnLabel = (key: string) => {
 };
 
 const formatDateIfPresent = (value: string | null | undefined) => {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return format(parsed, "MMM dd, yyyy");
+  return formatDateUS(value, "");
 };
 
 const DailyDealFlowLeadDetailsPage = () => {
@@ -721,10 +719,19 @@ const DailyDealFlowLeadDetailsPage = () => {
                     const remaining = visibleKeys.filter((k) => !preferred.includes(k)).sort();
                     const columns = [...preferredKeys, ...remaining];
 
-                    const display = (value: unknown) => {
+                    const display = (value: unknown, key?: string) => {
                       if (value === null || value === undefined) return '—';
                       if (typeof value === 'string' && value.trim().length === 0) return '—';
                       if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+                      if (key) {
+                        const normalizedKey = key.toLowerCase();
+                        if (normalizedKey === 'created_at' || normalizedKey === 'updated_at') {
+                          return formatDateTimeUS(value instanceof Date || typeof value === 'string' ? value : null, 'N/A');
+                        }
+                        if (normalizedKey === 'date' || normalizedKey.endsWith('_date') || normalizedKey === 'date_of_birth') {
+                          return formatDateUS(value instanceof Date || typeof value === 'string' ? value : null, 'N/A');
+                        }
+                      }
                       return String(value);
                     };
 
@@ -756,7 +763,7 @@ const DailyDealFlowLeadDetailsPage = () => {
                                             : 'whitespace-nowrap'
                                         }
                                       >
-                                        {display(row[col])}
+                                        {display(row[col], col)}
                                       </TableCell>
                                     ))}
                                   </TableRow>
@@ -778,13 +785,17 @@ const DailyDealFlowLeadDetailsPage = () => {
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="Date">
-                    <Input
-                      type="date"
-                      className={inputCls}
-                      value={form.date ?? ""}
-                      onChange={(e) => setString("date", e.target.value)}
-                      disabled={disabled}
-                    />
+                    {isEditing ? (
+                      <Input
+                        type="date"
+                        className={inputCls}
+                        value={form.date ?? ""}
+                        onChange={(e) => setString("date", e.target.value)}
+                        disabled={disabled}
+                      />
+                    ) : (
+                      <Input className={inputCls} value={formatDateIfPresent(record.date)} disabled />
+                    )}
                   </Field>
                   <Field label="Customer Name">
                     <Input
@@ -973,13 +984,17 @@ const DailyDealFlowLeadDetailsPage = () => {
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="Accident Date">
-                    <Input
-                      type="date"
-                      className={inputCls}
-                      value={form.accident_date ?? ""}
-                      onChange={(e) => setString("accident_date", e.target.value)}
-                      disabled={disabled}
-                    />
+                    {isEditing ? (
+                      <Input
+                        type="date"
+                        className={inputCls}
+                        value={form.accident_date ?? ""}
+                        onChange={(e) => setString("accident_date", e.target.value)}
+                        disabled={disabled}
+                      />
+                    ) : (
+                      <Input className={inputCls} value={formatDateIfPresent(record.accident_date)} disabled />
+                    )}
                   </Field>
                   <Field label="Accident Location">
                     <Input

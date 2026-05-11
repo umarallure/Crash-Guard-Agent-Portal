@@ -35,6 +35,7 @@ import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
+import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 
 export interface TransferPortalRow {
   id: string;
@@ -68,6 +69,8 @@ export interface TransferPortalRow {
 }
 
 const TRANSFER_HANDOFF_STAGE_KEY = "retainer_signed";
+const formatPortalDate = (value?: string | null) => formatDateUS(value, "");
+const formatPortalDateTime = (value?: string | null) => formatDateTimeUS(value, "");
 
 interface ColumnInfoDetail { label: string; value: string; }
 interface ColumnInfo { description: string; details?: ColumnInfoDetail[]; }
@@ -1149,7 +1152,7 @@ const TransferPortalPage = () => {
       headers.join(','),
       ...stageFilteredData.map(row => [
         row.submission_id,
-        row.date || '',
+        formatPortalDate(row.date),
         row.insured_name || '',
         row.lead_vendor || '',
         row.client_phone_number || '',
@@ -1160,12 +1163,12 @@ const TransferPortalPage = () => {
         row.call_result || '',
         row.carrier || '',
         row.product_type || '',
-        row.draft_date || '',
+        formatPortalDate(row.draft_date),
         row.monthly_premium || '',
         row.face_amount || '',
         row.from_callback ? 'Yes' : 'No',
         row.source_type || '',
-        row.created_at || ''
+        formatPortalDateTime(row.created_at)
       ].map(field => `"${field}"`).join(','))
     ].join('\n');
 
@@ -1690,7 +1693,7 @@ const TransferPortalPage = () => {
                                 <Badge variant="outline">{stageLabel}</Badge>
                               </td>
                               <td className="px-4 py-3">{row.lead_vendor || "Unknown"}</td>
-                              <td className="px-4 py-3">{row.date || ""}</td>
+                              <td className="px-4 py-3">{formatPortalDate(row.date)}</td>
                               <td className="px-4 py-3 text-right">
                                 <Button
                                   type="button"

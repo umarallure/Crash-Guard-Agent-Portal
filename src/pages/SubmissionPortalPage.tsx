@@ -41,6 +41,7 @@ import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
+import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 
 export interface SubmissionPortalRow {
   id: string;
@@ -88,6 +89,9 @@ interface CallLog {
   event_type: string;
   created_at: string;
 }
+
+const formatPortalDate = (value?: string | null) => formatDateUS(value, "");
+const formatPortalDateTime = (value?: string | null) => formatDateTimeUS(value, "");
 
 interface ColumnInfoDetail {
   label: string;
@@ -971,7 +975,7 @@ const SubmissionPortalPage = () => {
       headers.join(','),
       ...boardVisibleRows.map((row) => [
         row.submission_id,
-        row.date || row.submission_date || '',
+        formatPortalDate(row.date || row.submission_date || ''),
         row.insured_name || '',
         row.lead_vendor || '',
         row.client_phone_number || '',
@@ -982,12 +986,12 @@ const SubmissionPortalPage = () => {
         row.call_result || '',
         row.carrier || '',
         row.product_type || '',
-        row.draft_date || '',
+        formatPortalDate(row.draft_date),
         row.monthly_premium || '',
         row.face_amount || '',
         row.from_callback ? 'Yes' : 'No',
         row.source_type || '',
-        row.created_at || ''
+        formatPortalDateTime(row.created_at)
       ].map((field) => `"${field}"`).join(','))
     ].join('\n');
 

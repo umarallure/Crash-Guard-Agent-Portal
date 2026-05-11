@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Copy, Phone, Mail, MapPin, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateUS } from "@/lib/dateUtils";
 
 interface Lead {
   id: string;
@@ -43,6 +44,8 @@ interface LeadInfoCardProps {
 
 export const LeadInfoCard = ({ lead }: LeadInfoCardProps) => {
   const { toast } = useToast();
+  const dateOfBirth = formatDateUS(lead.date_of_birth, "N/A");
+  const accidentDate = formatDateUS(lead.accident_date, "N/A");
 
   const copyToClipboard = () => {
     const leadInfo = `
@@ -51,11 +54,11 @@ Name: ${lead.customer_full_name}
 Phone: ${lead.phone_number}
 Email: ${lead.email}
 Address: ${lead.street_address}, ${lead.city}, ${lead.state} ${lead.zip_code}
-Date of Birth: ${lead.date_of_birth}
+Date of Birth: ${dateOfBirth}
 Age: ${lead.age}
 
 Accident/Incident Information:
-Accident Date: ${lead.accident_date || 'N/A'}
+Accident Date: ${accidentDate}
 Accident Location: ${lead.accident_location || 'N/A'}
 Accident Scenario: ${lead.accident_scenario || 'N/A'}
 Injuries: ${lead.injuries || 'N/A'}
@@ -110,7 +113,7 @@ Submission ID: ${lead.submission_id}
             <div>
               <h3 className="font-semibold text-lg">{lead.customer_full_name}</h3>
               <p className="text-sm text-muted-foreground">Age: {lead.age}</p>
-              <p className="text-sm text-muted-foreground">DOB: {lead.date_of_birth}</p>
+              <p className="text-sm text-muted-foreground">DOB: {dateOfBirth}</p>
             </div>
             
             <div className="flex items-center gap-2">
@@ -135,7 +138,7 @@ Submission ID: ${lead.submission_id}
           <div className="space-y-3">
             <div>
               <h4 className="font-medium">Accident Information</h4>
-              {lead.accident_date && <p className="text-sm">Date: {lead.accident_date}</p>}
+              {lead.accident_date && <p className="text-sm">Date: {accidentDate}</p>}
               {lead.accident_location && <p className="text-sm">Location: {lead.accident_location}</p>}
               {lead.injuries && <p className="text-sm">Injuries: {lead.injuries}</p>}
             </div>

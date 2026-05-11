@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Upload, Download, Loader2, FileText, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 
 interface BulkLookupResult {
   client_phone_number: string;
@@ -43,6 +44,8 @@ const BulkLookup = () => {
   const [foundDuplicateGroups, setFoundDuplicateGroups] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const formatLookupDate = (value?: string | null) => formatDateUS(value, "");
+  const formatLookupDateTime = (value?: string | null) => formatDateTimeUS(value, "");
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -352,7 +355,7 @@ const BulkLookup = () => {
         `"${row.insured_name}"`,
         `"${row.client_phone_number}"`,
         `"${row.lead_vendor}"`,
-        `"${row.date}"`,
+        `"${formatLookupDate(row.date)}"`,
         `"${row.status}"`,
         `"${row.call_result}"`,
         `"${row.agent}"`,
@@ -360,7 +363,7 @@ const BulkLookup = () => {
         `"${row.licensed_agent_account}"`,
         `"${row.carrier}"`,
         `"${row.product_type}"`,
-        `"${row.draft_date}"`,
+        `"${formatLookupDate(row.draft_date)}"`,
         `"${row.monthly_premium}"`,
         `"${row.face_amount}"`,
         `"${row.from_callback}"`,
@@ -369,8 +372,8 @@ const BulkLookup = () => {
         `"${row.carrier_audit}"`,
         `"${row.product_type_carrier}"`,
         `"${row.level_or_gi}"`,
-        `"${row.created_at}"`,
-        `"${row.updated_at}"`
+        `"${formatLookupDateTime(row.created_at)}"`,
+        `"${formatLookupDateTime(row.updated_at)}"`
       ].join(','))
     ].join('\n');
 
@@ -433,7 +436,7 @@ const BulkLookup = () => {
         `"${row.insured_name || ''}"`,
         `"${row.client_phone_number || ''}"`,
         `"${row.lead_vendor || ''}"`,
-        `"${row.date || ''}"`,
+        `"${formatLookupDate(row.date)}"`,
         `"${row.status || ''}"`,
         `"${row.call_result || ''}"`,
         `"${row.agent || ''}"`,
@@ -441,7 +444,7 @@ const BulkLookup = () => {
         `"${row.licensed_agent_account || ''}"`,
         `"${row.carrier || ''}"`,
         `"${row.product_type || ''}"`,
-        `"${row.draft_date || ''}"`,
+        `"${formatLookupDate(row.draft_date)}"`,
         `"${row.monthly_premium || ''}"`,
         `"${row.face_amount || ''}"`,
         `"${row.from_callback || ''}"`,
@@ -450,8 +453,8 @@ const BulkLookup = () => {
         `"${row.carrier_audit || ''}"`,
         `"${row.product_type_carrier || ''}"`,
         `"${row.level_or_gi || ''}"`,
-        `"${row.created_at || ''}"`,
-        `"${row.updated_at || ''}"`
+        `"${formatLookupDateTime(row.created_at)}"`,
+        `"${formatLookupDateTime(row.updated_at)}"`
       ].join(','))
     ].join('\n');
 
@@ -630,8 +633,8 @@ const BulkLookup = () => {
                         <td className="p-1 border-r">{result.product_type}</td>
                         <td className="p-1 border-r">${result.monthly_premium}</td>
                         <td className="p-1 border-r">${result.face_amount?.toLocaleString()}</td>
-                        <td className="p-1 border-r">{result.draft_date}</td>
-                        <td className="p-1 border-r">{result.date}</td>
+                        <td className="p-1 border-r">{formatLookupDate(result.draft_date)}</td>
+                        <td className="p-1 border-r">{formatLookupDate(result.date)}</td>
                         <td className="p-1 border-r">{result.policy_number}</td>
                         <td className="p-1 border-r">{result.from_callback ? 'Yes' : 'No'}</td>
                         <td className="p-1 max-w-32 truncate" title={result.notes}>{result.notes}</td>

@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Database } from "@/integrations/supabase/types";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
+import { formatDateUS } from "@/lib/dateUtils";
 // Custom field order for display - matches actual leads table fields
 const customFieldOrder = [
   // Lead Source
@@ -442,7 +443,7 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       `Customer Name: ${fieldValues.customer_full_name || 'N/A'}`,
       ``,
       `PERSONAL INFORMATION:`,
-      `Date of Birth: ${fieldValues.date_of_birth || 'N/A'}`,
+      `Date of Birth: ${formatDateUS(fieldValues.date_of_birth, 'N/A')}`,
       `Age: ${fieldValues.age || 'N/A'}`,
       `Birth State: ${fieldValues.birth_state || 'N/A'}`,
       `Social Security: ${fieldValues.social_security || 'N/A'}`,
@@ -453,7 +454,7 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       `Phone: ${fieldValues.phone_number || 'N/A'}`,
       ``,
       `ACCIDENT/INCIDENT INFORMATION:`,
-      `Accident Date: ${fieldValues.accident_date || 'N/A'}`,
+      `Accident Date: ${formatDateUS(fieldValues.accident_date, 'N/A')}`,
       `Accident Location: ${fieldValues.accident_location || 'N/A'}`,
       `Accident Scenario: ${fieldValues.accident_scenario || 'N/A'}`,
       `Injuries: ${fieldValues.injuries || 'N/A'}`,
@@ -965,6 +966,7 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
   const getFieldValue = (fieldName: string) => getItemValue(itemByFieldName.get(fieldName));
   const leadVendor = getFieldValue("lead_vendor");
   const accidentDate = getFieldValue("accident_date");
+  const accidentDateDisplay = formatDateUS(accidentDate, "Not available");
   const accidentScenario = getFieldValue("accident_scenario");
   const accidentAddress = getFieldValue("accident_location");
 
@@ -1466,7 +1468,7 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
                 Accident Date
               </Badge>
               <span className="min-w-0 break-words text-sm font-semibold text-foreground dark:text-zinc-100">
-                {accidentDate || "Not available"}
+                {accidentDateDisplay}
               </span>
             </div>
 
