@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { CalendarClock, ExternalLink, Phone, StickyNote, Trash2, UserRound } from "lucide-react";
+import { CalendarClock, ExternalLink, Phone, Save, StickyNote, Trash2, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -41,6 +41,14 @@ import {
   getRelativeDeadlineLabel,
 } from "../taskManagementUtils";
 import type { CloserTask, CloserTaskNote, TaskStatus } from "../types";
+import {
+  LEAD_DISPOSITION_PIPELINE_OPTIONS,
+  getLeadDispositionStagesForPipeline,
+  resolveLeadDisposition,
+  resolveStoredLeadDispositionStageKey,
+  type LeadDispositionPipeline,
+  type LeadDispositionStagesByPipeline,
+} from "@/lib/leadDisposition";
 
 interface TaskDetailsSheetProps {
   open: boolean;
@@ -49,10 +57,18 @@ interface TaskDetailsSheetProps {
   loadingNotes: boolean;
   todayDateKey: string;
   canEditTask: boolean;
+  canUpdateLeadDisposition: boolean;
   canDeleteTask?: boolean;
+  leadDispositionStages: LeadDispositionStagesByPipeline;
+  leadDispositionStagesLoading: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit: (task: CloserTask) => void;
   onUpdateStatus: (task: CloserTask, status: TaskStatus) => Promise<void>;
+  onUpdateLeadDisposition: (
+    task: CloserTask,
+    pipeline: LeadDispositionPipeline,
+    stageKey: string,
+  ) => Promise<void>;
   onAddNote: (task: CloserTask, content: string) => Promise<void>;
   onDelete?: (task: CloserTask) => Promise<void>;
 }
@@ -64,10 +80,14 @@ export function TaskDetailsSheet({
   loadingNotes,
   todayDateKey,
   canEditTask,
+  canUpdateLeadDisposition,
   canDeleteTask = false,
+  leadDispositionStages,
+  leadDispositionStagesLoading,
   onOpenChange,
   onEdit,
   onUpdateStatus,
+  onUpdateLeadDisposition,
   onAddNote,
   onDelete,
 }: TaskDetailsSheetProps) {
@@ -75,9 +95,34 @@ export function TaskDetailsSheet({
   const [statusDraft, setStatusDraft] = useState<TaskStatus>("todo");
   const [noteDraft, setNoteDraft] = useState("");
   const [savingStatus, setSavingStatus] = useState(false);
+  const [leadPipelineDraft, setLeadPipelineDraft] =
+    useState<LeadDispositionPipeline>("transfer_portal");
+  const [leadStageDraft, setLeadStageDraft] = useState("");
+  const [savingLeadDisposition, setSavingLeadDisposition] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
+
+  const currentLeadDisposition = resolveLeadDisposition(
+    task?.lead_status,
+    leadDispositionStages,
+  );
+  const currentStoredLeadStage = resolveStoredLeadDispositionStageKey(
+    currentLeadDisposition.pipeline,
+    currentLeadDisposition.stageKey,
+    leadDispositionStages,
+  );
+  const selectedLeadStage = resolveStoredLeadDispositionStageKey(
+    leadPipelineDraft,
+    leadStageDraft,
+    leadDispositionStages,
+  );
+  const activeLeadStageOptions = getLeadDispositionStagesForPipeline(
+    leadDispositionStages,
+    leadPipelineDraft,
+  );
+  const leadDispositionChanged =
+    Boolean(selectedLeadStage) && selectedLeadStage !== currentStoredLeadStage;
 
   useEffect(() => {
     if (!task) return;
@@ -85,6 +130,13 @@ export function TaskDetailsSheet({
     setNoteDraft("");
     setDeleteConfirmOpen(false);
   }, [task]);
+
+  useEffect(() => {
+    if (!task) return;
+    const disposition = resolveLeadDisposition(task.lead_status, leadDispositionStages);
+    setLeadPipelineDraft(disposition.pipeline);
+    setLeadStageDraft(disposition.stageKey);
+  }, [leadDispositionStages, task]);
 
   const handleStatusSave = async () => {
     if (!task || statusDraft === task.status) return;
@@ -104,6 +156,28 @@ export function TaskDetailsSheet({
       setNoteDraft("");
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  const handleLeadPipelineChange = (value: LeadDispositionPipeline) => {
+    const disposition = resolveLeadDisposition(task?.lead_status, leadDispositionStages);
+    const nextStages = getLeadDispositionStagesForPipeline(leadDispositionStages, value);
+
+    setLeadPipelineDraft(value);
+    setLeadStageDraft(
+      disposition.pipeline === value && disposition.stageKey
+        ? disposition.stageKey
+        : (nextStages[0]?.key ?? ""),
+    );
+  };
+
+  const handleLeadDispositionSave = async () => {
+    if (!task || !leadStageDraft) return;
+    setSavingLeadDisposition(true);
+    try {
+      await onUpdateLeadDisposition(task, leadPipelineDraft, leadStageDraft);
+    } finally {
+      setSavingLeadDisposition(false);
     }
   };
 
@@ -194,30 +268,106 @@ export function TaskDetailsSheet({
 
                 {(task.lead_name || task.lead_phone_number || task.lead_reference) && (
                   <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 md:col-span-2">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                          <UserRound className="h-4 w-4 text-primary" />
-                          Customer
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                            <UserRound className="h-4 w-4 text-primary" />
+                            Customer
+                          </div>
+                          <p className="truncate text-base font-semibold text-white">
+                            {task.lead_name || "Customer not attached"}
+                          </p>
+                          <div className="mt-1 flex items-center gap-2 text-sm text-zinc-400">
+                            <Phone className="h-3.5 w-3.5 text-primary" />
+                            <span>{task.lead_phone_number || "Phone not attached"}</span>
+                          </div>
                         </div>
-                        <p className="truncate text-base font-semibold text-white">
-                          {task.lead_name || "Customer not attached"}
-                        </p>
-                        <div className="mt-1 flex items-center gap-2 text-sm text-zinc-400">
-                          <Phone className="h-3.5 w-3.5 text-primary" />
-                          <span>{task.lead_phone_number || "Phone not attached"}</span>
-                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 shrink-0 border-primary/40 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
+                          onClick={openLeadCallResult}
+                          disabled={!task.lead_reference}
+                        >
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Open Lead
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="border-primary/40 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
-                        onClick={openLeadCallResult}
-                        disabled={!task.lead_reference}
-                      >
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Open Lead
-                      </Button>
+
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,170px)_minmax(0,220px)_auto] lg:items-end">
+                        <div className="space-y-2">
+                          <Label htmlFor="task-lead-pipeline" className="text-xs text-zinc-400">
+                            Pipeline
+                          </Label>
+                          <Select
+                            value={leadPipelineDraft}
+                            onValueChange={(value) =>
+                              handleLeadPipelineChange(value as LeadDispositionPipeline)
+                            }
+                            disabled={!canUpdateLeadDisposition || leadDispositionStagesLoading}
+                          >
+                            <SelectTrigger
+                              id="task-lead-pipeline"
+                              className="h-10 w-full border-zinc-800 bg-zinc-950"
+                            >
+                              <SelectValue placeholder="Select pipeline" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {LEAD_DISPOSITION_PIPELINE_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="task-lead-stage" className="text-xs text-zinc-400">
+                            Stage
+                          </Label>
+                          <Select
+                            value={leadStageDraft}
+                            onValueChange={setLeadStageDraft}
+                            disabled={
+                              !canUpdateLeadDisposition ||
+                              leadDispositionStagesLoading ||
+                              activeLeadStageOptions.length === 0
+                            }
+                          >
+                            <SelectTrigger
+                              id="task-lead-stage"
+                              className="h-10 w-full border-zinc-800 bg-zinc-950"
+                            >
+                              <SelectValue placeholder="Select stage" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {activeLeadStageOptions.map((stage) => (
+                                <SelectItem key={stage.key} value={stage.key}>
+                                  {stage.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <Button
+                          type="button"
+                          className="h-10"
+                          onClick={handleLeadDispositionSave}
+                          disabled={
+                            !canUpdateLeadDisposition ||
+                            savingLeadDisposition ||
+                            leadDispositionStagesLoading ||
+                            !leadStageDraft ||
+                            !leadDispositionChanged
+                          }
+                        >
+                          <Save className="mr-2 h-4 w-4" />
+                          {savingLeadDisposition ? "Saving..." : "Save"}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}

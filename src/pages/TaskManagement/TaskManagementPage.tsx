@@ -43,6 +43,7 @@ import {
 import { StatisticsCard5 } from "@/components/ui/statistics-card-5";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
+import { usePipelineStages } from "@/hooks/usePipelineStages";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -50,6 +51,13 @@ import {
   fetchLicensedCloserOptions,
   formatAgentLabelFromEmail,
 } from "@/lib/agentOptions";
+import {
+  getLeadDispositionStageLabel,
+  resolveStoredLeadDispositionStageKey,
+  updateLeadDispositionStatus,
+  type LeadDispositionPipeline,
+  type LeadDispositionStagesByPipeline,
+} from "@/lib/leadDisposition";
 import { getPortalRoleFlags } from "@/lib/userPermissions";
 import { cn } from "@/lib/utils";
 
@@ -85,7 +93,7 @@ import type {
 type QueryResult<T> = Promise<{ data: T | null; error: unknown }>;
 type LeadRow = Pick<
   Database["public"]["Tables"]["leads"]["Row"],
-  "id" | "submission_id" | "customer_full_name" | "phone_number" | "is_active"
+  "id" | "submission_id" | "customer_full_name" | "phone_number" | "is_active" | "status"
 >;
 
 type TaskManagementDbClient = {
@@ -209,6 +217,9 @@ const TaskManagementPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { stages: transferStages, loading: transferStagesLoading } = usePipelineStages("transfer_portal");
+  const { stages: submissionStages, loading: submissionStagesLoading } = usePipelineStages("submission_portal");
+  const { stages: closerStages, loading: closerStagesLoading } = usePipelineStages("closer_portal");
 
   const [isAdmin, setIsAdmin] = useState(() => {
     if (!user?.id) return false;
@@ -252,6 +263,16 @@ const TaskManagementPage = () => {
   const [loadingNotes, setLoadingNotes] = useState(false);
   const isAgentTaskView = isAgentRole && !isAdmin;
   const canAccessTaskManagement = isAdmin || isAgentRole;
+  const leadDispositionStages = useMemo<LeadDispositionStagesByPipeline>(
+    () => ({
+      transfer_portal: transferStages,
+      submission_portal: submissionStages,
+      closer_portal: closerStages,
+    }),
+    [closerStages, submissionStages, transferStages],
+  );
+  const leadDispositionStagesLoading =
+    transferStagesLoading || submissionStagesLoading || closerStagesLoading;
 
   const resolveCurrentUserLabel = useCallback(async () => {
     if (!user) return "";
@@ -301,32 +322,57 @@ const TaskManagementPage = () => {
     const leadIds = Array.from(
       new Set(taskRows.map((task) => task.lead_id).filter(Boolean)),
     ) as string[];
+    const leadReferences = Array.from(
+      new Set(taskRows.map((task) => task.lead_reference).filter(Boolean)),
+    ) as string[];
 
-    if (leadIds.length === 0) {
+    if (leadIds.length === 0 && leadReferences.length === 0) {
       return taskRows;
     }
 
-    const { data: leadRows, error: leadError } = await supabase
-      .from("leads")
-      .select("id, submission_id, customer_full_name, phone_number, is_active")
-      .in("id", leadIds);
+    const [leadIdsResult, leadReferencesResult] = await Promise.all([
+      leadIds.length > 0
+        ? supabase
+            .from("leads")
+            .select("id, submission_id, customer_full_name, phone_number, is_active, status")
+            .in("id", leadIds)
+        : Promise.resolve({ data: [] as LeadRow[], error: null }),
+      leadReferences.length > 0
+        ? supabase
+            .from("leads")
+            .select("id, submission_id, customer_full_name, phone_number, is_active, status")
+            .in("submission_id", leadReferences)
+        : Promise.resolve({ data: [] as LeadRow[], error: null }),
+    ]);
 
-    if (leadError) {
-      throw leadError;
+    if (leadIdsResult.error) {
+      throw leadIdsResult.error;
+    }
+
+    if (leadReferencesResult.error) {
+      throw leadReferencesResult.error;
     }
 
     const leadById = new Map<string, LeadRow>();
-    (leadRows || []).forEach((lead) => {
+    const leadBySubmissionId = new Map<string, LeadRow>();
+    ([...(leadIdsResult.data || []), ...(leadReferencesResult.data || [])] as LeadRow[]).forEach((lead) => {
       leadById.set(lead.id, lead);
+      if (lead.submission_id) {
+        leadBySubmissionId.set(lead.submission_id, lead);
+      }
     });
 
     return taskRows.map((task) => {
-      const lead = task.lead_id ? leadById.get(task.lead_id) : undefined;
+      const lead =
+        (task.lead_id ? leadById.get(task.lead_id) : undefined) ||
+        (task.lead_reference ? leadBySubmissionId.get(task.lead_reference) : undefined);
       return {
         ...task,
+        lead_id: task.lead_id || lead?.id || null,
         lead_reference: task.lead_reference || lead?.submission_id || null,
         lead_name: lead?.customer_full_name || null,
         lead_phone_number: lead?.phone_number || null,
+        lead_status: lead?.status || null,
       };
     });
   }, [isAdmin, user?.id]);
@@ -908,6 +954,89 @@ const TaskManagementPage = () => {
     }
   };
 
+  const handleUpdateLeadDisposition = async (
+    task: CloserTask,
+    pipeline: LeadDispositionPipeline,
+    stageKey: string,
+  ) => {
+    if (!canAccessTaskManagement) {
+      toast({
+        title: "Unable to update lead",
+        description: "Your role does not allow lead disposition changes.",
+        variant: "destructive",
+      });
+      throw new Error("Lead disposition update is outside the current user's scope.");
+    }
+
+    const nextStatus = resolveStoredLeadDispositionStageKey(
+      pipeline,
+      stageKey,
+      leadDispositionStages,
+    );
+
+    if (!nextStatus) {
+      toast({
+        title: "Unable to update lead",
+        description: "Select a pipeline stage before saving.",
+        variant: "destructive",
+      });
+      throw new Error("Lead disposition stage is required.");
+    }
+
+    try {
+      const result = await updateLeadDispositionStatus({
+        leadId: task.lead_id,
+        submissionId: task.lead_reference,
+        status: nextStatus,
+      });
+
+      const nextStageLabel = getLeadDispositionStageLabel(
+        result.status,
+        leadDispositionStages,
+      );
+
+      setTasks((currentTasks) =>
+        currentTasks.map((currentTask) =>
+          currentTask.id === task.id
+            ? {
+                ...currentTask,
+                lead_id: result.leadId || currentTask.lead_id,
+                lead_reference: result.submissionId || currentTask.lead_reference,
+                lead_status: result.status,
+              }
+            : currentTask,
+        ),
+      );
+      setSelectedTask((currentTask) =>
+        currentTask?.id === task.id
+          ? {
+              ...currentTask,
+              lead_id: result.leadId || currentTask.lead_id,
+              lead_reference: result.submissionId || currentTask.lead_reference,
+              lead_status: result.status,
+            }
+          : currentTask,
+      );
+
+      toast({
+        title: "Lead disposition updated",
+        description: `${task.lead_name || task.lead_reference || "Lead"} moved to ${
+          nextStageLabel || result.status
+        }.`,
+      });
+
+      await loadData();
+    } catch (error) {
+      console.error("Error updating lead disposition:", error);
+      toast({
+        title: "Unable to update lead",
+        description: "The lead pipeline and stage could not be updated.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
   const handleDeleteTask = async (task: CloserTask) => {
     if (!isAdmin) {
       toast({
@@ -1386,9 +1515,13 @@ const TaskManagementPage = () => {
         todayDateKey={todayDateKey}
         canEditTask={canEditTask(selectedTask)}
         canDeleteTask={isAdmin}
+        canUpdateLeadDisposition={canAccessTaskManagement}
+        leadDispositionStages={leadDispositionStages}
+        leadDispositionStagesLoading={leadDispositionStagesLoading}
         onOpenChange={setDetailOpen}
         onEdit={openEditDialog}
         onUpdateStatus={handleUpdateTaskStatus}
+        onUpdateLeadDisposition={handleUpdateLeadDisposition}
         onAddNote={handleAddTaskNote}
         onDelete={handleDeleteTask}
       />
