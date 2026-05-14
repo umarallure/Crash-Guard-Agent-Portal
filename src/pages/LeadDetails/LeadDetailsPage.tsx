@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LeadDocumentsTab } from "@/components/LeadDocumentsTab";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
+import { fetchVisibleLeadById, fetchVisibleLeadBySubmissionId } from "@/lib/leadAssignments";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
@@ -176,25 +177,19 @@ const LeadDetailsPage = () => {
       let error: { message: string } | null = null;
 
       if (isUuid) {
-        const response = await supabase
-          .from("leads")
-          .select("*")
-          .eq("id", routeLeadId)
-          .maybeSingle();
-
-        data = (response.data as LeadRow | null) ?? null;
-        error = response.error ? { message: response.error.message } : null;
+        try {
+          data = (await fetchVisibleLeadById(routeLeadId)) as LeadRow | null;
+        } catch (fetchError) {
+          error = { message: fetchError instanceof Error ? fetchError.message : "Failed to load lead" };
+        }
       }
 
       if (!data && !error) {
-        const response = await supabase
-          .from("leads")
-          .select("*")
-          .eq("submission_id", routeLeadId)
-          .maybeSingle();
-
-        data = (response.data as LeadRow | null) ?? null;
-        error = response.error ? { message: response.error.message } : null;
+        try {
+          data = (await fetchVisibleLeadBySubmissionId(routeLeadId)) as LeadRow | null;
+        } catch (fetchError) {
+          error = { message: fetchError instanceof Error ? fetchError.message : "Failed to load lead" };
+        }
       }
 
       if (error) {
@@ -210,8 +205,8 @@ const LeadDetailsPage = () => {
 
       if (!data) {
         toast({
-          title: "Lead not found",
-          description: `No lead found for ID ${routeLeadId}`,
+          title: "Lead unavailable",
+          description: "This lead was not found or is assigned to another agent.",
           variant: "destructive",
         });
         setLead(null);

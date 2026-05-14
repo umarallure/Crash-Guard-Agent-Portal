@@ -42,6 +42,19 @@ import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates"
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
+import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
+import {
+  applyLeadAssignmentToRows,
+  assignLeadToAgent,
+  fetchLeadAssignmentAgents,
+  fetchVisiblePortalLeads,
+  getLeadAssignmentAgentLabel,
+  getLeadRecordBoolean,
+  getLeadRecordString,
+  type LeadAssignmentAgentOption,
+  unassignLeadAgent,
+} from "@/lib/leadAssignments";
+import { getPortalRoleFlags } from "@/lib/userPermissions";
 
 export interface SubmissionPortalRow {
   id: string;
@@ -54,6 +67,9 @@ export interface SubmissionPortalRow {
   buffer_agent?: string;
   agent?: string;
   licensed_agent_account?: string;
+  assigned_agent_id?: string | null;
+  assigned_agent_by?: string | null;
+  assigned_agent_at?: string | null;
   tag?: string | null;
   assigned_attorney_id?: string | null;
   status?: string;
@@ -61,9 +77,10 @@ export interface SubmissionPortalRow {
   carrier?: string;
   product_type?: string;
   draft_date?: string;
-  monthly_premium?: number;
-  face_amount?: number;
+  monthly_premium?: number | null;
+  face_amount?: number | null;
   from_callback?: boolean;
+  is_callback?: boolean;
   notes?: string;
   policy_number?: string;
   carrier_audit?: string;
@@ -89,6 +106,19 @@ interface CallLog {
   event_type: string;
   created_at: string;
 }
+
+type SubmissionPortalRecord = Partial<SubmissionPortalRow> &
+  Record<string, unknown> & {
+    submission_id?: string | null;
+  };
+
+type SubmissionPortalQueryClient = {
+  from: (table: "submission_portal") => {
+    select: (
+      columns: "*",
+    ) => Promise<{ data: SubmissionPortalRecord[] | null; error: { message?: string } | null }>;
+  };
+};
 
 const formatPortalDate = (value?: string | null) => formatDateUS(value, "");
 const formatPortalDateTime = (value?: string | null) => formatDateTimeUS(value, "");
@@ -416,6 +446,9 @@ const SubmissionPortalPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [assignmentAgents, setAssignmentAgents] = useState<LeadAssignmentAgentOption[]>([]);
+  const [assignmentSavingId, setAssignmentSavingId] = useState<string | null>(null);
   const savedSharedFilters = useMemo(() => readSharedPipelineFilters(), []);
   const savedSubmissionFilters = useMemo(() => readSubmissionFilters(), []);
   const savedPublisherFilters = useMemo(() => {
@@ -454,6 +487,35 @@ const SubmissionPortalPage = () => {
   const [claimLead, setClaimLead] = useState<any>(null);
   const [licensedAgents, setLicensedAgents] = useState<any[]>([]);
   const [fetchingAgents, setFetchingAgents] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadAssignmentAccess = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const roleFlags = await getPortalRoleFlags(user?.id);
+        if (!mounted) return;
+
+        setIsSuperAdmin(roleFlags.isSuperAdmin);
+
+        if (roleFlags.isSuperAdmin) {
+          const agents = await fetchLeadAssignmentAgents();
+          if (mounted) setAssignmentAgents(agents);
+        }
+      } catch (error) {
+        console.warn("Failed to load submission lead assignment access", error);
+      }
+    };
+
+    void loadAssignmentAccess();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const boardVisibleRows = useMemo(() => {
     return filteredData.filter((row) => Boolean(deriveStageKey(row)));
@@ -721,34 +783,19 @@ const SubmissionPortalPage = () => {
     try {
       setRefreshing(true);
 
-      let leadsQuery = (supabase as any)
-        .from('leads')
-        .select('*')
-        .eq('is_active', true)
-        .order('submission_date', { ascending: false })
-        .order('created_at', { ascending: false });
+      const leadsQuery = fetchVisiblePortalLeads();
 
       // Get submission portal data for entries that exist
-      let submissionQuery = (supabase as any)
+      const submissionQuery = (supabase as unknown as SubmissionPortalQueryClient)
         .from('submission_portal')
         .select('*');
 
       // Note: We don't apply client-side filters at query time so the same preset logic works everywhere
 
-      const [leadsRes, submissionRes] = await Promise.all([
+      const [leadsData, submissionRes] = await Promise.all([
         leadsQuery,
         submissionQuery,
       ]);
-
-      if (leadsRes.error) {
-        console.error("Error fetching submission portal base leads:", leadsRes.error);
-        toast({
-          title: "Error",
-          description: "Failed to fetch leads data",
-          variant: "destructive",
-        });
-        return;
-      }
 
       if (submissionRes.error) {
         console.warn("Error fetching submission portal data:", submissionRes.error);
@@ -758,71 +805,77 @@ const SubmissionPortalPage = () => {
       const normalizedSubmissionData = Array.isArray(submissionRes.data) ? submissionRes.data : [];
 
       // Create a map of submission data by submission_id for quick lookup
-      const submissionMap = new Map<string, any>();
-      normalizedSubmissionData.forEach((row: any) => {
+      const submissionMap = new Map<string, SubmissionPortalRecord>();
+      normalizedSubmissionData.forEach((row) => {
         if (row.submission_id) {
           submissionMap.set(row.submission_id, row);
         }
       });
 
-      const mergedData = ((leadsRes.data ?? []) as any[]).map((lead) => {
-        const submissionId = (lead?.submission_id || '').trim();
+      const mergedData = (leadsData ?? []).map((lead) => {
+        const leadRecord = lead as Record<string, unknown>;
+        const submissionId = getLeadRecordString(leadRecord, "submission_id").trim();
         const submission = submissionId ? submissionMap.get(submissionId) : null;
 
-        const normalizedStatus = normalizePortalHandoffStatus((lead?.status || '') as string);
+        const normalizedStatus = normalizePortalHandoffStatus(getLeadRecordString(leadRecord, "status"));
         if (normalizedStatus && transferStatusSet.has(normalizedStatus)) {
           return null;
         }
 
-        const isCallback = Boolean(lead?.is_callback);
+        const isCallback = getLeadRecordBoolean(leadRecord, "is_callback");
 
         return {
           ...submission,
           id: lead.id,
           submission_id: submissionId,
-          insured_name: lead.customer_full_name || submission?.insured_name || '',
-          client_phone_number: lead.phone_number || submission?.client_phone_number || '',
-          lead_vendor: lead.lead_vendor || submission?.lead_vendor || '',
-          buffer_agent: lead.buffer_agent || submission?.buffer_agent || '',
-          agent: lead.agent || submission?.agent || '',
-          licensed_agent_account: (lead as any).licensed_agent_account || submission?.licensed_agent_account || '',
-          tag: lead.tag || '',
-          assigned_attorney_id: (lead as any).assigned_attorney_id || submission?.assigned_attorney_id || null,
+          insured_name: getLeadRecordString(leadRecord, "customer_full_name") || submission?.insured_name || '',
+          client_phone_number: getLeadRecordString(leadRecord, "phone_number") || submission?.client_phone_number || '',
+          lead_vendor: getLeadRecordString(leadRecord, "lead_vendor") || submission?.lead_vendor || '',
+          buffer_agent: getLeadRecordString(leadRecord, "buffer_agent") || submission?.buffer_agent || '',
+          agent: getLeadRecordString(leadRecord, "agent") || submission?.agent || '',
+          licensed_agent_account: getLeadRecordString(leadRecord, "licensed_agent_account") || submission?.licensed_agent_account || '',
+          assigned_agent_id: getLeadRecordString(leadRecord, "assigned_agent_id") || null,
+          assigned_agent_by: getLeadRecordString(leadRecord, "assigned_agent_by") || null,
+          assigned_agent_at: getLeadRecordString(leadRecord, "assigned_agent_at") || null,
+          tag: getLeadRecordString(leadRecord, "tag"),
+          assigned_attorney_id: getLeadRecordString(leadRecord, "assigned_attorney_id") || submission?.assigned_attorney_id || null,
           status: normalizedStatus,
           call_result: '',
-          carrier: lead.carrier || submission?.carrier || '',
-          product_type: lead.product_type || submission?.product_type || '',
-          draft_date: lead.draft_date || submission?.draft_date || '',
-          monthly_premium: lead.monthly_premium || submission?.monthly_premium || null,
-          face_amount: (lead as any).coverage_amount || submission?.face_amount || null,
+          carrier: getLeadRecordString(leadRecord, "carrier") || submission?.carrier || '',
+          product_type: getLeadRecordString(leadRecord, "product_type") || submission?.product_type || '',
+          draft_date: getLeadRecordString(leadRecord, "draft_date") || submission?.draft_date || '',
+          monthly_premium: (leadRecord.monthly_premium as number | null | undefined) || submission?.monthly_premium || null,
+          face_amount: (leadRecord.coverage_amount as number | null | undefined) || submission?.face_amount || null,
           from_callback: isCallback,
           notes: '',
           policy_number: '',
           carrier_audit: '',
           product_type_carrier: '',
           level_or_gi: '',
-          created_at: lead.created_at || '',
-          updated_at: lead.updated_at || '',
+          created_at: getLeadRecordString(leadRecord, "created_at"),
+          updated_at: getLeadRecordString(leadRecord, "updated_at"),
           application_submitted: submission?.application_submitted,
           sent_to_underwriting: submission?.sent_to_underwriting,
-          submission_date: lead.submission_date || submission?.submission_date || '',
+          submission_date: getLeadRecordString(leadRecord, "submission_date") || submission?.submission_date || '',
           dq_reason: submission?.dq_reason || '',
           call_source: '',
           submission_source: submission?.submission_source || '',
           verification_logs: submission ? '' : "Update log missing - No submission data found",
           has_submission_data: Boolean(submission),
           source_type: isCallback ? 'callback' : 'zapier',
-          state: lead.state || submission?.state || '',
+          state: getLeadRecordString(leadRecord, "state") || submission?.state || '',
         };
       });
 
-      const mergedWithSourceType = mergedData.filter(Boolean).map((row: any) => {
-        const isCallback = Boolean((row as any).from_callback) || Boolean((row as any).is_callback);
-        return {
-          ...row,
-          source_type: row.source_type ?? (isCallback ? 'callback' : 'zapier'),
-        };
-      });
+      const mergedWithSourceType = mergedData
+        .filter((row): row is SubmissionPortalRow => Boolean(row))
+        .map((row) => {
+          const isCallback = Boolean(row.from_callback) || Boolean(row.is_callback);
+          return {
+            ...row,
+            source_type: row.source_type ?? (isCallback ? 'callback' : 'zapier'),
+          };
+        });
 
       // Fetch call logs for ALL entries (not just those with submission data)
       const allSubmissionIds = mergedWithSourceType.map(row => row.submission_id);
@@ -1202,6 +1255,39 @@ const SubmissionPortalPage = () => {
     navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: '/submission-portal' },
     });
+  };
+
+  const handleLeadAssignmentChange = async (
+    row: SubmissionPortalRow,
+    agentUserId: string | null,
+  ) => {
+    if (!isSuperAdmin) return;
+
+    setAssignmentSavingId(row.id);
+    try {
+      const result = agentUserId
+        ? await assignLeadToAgent(row.id, agentUserId)
+        : await unassignLeadAgent(row.id);
+
+      setData((prev) => applyLeadAssignmentToRows(prev, result));
+
+      const agentLabel = getLeadAssignmentAgentLabel(result.assigned_agent_id, assignmentAgents);
+      toast({
+        title: "Lead assignment updated",
+        description: result.assigned_agent_id
+          ? `Assigned to ${agentLabel}`
+          : "Lead is now unassigned",
+      });
+    } catch (error) {
+      console.error("Failed to update lead assignment:", error);
+      toast({
+        title: "Assignment failed",
+        description: "Unable to update the lead assignment.",
+        variant: "destructive",
+      });
+    } finally {
+      setAssignmentSavingId(null);
+    }
   };
 
   type AgentStatusRow = { user_id: string };
@@ -1776,6 +1862,15 @@ const SubmissionPortalPage = () => {
                                         {row.tag}
                                       </Badge>
                                     ) : null}
+                                    <LeadAssignmentControl
+                                      agents={assignmentAgents}
+                                      assignedAgentId={row.assigned_agent_id}
+                                      isSuperAdmin={isSuperAdmin}
+                                      saving={assignmentSavingId === row.id}
+                                      onChange={(agentUserId) => {
+                                        void handleLeadAssignmentChange(row, agentUserId);
+                                      }}
+                                    />
                                   </div>
                                 </CardContent>
                               </Card>

@@ -34,6 +34,7 @@ import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert,
 import { US_STATES } from "@/lib/us-states";
 import { LEAD_TAG_OPTIONS, getLeadTagToneClass } from "@/lib/leadTags";
 import { getStateMatchToken } from "@/lib/stateFilter";
+import { fetchVisibleLeadBySubmissionId } from "@/lib/leadAssignments";
 
 interface Lead {
   id: string;
@@ -71,6 +72,9 @@ interface Lead {
   contact_name?: string;
   contact_number?: string;
   contact_address?: string;
+  assigned_agent_id?: string | null;
+  assigned_agent_by?: string | null;
+  assigned_agent_at?: string | null;
 }
 
 interface DncProviderDetail {
@@ -1172,23 +1176,7 @@ const CallResultUpdate = () => {
         return;
       }
 
-      // Direct query - fetch lead by submission ID only
-      const { data: directLead, error: directError } = await supabase
-        .from("leads")
-        .select("*")
-        .eq("submission_id", trimmedSubmissionId)
-        .single();
-
-      if (directError) {
-        console.error("Error fetching lead:", directError);
-        toast({
-          title: "Lead Not Found",
-          description: `Could not find lead with submission ID: ${trimmedSubmissionId}`,
-          variant: "destructive",
-        });
-        setLoading(false);
-        return;
-      }
+      const directLead = await fetchVisibleLeadBySubmissionId(trimmedSubmissionId);
 
       if (directLead) {
         const typedLead = directLead as Lead;
@@ -1200,8 +1188,8 @@ const CallResultUpdate = () => {
 
       // If no lead found
       toast({
-        title: "Lead Not Found",
-        description: `No lead found with submission ID: ${trimmedSubmissionId}`,
+        title: "Lead unavailable",
+        description: "This lead was not found or is assigned to another agent.",
         variant: "destructive",
       });
       setLoading(false);
