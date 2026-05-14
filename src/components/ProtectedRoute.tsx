@@ -8,6 +8,8 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
+const allRolesAllowedPaths = ['/deel'];
+
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { user, loading } = useAuth();
   const { isLicensedAgent, loading: licensedLoading } = useLicensedAgent();
@@ -35,8 +37,10 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
           const currentPath = location.pathname;
           console.log('[ProtectedRoute] Licensed agent is also restricted, redirecting to daily-deal-flow');
 
-          // Only allow access to /daily-deal-flow for restricted users
-          if (currentPath !== '/daily-deal-flow') {
+          const restrictedAllowedPaths = ['/daily-deal-flow', ...allRolesAllowedPaths];
+
+          // Only allow access to approved paths for restricted users
+          if (!restrictedAllowedPaths.includes(currentPath)) {
             navigate('/daily-deal-flow', { replace: true });
           }
         }
@@ -53,7 +57,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       console.log('[ProtectedRoute] Center user check result:', isCenter);
 
       // Center users can access their portal and agent-licensing page
-      const centerAllowedPaths = ['/center-lead-portal', '/agent-licensing', '/center-callback-request'];
+      const centerAllowedPaths = ['/center-lead-portal', '/agent-licensing', '/center-callback-request', ...allRolesAllowedPaths];
       const currentPath = location.pathname;
       
       // Redirect center users to their portal if they try to access other protected routes
@@ -68,8 +72,10 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
         const currentPath = location.pathname;
         console.log('[ProtectedRoute] Restricted user detected, current path:', currentPath);
 
-        // Only allow access to /daily-deal-flow for restricted users
-        if (currentPath !== '/daily-deal-flow') {
+        const restrictedAllowedPaths = ['/daily-deal-flow', ...allRolesAllowedPaths];
+
+        // Only allow access to approved paths for restricted users
+        if (!restrictedAllowedPaths.includes(currentPath)) {
           console.log('[ProtectedRoute] Redirecting restricted user to /daily-deal-flow');
           navigate('/daily-deal-flow', { replace: true });
         }
