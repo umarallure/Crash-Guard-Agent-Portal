@@ -24,6 +24,19 @@ import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
 import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
+import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
+import {
+  applyLeadAssignmentToRows,
+  assignLeadToAgent,
+  fetchLeadAssignmentAgents,
+  fetchVisiblePortalLeads,
+  getLeadAssignmentAgentLabel,
+  getLeadRecordBoolean,
+  getLeadRecordString,
+  type LeadAssignmentAgentOption,
+  unassignLeadAgent,
+} from "@/lib/leadAssignments";
+import { getPortalRoleFlags } from "@/lib/userPermissions";
 
 interface CloserPortalRow {
   id: string;
@@ -36,6 +49,9 @@ interface CloserPortalRow {
   buffer_agent?: string;
   agent?: string;
   licensed_agent_account?: string;
+  assigned_agent_id?: string | null;
+  assigned_agent_by?: string | null;
+  assigned_agent_at?: string | null;
   tag?: string | null;
   assigned_attorney_id?: string | null;
   status?: string;
@@ -188,6 +204,9 @@ const CloserPortalPage = () => {
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [timeTick, setTimeTick] = useState(() => Date.now());
   const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(new Set());
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [assignmentAgents, setAssignmentAgents] = useState<LeadAssignmentAgentOption[]>([]);
+  const [assignmentSavingId, setAssignmentSavingId] = useState<string | null>(null);
   const { unblockedStateCodes } = useSalesMapCoverageStates();
   const currentOperationalDateKey = useMemo(
     () => getCloserPortalOperationalDateKey(timeTick) ?? "",
@@ -215,6 +234,35 @@ const CloserPortalPage = () => {
 
     return () => {
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadAssignmentAccess = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const roleFlags = await getPortalRoleFlags(user?.id);
+        if (!mounted) return;
+
+        setIsSuperAdmin(roleFlags.isSuperAdmin);
+
+        if (roleFlags.isSuperAdmin) {
+          const agents = await fetchLeadAssignmentAgents();
+          if (mounted) setAssignmentAgents(agents);
+        }
+      } catch (error) {
+        console.warn("Failed to load closer lead assignment access", error);
+      }
+    };
+
+    void loadAssignmentAccess();
+
+    return () => {
+      mounted = false;
     };
   }, []);
 
@@ -461,50 +509,37 @@ const CloserPortalPage = () => {
     try {
       setRefreshing(true);
 
-      let leadsQuery = (supabase as any)
-        .from("leads")
-        .select("*")
-        .eq("is_active", true)
-        .order("submission_date", { ascending: false })
-        .order("created_at", { ascending: false });
+      const leadsData = await fetchVisiblePortalLeads();
 
-      const leadsRes = await leadsQuery;
-
-      if (leadsRes.error) {
-        console.error("Error fetching closer portal data:", leadsRes.error);
-        toast({
-          title: "Error",
-          description: "Failed to fetch closer portal data",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const normalizedRows = ((leadsRes.data ?? []) as any[]).map((lead) => {
-        const submissionId = (lead?.submission_id || "").trim();
-        const isCallback = Boolean(lead?.is_callback);
+      const normalizedRows = leadsData.map((lead) => {
+        const leadRecord = lead as Record<string, unknown>;
+        const submissionId = getLeadRecordString(leadRecord, "submission_id").trim();
+        const isCallback = getLeadRecordBoolean(leadRecord, "is_callback");
         return {
           id: lead.id,
           submission_id: submissionId,
-          insured_name: lead.customer_full_name || "",
-          client_phone_number: lead.phone_number || "",
-          lead_vendor: lead.lead_vendor || "",
-          buffer_agent: lead.buffer_agent || "",
-          agent: lead.agent || "",
-          licensed_agent_account: (lead as any).licensed_agent_account || "",
-          tag: lead.tag || "",
-          assigned_attorney_id: (lead as any).assigned_attorney_id || null,
-          carrier: lead.carrier || "",
-          product_type: lead.product_type || "",
+          insured_name: getLeadRecordString(leadRecord, "customer_full_name"),
+          client_phone_number: getLeadRecordString(leadRecord, "phone_number"),
+          lead_vendor: getLeadRecordString(leadRecord, "lead_vendor"),
+          buffer_agent: getLeadRecordString(leadRecord, "buffer_agent"),
+          agent: getLeadRecordString(leadRecord, "agent"),
+          licensed_agent_account: getLeadRecordString(leadRecord, "licensed_agent_account"),
+          assigned_agent_id: getLeadRecordString(leadRecord, "assigned_agent_id") || null,
+          assigned_agent_by: getLeadRecordString(leadRecord, "assigned_agent_by") || null,
+          assigned_agent_at: getLeadRecordString(leadRecord, "assigned_agent_at") || null,
+          tag: getLeadRecordString(leadRecord, "tag"),
+          assigned_attorney_id: getLeadRecordString(leadRecord, "assigned_attorney_id") || null,
+          carrier: getLeadRecordString(leadRecord, "carrier"),
+          product_type: getLeadRecordString(leadRecord, "product_type"),
           notes: "",
-          status: (lead.status || "").trim(),
-          date: lead.submission_date ? String(lead.submission_date).split(" ")[0] : "",
-          created_at: lead.created_at || "",
-          updated_at: lead.updated_at || "",
+          status: getLeadRecordString(leadRecord, "status").trim(),
+          date: getLeadRecordString(leadRecord, "submission_date").split(" ")[0] || "",
+          created_at: getLeadRecordString(leadRecord, "created_at"),
+          updated_at: getLeadRecordString(leadRecord, "updated_at"),
           from_callback: isCallback,
           is_callback: isCallback,
           source_type: isCallback ? "callback" : "zapier",
-          state: lead.state || "",
+          state: getLeadRecordString(leadRecord, "state"),
         };
       });
 
@@ -619,6 +654,39 @@ const CloserPortalPage = () => {
     navigate(`/leads/${encodeURIComponent(row.id)}`, {
       state: { activeNav: "/closer-portal" },
     });
+  };
+
+  const handleLeadAssignmentChange = async (
+    row: CloserPortalRow,
+    agentUserId: string | null,
+  ) => {
+    if (!isSuperAdmin) return;
+
+    setAssignmentSavingId(row.id);
+    try {
+      const result = agentUserId
+        ? await assignLeadToAgent(row.id, agentUserId)
+        : await unassignLeadAgent(row.id);
+
+      setData((prev) => applyLeadAssignmentToRows(prev, result));
+
+      const agentLabel = getLeadAssignmentAgentLabel(result.assigned_agent_id, assignmentAgents);
+      toast({
+        title: "Lead assignment updated",
+        description: result.assigned_agent_id
+          ? `Assigned to ${agentLabel}`
+          : "Lead is now unassigned",
+      });
+    } catch (error) {
+      console.error("Failed to update lead assignment:", error);
+      toast({
+        title: "Assignment failed",
+        description: "Unable to update the lead assignment.",
+        variant: "destructive",
+      });
+    } finally {
+      setAssignmentSavingId(null);
+    }
   };
 
   type AgentStatusRow = { user_id: string };
@@ -1103,6 +1171,15 @@ const CloserPortalPage = () => {
                                     <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
                                       {statusText}
                                     </Badge>
+                                    <LeadAssignmentControl
+                                      agents={assignmentAgents}
+                                      assignedAgentId={row.assigned_agent_id}
+                                      isSuperAdmin={isSuperAdmin}
+                                      saving={assignmentSavingId === row.id}
+                                      onChange={(agentUserId) => {
+                                        void handleLeadAssignmentChange(row, agentUserId);
+                                      }}
+                                    />
                                   </div>
                                 </CardContent>
                               </Card>

@@ -1455,11 +1455,6 @@ const CloserScoreboardPage = () => {
                             <TableCell className="text-center">{rankBadge(closer.rank)}</TableCell>
                             <TableCell className="font-medium">
                               {closer.name}
-                              {isMe && (
-                                <Badge variant="outline" className="ml-2 text-xs">
-                                  You
-                                </Badge>
-                              )}
                               {isInactive && (
                                 <Badge
                                   variant="outline"
