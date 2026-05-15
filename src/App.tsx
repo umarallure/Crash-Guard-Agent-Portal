@@ -50,6 +50,7 @@ import LawyerRequirements from "./pages/LawyerRequirements";
 import AlowareDialer from "./pages/AlowareDialer";
 import SlackWorkspace from "./pages/SlackWorkspace";
 import ProductsPage from "./pages/ProductsPage";
+import DeelPage from "./pages/DeelPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import AppShell from "@/components/layout/AppShell";
 import { Navigate } from "react-router-dom";
@@ -455,6 +456,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Products">
                     <ProductsPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/deel"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Deel">
+                    <DeelPage />
                   </AppShell>
                 </ProtectedRoute>
               }

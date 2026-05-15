@@ -41,6 +41,10 @@ interface CallResultFormProps {
 }
 
 type LeadsUpdate = Database["public"]["Tables"]["leads"]["Update"];
+type AttorneyProfileLookup = {
+  id?: string | null;
+  user_id?: string | null;
+};
 
 const callResultFieldClass =
   "border-[#ead9ce] bg-white/95 text-slate-950 shadow-sm placeholder:text-slate-500 dark:border-white/10 dark:bg-zinc-950/70 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-orange-400/70";
@@ -553,6 +557,13 @@ export const CallResultForm = ({
     return pipelineStageLabelToKey.get(trimmed) ?? trimmed;
   };
 
+  const isLeadAttorneySubmittedStatus = (value: string | null | undefined) => {
+    const statusKey = getQualifiedStageKey(value);
+    return statusKey === "attorney_review" ||
+      statusKey === "qualified_payable" ||
+      statusKey === "attorney_rejected";
+  };
+
   const submittedStageReasonOptions = useMemo(() => {
     if (!qualifiedStage) return [];
 
@@ -572,6 +583,39 @@ export const CallResultForm = ({
   const selectedSubmittedLawyerName = selectedSubmittedLawyer?.attorney_name || "";
   const isBrokerFulfillment = attorneyFulfillmentMode === "broker";
   const showSubmissionStatusField = isBrokerFulfillment && Boolean(selectedSubmittedLawyerId);
+  const resolveAssignedInternalAttorneyUserId = async () => {
+    const candidate = assignedAttorneyId.trim();
+    if (isBrokerFulfillment || !candidate) return null;
+
+    const cachedAttorney = attorneys.find((attorney) => attorney.user_id === candidate || attorney.id === candidate);
+    if (cachedAttorney?.user_id) return cachedAttorney.user_id;
+
+    const attorneyProfiles = supabase as unknown as {
+      from: (table: "attorney_profiles") => {
+        select: (columns: string) => {
+          or: (filter: string) => {
+            limit: (count: number) => {
+              maybeSingle: () => Promise<{ data: AttorneyProfileLookup | null; error: { message?: string } | null }>;
+            };
+          };
+        };
+      };
+    };
+
+    const { data, error } = await attorneyProfiles
+      .from("attorney_profiles")
+      .select("id,user_id")
+      .or(`id.eq.${candidate},user_id.eq.${candidate}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Failed to resolve assigned attorney profile, using provided assignment id:", error.message);
+      return candidate;
+    }
+
+    return data?.user_id || candidate;
+  };
 
   const prevVerifiedFieldValuesRef = useRef<Record<string, string>>({});
 
@@ -1251,7 +1295,11 @@ export const CallResultForm = ({
     }
   };
 
-  const syncModifiedVerifiedFieldsToLeads = async (statusOverride?: string | null, tagOverride?: string | null) => {
+  const syncModifiedVerifiedFieldsToLeads = async (
+    statusOverride?: string | null,
+    tagOverride?: string | null,
+    assignedAttorneyUserIdOverride?: string | null
+  ) => {
     const booleanFields = new Set([
       "police_attended",
       "insured",
@@ -1298,9 +1346,16 @@ export const CallResultForm = ({
     const updates: LeadsUpdate = {};
     const updateRecord = updates as Record<string, unknown>;
     const normalizedStatusOverride = (statusOverride || "").trim();
+    const assignedInternalAttorneyUserId =
+      assignedAttorneyUserIdOverride === undefined
+        ? await resolveAssignedInternalAttorneyUserId()
+        : assignedAttorneyUserIdOverride;
 
     if (normalizedStatusOverride) {
       updates.status = normalizedStatusOverride;
+      updateRecord.assigned_attorney_id = isLeadAttorneySubmittedStatus(normalizedStatusOverride)
+        ? assignedInternalAttorneyUserId || null
+        : null;
     }
 
     const normalizedTagOverride = (tagOverride || "").trim();
@@ -1377,6 +1432,7 @@ export const CallResultForm = ({
       } else {
         finalStatus = getQualifiedStageKey(status);
       }
+      const assignedInternalAttorneyUserId = await resolveAssignedInternalAttorneyUserId();
 
       // Generate final public notes. Internal notes stay in call_results.internal_notes only.
       let finalNotes = publicSlackNotes;
@@ -1552,7 +1608,7 @@ export const CallResultForm = ({
       }
 
       try {
-        await syncModifiedVerifiedFieldsToLeads(finalStatus, selectedTag);
+        await syncModifiedVerifiedFieldsToLeads(finalStatus, selectedTag, assignedInternalAttorneyUserId);
       } catch (leadSyncError: unknown) {
         console.error("Failed to sync verification edits to leads:", leadSyncError);
         const leadSyncMessage =
@@ -1584,7 +1640,7 @@ export const CallResultForm = ({
                 is_callback: isAgentCallbackCallSource(callSource),
                 is_retention_call: isRetentionCall,
                 application_submitted: applicationSubmitted,
-                assigned_attorney_id: assignedAttorneyId || null,
+                assigned_attorney_id: assignedInternalAttorneyUserId || assignedAttorneyId || null,
                 email: verifiedFieldValues?.email || null,
                 state: verifiedFieldValues?.state || null,
                 zip_code: verifiedFieldValues?.zip_code || null,

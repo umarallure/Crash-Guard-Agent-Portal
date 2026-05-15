@@ -23,6 +23,7 @@ import {
   CalendarDays,
   Sun,
   Moon,
+  Landmark,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -297,6 +298,11 @@ const AppShell = ({
         to: '/products',
         icon: <Tag className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
+      },
+      {
+        label: 'Deel',
+        to: '/deel',
+        icon: <Landmark className="h-4 w-4 text-current" />,
       },
       {
         label: 'Lawyers Criteria',
