@@ -39,8 +39,10 @@ import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
+import { useBrokerSolFilterOptions } from "@/hooks/useBrokerSolFilterOptions";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
+import { ALL_SOL_FILTER_VALUE, matchesSolPeriodFilter } from "@/lib/solPeriods";
 import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
 import {
   applyLeadAssignmentToRows,
@@ -97,6 +99,7 @@ export interface SubmissionPortalRow {
   has_submission_data?: boolean;
   source_type?: string;
   state?: string;
+  accident_date?: string | null;
 }
 
 interface CallLog {
@@ -140,6 +143,7 @@ type SharedPipelineFilterStorage = {
   customEndDate: string;
   leadVendorFilter: string;
   selectedStates: string[];
+  brokerSolFilter: string;
   searchTerm: string;
 };
 
@@ -173,6 +177,7 @@ const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
       customEndDate: typeof parsed.customEndDate === "string" ? parsed.customEndDate : "",
       leadVendorFilter: typeof parsed.leadVendorFilter === "string" ? parsed.leadVendorFilter : "__ALL__",
       selectedStates: Array.isArray(parsed.selectedStates) ? parsed.selectedStates.filter((state): state is string => typeof state === "string") : [],
+      brokerSolFilter: typeof parsed.brokerSolFilter === "string" ? parsed.brokerSolFilter : ALL_SOL_FILTER_VALUE,
       searchTerm: typeof parsed.searchTerm === "string" ? parsed.searchTerm : "",
     };
   } catch {
@@ -462,6 +467,7 @@ const SubmissionPortalPage = () => {
   const [publisherFilters, setPublisherFilters] = useState<string[]>(savedPublisherFilters);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
+  const [brokerSolFilter, setBrokerSolFilter] = useState<string>(savedSharedFilters?.brokerSolFilter ?? ALL_SOL_FILTER_VALUE);
   const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
@@ -476,6 +482,7 @@ const SubmissionPortalPage = () => {
   const [editReason, setEditReason] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const { stateOptions } = useSalesMapCoverageStates();
+  const { solOptions } = useBrokerSolFilterOptions();
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -608,6 +615,13 @@ const SubmissionPortalPage = () => {
 
     if (selectedStates.length > 0) {
       filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
+    }
+
+    if (
+      brokerSolFilter !== ALL_SOL_FILTER_VALUE &&
+      solOptions.some((option) => option.value === brokerSolFilter)
+    ) {
+      filtered = filtered.filter((record) => matchesSolPeriodFilter(record.accident_date, brokerSolFilter));
     }
 
     // Apply search filter
@@ -854,6 +868,7 @@ const SubmissionPortalPage = () => {
           has_submission_data: Boolean(submission),
           source_type: isCallback ? 'callback' : 'zapier',
           state: getLeadRecordString(leadRecord, "state") || submission?.state || '',
+          accident_date: getLeadRecordString(leadRecord, "accident_date"),
         };
       });
 
@@ -945,7 +960,7 @@ const SubmissionPortalPage = () => {
   // Update filtered data whenever data or filters change
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, datePreset, customStartDate, customEndDate, statusFilter, publisherFilters, selectedStates, searchTerm, tagFilter, stateOptions]);
+  }, [data, datePreset, customStartDate, customEndDate, statusFilter, publisherFilters, selectedStates, brokerSolFilter, searchTerm, tagFilter, stateOptions, solOptions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -956,11 +971,12 @@ const SubmissionPortalPage = () => {
       customEndDate,
       leadVendorFilter: publisherFilters.length === 1 ? publisherFilters[0] : "__ALL__",
       selectedStates,
+      brokerSolFilter,
       searchTerm: "",
     };
 
     window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
-  }, [datePreset, customStartDate, customEndDate, publisherFilters, selectedStates]);
+  }, [datePreset, customStartDate, customEndDate, publisherFilters, selectedStates, brokerSolFilter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1583,7 +1599,7 @@ const SubmissionPortalPage = () => {
             >
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Filters
-              {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0) && (
+              {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                 <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
               )}
             </Button>
@@ -1610,7 +1626,7 @@ const SubmissionPortalPage = () => {
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-foreground">Filters</span>
-                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
+                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1619,6 +1635,7 @@ const SubmissionPortalPage = () => {
                           setCustomEndDate("");
                           setStatusFilter("__ALL__");
                           setSelectedStates([]);
+                          setBrokerSolFilter(ALL_SOL_FILTER_VALUE);
                           setPublisherFilters([]);
                           setTagFilter(ALL_LEAD_TAGS_VALUE);
                         }}
@@ -1638,7 +1655,7 @@ const SubmissionPortalPage = () => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Range</label>
                     <PresetDateRangeFilter
@@ -1714,6 +1731,25 @@ const SubmissionPortalPage = () => {
                       selectedDisplayMode="scroll"
                       highlightSelectedOptions={false}
                     />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Broker SOL</label>
+                    <Select value={brokerSolFilter} onValueChange={setBrokerSolFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Broker SOLs" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value={ALL_SOL_FILTER_VALUE}>All Broker SOLs</SelectItem>
+                          {solOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </CardContent>

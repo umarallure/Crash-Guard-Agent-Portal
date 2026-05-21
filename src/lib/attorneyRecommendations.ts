@@ -1,8 +1,7 @@
-import { addMonths, differenceInCalendarMonths, endOfDay, isAfter, startOfDay } from "date-fns";
-
 import { supabase } from "@/integrations/supabase/client";
 import { getStateMatchToken } from "@/lib/stateFilter";
 import { US_STATES } from "@/lib/us-states";
+import { evaluateSol, type SolEvaluation } from "@/lib/solPeriods";
 
 export type AttorneyAccountType = "broker_lawyer" | "internal_lawyer";
 export type RecommendationCoverageSource = "lawyer_requirements" | "orders" | "licensed_states" | "none";
@@ -67,15 +66,6 @@ export type AttorneyRecommendationOrder = {
   quota_filled: number;
   remaining: number;
   expires_at: string;
-};
-
-export type SolEvaluation = {
-  ok: boolean;
-  status: "valid" | "expired" | "not_configured" | "missing_accident_date" | "unknown";
-  label: string;
-  sol: string | null;
-  expiryDate: string | null;
-  monthsRemaining: number | null;
 };
 
 export type AttorneyRecommendation = {
@@ -147,13 +137,6 @@ type SupabaseUntyped = {
 
 const supabaseUntyped = supabase as unknown as SupabaseUntyped;
 const KNOWN_STATE_CODES = new Set(US_STATES.map((state) => state.code));
-
-const SOL_MONTHS: Record<string, number> = {
-  "3month": 3,
-  "6month": 6,
-  "12month": 12,
-  "24month": 24,
-};
 
 const normalizeBool = (value: boolean | string | null | undefined): boolean => {
   if (typeof value === "boolean") return value;
@@ -256,71 +239,6 @@ const toOrderSummary = (order: OrderRow): AttorneyRecommendationOrder => {
     quota_filled: quotaFilled,
     remaining: Math.max(0, quotaTotal - quotaFilled),
     expires_at: order.expires_at,
-  };
-};
-
-const parseDateOnly = (value: string | null | undefined): Date | null => {
-  const trimmed = String(value ?? "").trim();
-  if (!trimmed) return null;
-
-  const [year, month, day] = trimmed.split("T")[0].split("-").map(Number);
-  if (!year || !month || !day) return null;
-
-  const date = new Date(year, month - 1, day);
-  return Number.isFinite(date.getTime()) ? date : null;
-};
-
-export const evaluateSol = (sol: string | null | undefined, accidentDate: string | null | undefined): SolEvaluation => {
-  const normalizedSol = String(sol ?? "").trim() || null;
-  if (!normalizedSol) {
-    return {
-      ok: true,
-      status: "not_configured",
-      label: "No SOL configured",
-      sol: null,
-      expiryDate: null,
-      monthsRemaining: null,
-    };
-  }
-
-  const months = SOL_MONTHS[normalizedSol];
-  if (!months) {
-    return {
-      ok: true,
-      status: "unknown",
-      label: `Unknown SOL: ${normalizedSol}`,
-      sol: normalizedSol,
-      expiryDate: null,
-      monthsRemaining: null,
-    };
-  }
-
-  const accident = parseDateOnly(accidentDate);
-  if (!accident) {
-    return {
-      ok: true,
-      status: "missing_accident_date",
-      label: `${months} month SOL, accident date missing`,
-      sol: normalizedSol,
-      expiryDate: null,
-      monthsRemaining: null,
-    };
-  }
-
-  const expiryDate = endOfDay(addMonths(startOfDay(accident), months));
-  const today = startOfDay(new Date());
-  const valid = !isAfter(today, expiryDate);
-  const monthsRemaining = Math.max(0, differenceInCalendarMonths(expiryDate, today));
-
-  return {
-    ok: valid,
-    status: valid ? "valid" : "expired",
-    label: valid
-      ? `${months} month SOL valid (${monthsRemaining} mo remaining)`
-      : `${months} month SOL expired`,
-    sol: normalizedSol,
-    expiryDate: expiryDate.toISOString(),
-    monthsRemaining,
   };
 };
 

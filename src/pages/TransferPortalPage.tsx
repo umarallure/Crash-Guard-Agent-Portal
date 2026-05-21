@@ -33,8 +33,10 @@ import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
+import { useBrokerSolFilterOptions } from "@/hooks/useBrokerSolFilterOptions";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
+import { ALL_SOL_FILTER_VALUE, matchesSolPeriodFilter } from "@/lib/solPeriods";
 import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
 import {
   applyLeadAssignmentToRows,
@@ -81,6 +83,7 @@ export interface TransferPortalRow {
   updated_at?: string;
   source_type?: string;
   state?: string;
+  accident_date?: string | null;
 }
 
 const TRANSFER_HANDOFF_STAGE_KEY = "retainer_signed";
@@ -99,6 +102,7 @@ type SharedPipelineFilterStorage = {
   customEndDate: string;
   leadVendorFilter: string;
   selectedStates: string[];
+  brokerSolFilter: string;
   searchTerm: string;
 };
 
@@ -133,6 +137,7 @@ const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
       customEndDate: typeof parsed.customEndDate === "string" ? parsed.customEndDate : "",
       leadVendorFilter: typeof parsed.leadVendorFilter === "string" ? parsed.leadVendorFilter : "__ALL__",
       selectedStates: Array.isArray(parsed.selectedStates) ? parsed.selectedStates.filter((state): state is string => typeof state === "string") : [],
+      brokerSolFilter: typeof parsed.brokerSolFilter === "string" ? parsed.brokerSolFilter : ALL_SOL_FILTER_VALUE,
       searchTerm: typeof parsed.searchTerm === "string" ? parsed.searchTerm : "",
     };
   } catch {
@@ -400,6 +405,7 @@ const TransferPortalPage = () => {
   const [sourceTypeFilter, setSourceTypeFilter] = useState(savedTransferFilters?.sourceTypeFilter ?? "__ALL__");
   const [publisherFilters, setPublisherFilters] = useState<string[]>(savedPublisherFilters);
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
+  const [brokerSolFilter, setBrokerSolFilter] = useState<string>(savedSharedFilters?.brokerSolFilter ?? ALL_SOL_FILTER_VALUE);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [currentPage, setCurrentPage] = useState(1);
@@ -423,6 +429,7 @@ const TransferPortalPage = () => {
   const [editStage, setEditStage] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
   const { stateOptions } = useSalesMapCoverageStates();
+  const { solOptions } = useBrokerSolFilterOptions();
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -489,6 +496,13 @@ const TransferPortalPage = () => {
 
     if (selectedStates.length > 0) {
       filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
+    }
+
+    if (
+      brokerSolFilter !== ALL_SOL_FILTER_VALUE &&
+      solOptions.some((option) => option.value === brokerSolFilter)
+    ) {
+      filtered = filtered.filter((record) => matchesSolPeriodFilter(record.accident_date, brokerSolFilter));
     }
 
     // Apply search filter
@@ -568,6 +582,7 @@ const TransferPortalPage = () => {
           is_callback: isCallback,
           source_type: isCallback ? 'callback' : 'zapier',
           state: getLeadRecordString(leadRecord, "state"),
+          accident_date: getLeadRecordString(leadRecord, "accident_date"),
         };
       });
 
@@ -612,7 +627,7 @@ const TransferPortalPage = () => {
   useEffect(() => {
     setFilteredData(applyFilters(data));
     setCurrentPage(1); // Reset to first page when filters change
-  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, publisherFilters, selectedStates, searchTerm, tagFilter, stateOptions]);
+  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, publisherFilters, selectedStates, brokerSolFilter, searchTerm, tagFilter, stateOptions, solOptions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -623,11 +638,12 @@ const TransferPortalPage = () => {
       customEndDate,
       leadVendorFilter: publisherFilters.length === 1 ? publisherFilters[0] : "__ALL__",
       selectedStates,
+      brokerSolFilter,
       searchTerm: "",
     };
 
     window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
-  }, [datePreset, customStartDate, customEndDate, publisherFilters, selectedStates]);
+  }, [datePreset, customStartDate, customEndDate, publisherFilters, selectedStates, brokerSolFilter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1331,7 +1347,7 @@ const TransferPortalPage = () => {
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Filters
               {/* active-filter dot */}
-              {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0 || selectedStage !== "all") && (
+              {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || selectedStage !== "all" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                 <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
               )}
             </Button>
@@ -1379,7 +1395,7 @@ const TransferPortalPage = () => {
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-foreground">Filters</span>
-                    {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || publisherFilters.length > 0 || selectedStage !== "all" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
+                    {(datePreset !== "all" || sourceTypeFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || selectedStage !== "all" || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1388,6 +1404,7 @@ const TransferPortalPage = () => {
                           setCustomEndDate("");
                           setSourceTypeFilter("__ALL__");
                           setSelectedStates([]);
+                          setBrokerSolFilter(ALL_SOL_FILTER_VALUE);
                           setPublisherFilters([]);
                           setTagFilter(ALL_LEAD_TAGS_VALUE);
                           setSelectedStage("all");
@@ -1409,7 +1426,7 @@ const TransferPortalPage = () => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
                   {/* Date range */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1519,6 +1536,27 @@ const TransferPortalPage = () => {
                       selectedDisplayMode="scroll"
                       highlightSelectedOptions={false}
                     />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Broker SOL
+                    </label>
+                    <Select value={brokerSolFilter} onValueChange={setBrokerSolFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Broker SOLs" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value={ALL_SOL_FILTER_VALUE}>All Broker SOLs</SelectItem>
+                          {solOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </CardContent>
