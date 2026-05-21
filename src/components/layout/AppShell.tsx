@@ -24,6 +24,7 @@ import {
   Sun,
   Moon,
   Landmark,
+  DollarSign,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -297,6 +298,12 @@ const AppShell = ({
         label: 'Products',
         to: '/products',
         icon: <Tag className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
+        label: 'Commission',
+        to: '/commission-portal',
+        icon: <DollarSign className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
       },
       {

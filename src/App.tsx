@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import CenterProtectedRoute from "@/components/CenterProtectedRoute";
-import LicensedAgentProtectedRoute from "@/components/LicensedAgentProtectedRoute";
 import { AgentActivityDashboard } from "@/components/AgentActivityDashboard";
 import ReportsPage from "./pages/Reports";
 import Auth from "./pages/Auth";
@@ -174,11 +173,11 @@ const App = () => (
             <Route 
               path="/commission-portal" 
               element={
-                <LicensedAgentProtectedRoute>
-                  <AppShell title="Retainers">
+                <ProtectedRoute>
+                  <AppShell title="Commission">
                     <CommissionPortal />
                   </AppShell>
-                </LicensedAgentProtectedRoute>
+                </ProtectedRoute>
               } 
             />
             <Route 
