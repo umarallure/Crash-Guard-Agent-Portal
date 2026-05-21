@@ -1,1218 +1,1920 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Filter, Phone, User, DollarSign, TrendingUp, AlertCircle, CheckCircle2, Clock, BarChart3, FileText, Building2, Activity, ShieldCheck, Shield, Award } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
-import { useLicensedAgent } from '@/hooks/useLicensedAgent';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { fetchBoardItems, isMondayApiConfigured, ParsedPolicyItem } from '@/lib/mondayApi';
-import { MultiSelect } from '@/components/ui/multi-select';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  DollarSign,
+  FileText,
+  RefreshCw,
+  Search,
+  Send,
+  User,
+  XCircle,
+} from "lucide-react";
 
-type CommissionLead = {
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/hooks/useAuth";
+import { useLicensedAgent } from "@/hooks/useLicensedAgent";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  fetchLicensedCloserDirectory,
+  type LicensedCloserDirectoryEntry,
+} from "@/lib/agentOptions";
+import { cn } from "@/lib/utils";
+import { getPortalRoleFlags } from "@/lib/userPermissions";
+
+type BoardKey = "submitted" | "approved" | "rejected" | "chargeback";
+
+interface CallResultRow {
   id: string;
-  submission_id: string;
-  insured_name: string | null;
-  client_phone_number: string | null;
-  carrier: string | null;
-  monthly_premium: number | null;
-  face_amount: number | null;
-  status: string;
-  licensed_agent_account: string;
-  buffer_agent: string | null;
-  agent: string | null;
-  product_type: string | null;
-  draft_date: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
+  submission_id: string | null;
+  agent_who_took_call: string | null;
+  licensed_agent_account: string | null;
+  submitted_attorney: string | null;
+  status: string | null;
+  submission_date: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  call_source: string | null;
+}
+
+interface LeadStatusRow {
+  submission_id: string | null;
+  customer_full_name: string | null;
+  state: string | null;
+  status: string | null;
+}
+
+interface CommissionItem {
+  id: string;
+  submissionId: string;
+  closerUserId: string;
+  closerName: string;
+  leadName: string;
+  state: string;
+  attorney: string;
+  leadStatus: string;
+  boardKey: BoardKey;
+  callDateKey: string;
+  sortValue: number;
+  commissionAmount: number;
+}
+
+type CloserDirectoryIndex = {
+  byUserId: Map<string, LicensedCloserDirectoryEntry>;
+  byAlias: Map<string, LicensedCloserDirectoryEntry>;
 };
 
-const CommissionPortal = () => {
-  const { user, loading: authLoading } = useAuth();
-  const { licensedAgentInfo, displayName, loading: licensedLoading } = useLicensedAgent();
-  const navigate = useNavigate();
-  const { toast } = useToast();
+type AttributedCallResultRow = {
+  row: CallResultRow;
+  entry: LicensedCloserDirectoryEntry;
+  dateKey: string;
+  sortValue: number;
+};
 
-  // Helper function to get column value by ID
-  const getColumnValue = (item: ParsedPolicyItem, columnId: string): string => {
-    const column = item.column_values?.find(col => col.id === columnId);
-    return column?.text || '';
+type PayCycle = {
+  key: string;
+  label: string;
+  payoutLabel: string;
+  startKey: string;
+  endKey: string;
+  isCurrent: boolean;
+};
+
+type CommissionCycleRows = {
+  callResultRows: CallResultRow[];
+  leadRows: LeadStatusRow[];
+};
+
+type CommissionTotals = {
+  payable: number;
+  submittedCount: number;
+  submittedPotential: number;
+  approvedCount: number;
+  rejectedCount: number;
+  rejectedMissed: number;
+  chargebackCount: number;
+  chargebackExposure: number;
+};
+
+type TrendPoint = {
+  dayIndex: number;
+  dateKey: string;
+  value: number;
+};
+
+type PayableTrend = {
+  current: TrendPoint[];
+  previous: TrendPoint[];
+  cycleLength: number;
+  todayDayIndex: number | null;
+};
+
+type SupabaseListResult<T> = {
+  data: T[] | null;
+  error: unknown;
+};
+
+type SupabaseFilterBuilder<T> = PromiseLike<SupabaseListResult<T>> & {
+  gte: (column: string, value: string) => SupabaseFilterBuilder<T>;
+  lt: (column: string, value: string) => SupabaseFilterBuilder<T>;
+  is: (column: string, value: null) => SupabaseFilterBuilder<T>;
+  in: (column: string, values: string[]) => SupabaseFilterBuilder<T>;
+};
+
+type CommissionSupabaseClient = {
+  from: <T>(table: string) => {
+    select: (columns: string) => SupabaseFilterBuilder<T>;
   };
+};
 
-  // Helper to get premium as number
-  const getPremium = (item: ParsedPolicyItem): number => {
-    const premiumText = getColumnValue(item, 'numbers');
-    return premiumText ? parseFloat(premiumText.replace(/[^0-9.-]+/g, '')) || 0 : 0;
-  };
+const REPORT_TIME_ZONE = "America/New_York";
+const ALL_AGENTS_VALUE = "__all_agents__";
+const RECORDS_PER_PAGE = 20;
+const LEAD_STATUS_QUERY_BATCH_SIZE = 500;
+const INBOUND_COMMISSION_AMOUNT = 50;
+const OUTBOUND_COMMISSION_AMOUNT = 100;
+const AGENT_CALLBACK_CALL_SOURCE = "agent callback";
+const INCOME_CHART_WIDTH = 560;
+const INCOME_CHART_HEIGHT = 160;
+const INCOME_CHART_PAD_X = 24;
+const INCOME_CHART_PAD_TOP = 24;
+const INCOME_CHART_PAD_BOTTOM = 36;
+const DONUT_RADIUS = 54;
+const DONUT_STROKE = 12;
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
+const DONUT_GAP = 4;
 
-  // Helper to get policy type (GI or Non GI)
-  const getPolicyType = (item: ParsedPolicyItem): string => {
-    return getColumnValue(item, 'text_mkxdrsg2');
-  };
+const APPROVED_STATUSES = new Set([
+  "attorney_approved",
+  "qualified_payable",
+  "paid_to_agency",
+  "paid_to_bpo",
+]);
 
-  // State for writing leads (from Supabase)
-  const [leads, setLeads] = useState<CommissionLead[]>([]);
-  const [filteredLeads, setFilteredLeads] = useState<CommissionLead[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [startDateFilter, setStartDateFilter] = useState('');
-  const [endDateFilter, setEndDateFilter] = useState('');
-  const [nameFilter, setNameFilter] = useState('');
-  const [carrierFilter, setCarrierFilter] = useState('all');
-  const [productFilter, setProductFilter] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+const CHARGEBACK_STATUSES = new Set([
+  "chargeback",
+  "chargeback_dq",
+  "chargeback dq",
+  "attorney_chargeback",
+]);
 
-  // State for actual placements (from Monday.com)
-  const [placements, setPlacements] = useState<ParsedPolicyItem[]>([]);
-  const [filteredPlacements, setFilteredPlacements] = useState<ParsedPolicyItem[]>([]);
-  const [placementsLoading, setPlacementsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('placements'); // Default to placements view
-  const [placementsPage, setPlacementsPage] = useState(1);
-  const [placementsPerPage] = useState(20);
-  
-  // Filters for placements
-  const [placementStatusFilter, setPlacementStatusFilter] = useState<string[]>(['Issued Paid', 'Pending', 'Issued Not Paid']);
-  const [placementStartDate, setPlacementStartDate] = useState('');
-  const [placementEndDate, setPlacementEndDate] = useState('');
-  const [placementFrequencyFilter, setPlacementFrequencyFilter] = useState('all');
+const BOARD_DEFINITIONS: Array<{
+  key: BoardKey;
+  title: string;
+  tone: "blue" | "green" | "rose" | "amber";
+  icon: typeof Send;
+}> = [
+  {
+    key: "submitted",
+    title: "Submitted to Attorney",
+    tone: "blue",
+    icon: Send,
+  },
+  {
+    key: "approved",
+    title: "Approved by Attorney",
+    tone: "green",
+    icon: CheckCircle2,
+  },
+  {
+    key: "rejected",
+    title: "Rejected by Attorney",
+    tone: "rose",
+    icon: XCircle,
+  },
+  {
+    key: "chargeback",
+    title: "Chargeback",
+    tone: "amber",
+    icon: AlertTriangle,
+  },
+];
 
-  // Map user email to sales agent name for filtering
-  const getSalesAgentName = (): string | undefined => {
-    if (!user?.email) return undefined;
-    
-    const emailToAgentMap: Record<string, string> = {
-      'isaac.r@heritageinsurance.io': 'Isaac Reed',
-      'benjamin.w@unlimitedinsurance.io	': 'Benjamin Wunder',
-      'lydia.s@unlimitedinsurance.io': 'Lydia Sutton',
-      'noah@unlimitedinsurance.io': 'Noah Brock',
-      'tatumn.s@heritageinsurance.io': 'Trinity Queen'
+const normalizeText = (value: string | null | undefined) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 
-      // Add more mappings here as needed
-    };
-    
-    return emailToAgentMap[user.email.toLowerCase()];
-  };
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
 
-  useEffect(() => {
-    if (!authLoading && !licensedLoading && (!user || !licensedAgentInfo)) {
-      navigate('/auth');
+const formatDateKeyInTimeZone = (date: Date) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: REPORT_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+
+const getTimestampDateKey = (value: string | null | undefined) => {
+  if (!value) return "";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  return formatDateKeyInTimeZone(parsed);
+};
+
+const getCallResultDateKey = (row: CallResultRow) =>
+  getTimestampDateKey(row.updated_at || row.created_at || row.submission_date);
+
+const getRowSortValue = (row: CallResultRow, dateKey: string) => {
+  const timestampCandidates = [row.updated_at, row.created_at];
+
+  for (const value of timestampCandidates) {
+    if (!value) continue;
+
+    const parsedValue = new Date(value).getTime();
+    if (!Number.isNaN(parsedValue)) {
+      return parsedValue;
     }
-  }, [user, licensedAgentInfo, authLoading, licensedLoading, navigate]);
+  }
 
-  useEffect(() => {
-    if (licensedAgentInfo && displayName) {
-      fetchLeads();
-      fetchPlacements();
-    }
-  }, [licensedAgentInfo, displayName]);
+  if (!dateKey) return 0;
+  return new Date(`${dateKey}T12:00:00Z`).getTime();
+};
 
-  useEffect(() => {
-    applyFilters();
-    setCurrentPage(1); // Reset to first page when filters change
-  }, [leads, startDateFilter, endDateFilter, nameFilter, carrierFilter, productFilter]);
+const isDateKeyInRange = (dateKey: string, startKey: string, endKey: string) =>
+  Boolean(dateKey) && dateKey >= startKey && dateKey <= endKey;
 
-  // Apply placement filters
-  useEffect(() => {
-    applyPlacementFilters();
-    setPlacementsPage(1); // Reset to first page when filters change
-  }, [placements, placementStatusFilter, placementStartDate, placementEndDate, placementFrequencyFilter]);
+const getApproxTimestampRange = (startKey: string, endKey: string) => {
+  const start = new Date(`${startKey}T12:00:00Z`);
+  start.setUTCDate(start.getUTCDate() - 1);
 
-  const fetchLeads = async () => {
-    if (!displayName) return;
+  const endExclusive = new Date(`${endKey}T12:00:00Z`);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 2);
 
-    try {
-      // Get leads from daily_deal_flow where licensed_agent_account matches display name and status is 'Pending Approval'
-      const { data: leadsData, error: leadsError } = await supabase
-        .from('daily_deal_flow')
-        .select('*')
-        .eq('licensed_agent_account', displayName)
-        .eq('status', 'Pending Approval')
-        .order('created_at', { ascending: false });
-
-      if (leadsError) throw leadsError;
-
-      setLeads(leadsData || []);
-    } catch (error) {
-      console.error('Error fetching commission leads:', error);
-      toast({
-        title: "Error fetching leads",
-        description: "Unable to load your commission leads. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
+  return {
+    startIso: start.toISOString(),
+    endIso: endExclusive.toISOString(),
   };
+};
 
-  const fetchPlacements = async () => {
-    if (!displayName) return;
+const isInboundCommissionCall = (row: CallResultRow) =>
+  normalizeText(row.call_source) !== AGENT_CALLBACK_CALL_SOURCE;
 
-    setPlacementsLoading(true);
+const getCommissionAmountForCall = (row: CallResultRow) =>
+  isInboundCommissionCall(row) ? INBOUND_COMMISSION_AMOUNT : OUTBOUND_COMMISSION_AMOUNT;
 
-    try {
-      // Check if Monday.com API is configured
-      if (!isMondayApiConfigured()) {
-        console.warn('Monday.com API token not configured');
-        toast({
-          title: "Configuration Required",
-          description: "Monday.com API token is not configured. Please add VITE_MONDAY_API_TOKEN to your environment variables.",
-          variant: "default",
-        });
-        setPlacements([]);
-        return;
+const getBoardKeyForLeadStatus = (value: string | null | undefined): BoardKey | null => {
+  const status = normalizeText(value);
+  if (status === "attorney_review") return "submitted";
+  if (APPROVED_STATUSES.has(status)) return "approved";
+  if (status === "attorney_rejected") return "rejected";
+  if (CHARGEBACK_STATUSES.has(status)) return "chargeback";
+  return null;
+};
+
+const buildCloserDirectoryIndex = (
+  directory: LicensedCloserDirectoryEntry[],
+): CloserDirectoryIndex => {
+  const byUserId = new Map<string, LicensedCloserDirectoryEntry>();
+  const byAlias = new Map<string, LicensedCloserDirectoryEntry>();
+
+  directory.forEach((entry) => {
+    byUserId.set(entry.userId, entry);
+    entry.aliases.forEach((alias) => {
+      if (!byAlias.has(alias)) {
+        byAlias.set(alias, entry);
       }
+    });
+  });
 
-      // Get sales agent name based on logged-in user's email
-      const salesAgentName = getSalesAgentName();
-      console.log(`[Commission Portal] Fetching policy placements${salesAgentName ? ` for agent: ${salesAgentName}` : ''}...`);
-      
-      // Fetch items from Monday.com board - filter by agent if mapped
-      const items = await fetchBoardItems(salesAgentName);
-      console.log(`[Commission Portal] Fetched ${items.length} policy items`);
+  return { byUserId, byAlias };
+};
 
-      setPlacements(items);
-      setFilteredPlacements(items); // Initialize filtered list
-      
-      toast({
-        title: "Placements Loaded",
-        description: `Loaded ${items.length} policy placements from Monday.com`,
-      });
-    } catch (error) {
-      console.error('Error fetching Monday.com placements:', error);
-      toast({
-        title: "Error fetching placements",
-        description: "Unable to load policy placements from Monday.com. Please try again.",
-        variant: "destructive",
-      });
-      setPlacements([]);
-    } finally {
-      setPlacementsLoading(false);
+const resolveCloserEntry = (
+  index: CloserDirectoryIndex,
+  options: {
+    userId?: string | null;
+    names?: Array<string | null | undefined>;
+  },
+) => {
+  const normalizedUserId = String(options.userId || "").trim();
+  if (normalizedUserId && index.byUserId.has(normalizedUserId)) {
+    return index.byUserId.get(normalizedUserId) ?? null;
+  }
+
+  for (const value of options.names || []) {
+    const normalizedName = normalizeText(value);
+    if (!normalizedName) continue;
+
+    if (index.byAlias.has(normalizedName)) {
+      return index.byAlias.get(normalizedName) ?? null;
     }
+  }
+
+  return null;
+};
+
+const getCycleBounds = (cycleKey: string) => {
+  const [yearRaw, monthRaw] = cycleKey.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+
+  let startYear = year;
+  let startMonth = month - 1;
+  if (startMonth === 0) {
+    startMonth = 12;
+    startYear -= 1;
+  }
+
+  return {
+    startKey: `${startYear}-${String(startMonth).padStart(2, "0")}-15`,
+    endKey: `${yearRaw}-${monthRaw}-14`,
   };
+};
 
-  const applyFilters = () => {
-    let filtered = leads;
+const getCurrentCycleKey = () => {
+  const todayKey = formatDateKeyInTimeZone(new Date());
+  const [year, month, day] = todayKey.split("-").map(Number);
 
-    // Date range filter
-    if (startDateFilter) {
-      filtered = filtered.filter(lead => {
-        if (!lead.created_at) return false;
-        const leadDate = new Date(lead.created_at);
-        const startDate = new Date(startDateFilter);
-        return leadDate >= startDate;
-      });
+  let cycleYear = year;
+  let cycleMonth = month;
+  if (day >= 15) {
+    cycleMonth += 1;
+    if (cycleMonth > 12) {
+      cycleMonth = 1;
+      cycleYear += 1;
+    }
+  }
+
+  return `${cycleYear}-${String(cycleMonth).padStart(2, "0")}`;
+};
+
+const formatCycleLabel = (cycleKey: string) => {
+  const [yearRaw, monthRaw] = cycleKey.split("-");
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(Number(yearRaw), Number(monthRaw) - 1, 1)));
+};
+
+const getPayoutLabel = (cycleKey: string) => {
+  const [yearRaw, monthRaw] = cycleKey.split("-");
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(Number(yearRaw), Number(monthRaw) - 1, 15)));
+};
+
+const getCycleDayCount = (cycle: PayCycle | null): number => {
+  if (!cycle) return 0;
+  const start = new Date(`${cycle.startKey}T12:00:00Z`).getTime();
+  const end = new Date(`${cycle.endKey}T12:00:00Z`).getTime();
+  return Math.round((end - start) / 86_400_000) + 1;
+};
+
+const buildPayCycles = (): PayCycle[] => {
+  const currentKey = getCurrentCycleKey();
+  const cycles: PayCycle[] = [];
+  let [year, month] = currentKey.split("-").map(Number);
+
+  while (year > 2020 || (year === 2020 && month >= 1)) {
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+    const { startKey, endKey } = getCycleBounds(key);
+
+    cycles.push({
+      key,
+      label: `${formatCycleLabel(key)} Pay Cycle`,
+      payoutLabel: getPayoutLabel(key),
+      startKey,
+      endKey,
+      isCurrent: key === currentKey,
+    });
+
+    month -= 1;
+    if (month === 0) {
+      month = 12;
+      year -= 1;
+    }
+  }
+
+  return cycles;
+};
+
+const formatDateLabel = (dateKey: string) => {
+  if (!dateKey) return "-";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${dateKey}T12:00:00Z`));
+};
+
+const chunkArray = <T,>(items: T[], size: number) => {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+};
+
+const fetchCallResultRows = async (
+  startKey: string,
+  endKey: string,
+): Promise<CallResultRow[]> => {
+  const { startIso, endIso } = getApproxTimestampRange(startKey, endKey);
+  const selection =
+    "id, submission_id, agent_who_took_call, licensed_agent_account, submitted_attorney, status, submission_date, created_at, updated_at, call_source";
+  const commissionSupabase = supabase as unknown as CommissionSupabaseClient;
+
+  const [updatedResults, createdResults] = await Promise.all([
+    commissionSupabase
+      .from<CallResultRow>("call_results")
+      .select(selection)
+      .gte("updated_at", startIso)
+      .lt("updated_at", endIso),
+    commissionSupabase
+      .from<CallResultRow>("call_results")
+      .select(selection)
+      .is("updated_at", null)
+      .gte("created_at", startIso)
+      .lt("created_at", endIso),
+  ]);
+
+  if (updatedResults.error) {
+    throw updatedResults.error;
+  }
+
+  if (createdResults.error) {
+    throw createdResults.error;
+  }
+
+  const deduped = new Map<string, CallResultRow>();
+
+  [...(updatedResults.data || []), ...(createdResults.data || [])]
+    .filter(Boolean)
+    .forEach((row) => {
+      const typedRow = row as CallResultRow;
+      const dateKey = getCallResultDateKey(typedRow);
+
+      if (!isDateKeyInRange(dateKey, startKey, endKey)) return;
+      if (!isInboundCommissionCall(typedRow)) return;
+
+      deduped.set(typedRow.id, typedRow);
+    });
+
+  return Array.from(deduped.values());
+};
+
+const fetchLeadRows = async (submissionIds: string[]): Promise<LeadStatusRow[]> => {
+  const uniqueSubmissionIds = Array.from(
+    new Set(submissionIds.map((id) => id.trim()).filter(Boolean)),
+  );
+
+  if (uniqueSubmissionIds.length === 0) return [];
+  const commissionSupabase = supabase as unknown as CommissionSupabaseClient;
+
+  const results = await Promise.all(
+    chunkArray(uniqueSubmissionIds, LEAD_STATUS_QUERY_BATCH_SIZE).map((batch) =>
+      commissionSupabase
+        .from<LeadStatusRow>("leads")
+        .select("submission_id, customer_full_name, state, status")
+        .in("submission_id", batch),
+    ),
+  );
+
+  const rows: LeadStatusRow[] = [];
+
+  results.forEach((result) => {
+    if (result.error) {
+      throw result.error;
     }
 
-    if (endDateFilter) {
-      filtered = filtered.filter(lead => {
-        if (!lead.created_at) return false;
-        const leadDate = new Date(lead.created_at);
-        const endDate = new Date(endDateFilter);
-        endDate.setHours(23, 59, 59, 999); // Include the entire end date
-        return leadDate <= endDate;
-      });
-    }
+    rows.push(...((result.data || []) as LeadStatusRow[]));
+  });
 
-    // Name filter
-    if (nameFilter) {
-      filtered = filtered.filter(lead =>
-        lead.insured_name?.toLowerCase().includes(nameFilter.toLowerCase())
+  return rows;
+};
+
+const fetchCommissionCycleRows = async (cycle: PayCycle | null): Promise<CommissionCycleRows> => {
+  if (!cycle) {
+    return { callResultRows: [], leadRows: [] };
+  }
+
+  const callResultRows = await fetchCallResultRows(cycle.startKey, cycle.endKey);
+  const submissionIds = callResultRows
+    .map((row) => row.submission_id)
+    .filter((id): id is string => Boolean(id));
+  const leadRows = await fetchLeadRows(submissionIds);
+
+  return { callResultRows, leadRows };
+};
+
+const shiftDateKey = (dateKey: string, days: number) => {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+const getPercentChange = (current: number, previous: number) => {
+  if (previous === 0) return current > 0 ? 100 : 0;
+  return ((current - previous) / previous) * 100;
+};
+
+const buildLeadStatusMap = (leadRows: LeadStatusRow[]) => {
+  const rows = new Map<string, LeadStatusRow>();
+
+  leadRows.forEach((row) => {
+    const submissionId = String(row.submission_id || "").trim();
+    if (!submissionId) return;
+    rows.set(submissionId, row);
+  });
+
+  return rows;
+};
+
+const buildCommissionItemsForCycle = ({
+  callResultRows,
+  closerDirectoryIndex,
+  cycle,
+  leadBySubmissionId,
+}: {
+  callResultRows: CallResultRow[];
+  closerDirectoryIndex: CloserDirectoryIndex;
+  cycle: PayCycle | null;
+  leadBySubmissionId: Map<string, LeadStatusRow>;
+}) => {
+  const grouped = new Map<string, AttributedCallResultRow[]>();
+
+  callResultRows.forEach((row) => {
+    const submissionId = String(row.submission_id || "").trim();
+    if (!submissionId) return;
+    if (!isInboundCommissionCall(row)) return;
+
+    const entry = resolveCloserEntry(closerDirectoryIndex, {
+      names: [row.agent_who_took_call, row.licensed_agent_account],
+    });
+    if (!entry) return;
+
+    const dateKey = getCallResultDateKey(row);
+    if (!dateKey || !cycle) return;
+    if (!isDateKeyInRange(dateKey, cycle.startKey, cycle.endKey)) return;
+
+    const existing = grouped.get(submissionId) || [];
+    existing.push({
+      row,
+      entry,
+      dateKey,
+      sortValue: getRowSortValue(row, dateKey),
+    });
+    grouped.set(submissionId, existing);
+  });
+
+  return Array.from(grouped.entries())
+    .map(([submissionId, rows]) => {
+      const sortedRows = [...rows].sort((left, right) => right.sortValue - left.sortValue);
+      const latest = sortedRows[0];
+      const lead = leadBySubmissionId.get(submissionId);
+      const boardKey = getBoardKeyForLeadStatus(lead?.status);
+
+      if (!latest || !lead || !boardKey) return null;
+
+      return {
+        id: `${submissionId}-${latest.row.id}`,
+        submissionId,
+        closerUserId: latest.entry.userId,
+        closerName: latest.entry.label,
+        leadName: lead.customer_full_name || "Unknown lead",
+        state: lead.state || "-",
+        attorney: latest.row.submitted_attorney || "Unassigned",
+        leadStatus: lead.status || "",
+        boardKey,
+        callDateKey: latest.dateKey,
+        sortValue: latest.sortValue,
+        commissionAmount: getCommissionAmountForCall(latest.row),
+      } satisfies CommissionItem;
+    })
+    .filter((item): item is CommissionItem => Boolean(item))
+    .sort((left, right) => right.sortValue - left.sortValue);
+};
+
+const calculateCommissionTotals = (items: CommissionItem[]): CommissionTotals => {
+  const submitted = items.filter((item) => item.boardKey === "submitted");
+  const approved = items.filter((item) => item.boardKey === "approved");
+  const rejected = items.filter((item) => item.boardKey === "rejected");
+  const chargeback = items.filter((item) => item.boardKey === "chargeback");
+
+  return {
+    payable: approved.reduce((total, item) => total + item.commissionAmount, 0),
+    submittedCount: submitted.length,
+    submittedPotential: submitted.reduce((total, item) => total + item.commissionAmount, 0),
+    approvedCount: approved.length,
+    rejectedCount: rejected.length,
+    rejectedMissed: rejected.reduce((total, item) => total + item.commissionAmount, 0),
+    chargebackCount: chargeback.length,
+    chargebackExposure: chargeback.reduce((total, item) => total + item.commissionAmount, 0),
+  };
+};
+
+const buildCyclePayableSeries = (
+  items: CommissionItem[],
+  cycle: PayCycle | null,
+  untilDateKey?: string,
+): TrendPoint[] => {
+  if (!cycle) return [];
+
+  const lastDateKey = untilDateKey && untilDateKey < cycle.endKey ? untilDateKey : cycle.endKey;
+  const amountByDate = new Map<string, number>();
+
+  items
+    .filter((item) => item.boardKey === "approved")
+    .forEach((item) => {
+      amountByDate.set(
+        item.callDateKey,
+        (amountByDate.get(item.callDateKey) || 0) + item.commissionAmount,
       );
-    }
+    });
 
-    // Carrier filter
-    if (carrierFilter && carrierFilter !== 'all') {
-      filtered = filtered.filter(lead => lead.carrier === carrierFilter);
-    }
+  const points: TrendPoint[] = [];
+  let cursor = cycle.startKey;
+  let dayIndex = 0;
+  let runningTotal = 0;
 
-    // Product type filter
-    if (productFilter && productFilter !== 'all') {
-      filtered = filtered.filter(lead => lead.product_type === productFilter);
-    }
+  while (cursor <= lastDateKey && cursor <= cycle.endKey) {
+    runningTotal += amountByDate.get(cursor) || 0;
 
-    setFilteredLeads(filtered);
-  };
-
-  const applyPlacementFilters = () => {
-    let filtered = placements;
-
-    // Status filter (Issue Status - column 'status')
-    if (placementStatusFilter.length > 0) {
-      filtered = filtered.filter(p => {
-        const status = getColumnValue(p, 'status');
-        return placementStatusFilter.includes(status);
-      });
-    }
-
-    // Frequency filter (based on Issue Date - date_mkq1d86z)
-    if (placementFrequencyFilter && placementFrequencyFilter !== 'all') {
-      const now = new Date();
-      
-      filtered = filtered.filter(p => {
-        const dateStr = getColumnValue(p, 'date_mkq1d86z');
-        if (!dateStr) return false;
-        const placementDate = new Date(dateStr);
-        
-        switch (placementFrequencyFilter) {
-          case '24hours': {
-            // Last 24 hours
-            const dayAgo = new Date(now);
-            dayAgo.setHours(now.getHours() - 24);
-            return placementDate >= dayAgo && placementDate <= now;
-          }
-          case '7days': {
-            // Last 7 days
-            const weekAgo = new Date(now);
-            weekAgo.setDate(now.getDate() - 7);
-            return placementDate >= weekAgo && placementDate <= now;
-          }
-          case '30days': {
-            // Last 30 days
-            const monthAgo = new Date(now);
-            monthAgo.setDate(now.getDate() - 30);
-            return placementDate >= monthAgo && placementDate <= now;
-          }
-          case '6months': {
-            // Last 6 months
-            const sixMonthsAgo = new Date(now);
-            sixMonthsAgo.setMonth(now.getMonth() - 6);
-            return placementDate >= sixMonthsAgo && placementDate <= now;
-          }
-          default:
-            return true;
-        }
-      });
-    }
-
-    // Date range filter (using Issue Date - date_mkq1d86z)
-    if (placementStartDate) {
-      filtered = filtered.filter(p => {
-        const dateStr = getColumnValue(p, 'date_mkq1d86z');
-        if (!dateStr) return false;
-        const placementDate = new Date(dateStr);
-        const startDate = new Date(placementStartDate);
-        return placementDate >= startDate;
-      });
-    }
-
-    if (placementEndDate) {
-      filtered = filtered.filter(p => {
-        const dateStr = getColumnValue(p, 'date_mkq1d86z');
-        if (!dateStr) return false;
-        const placementDate = new Date(dateStr);
-        const endDate = new Date(placementEndDate);
-        endDate.setHours(23, 59, 59, 999);
-        return placementDate <= endDate;
-      });
-    }
-
-    setFilteredPlacements(filtered);
-  };
-
-  const getLeadStatus = (lead: CommissionLead) => {
-    return lead.status || 'Available';
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Pending Approval': return 'bg-yellow-500 text-white';
-      case 'Approved': return 'bg-green-500 text-white';
-      default: return 'bg-blue-500 text-white';
-    }
-  };
-
-  // Pagination functions
-  const getPaginatedLeads = () => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return filteredLeads.slice(startIndex, endIndex);
-  };
-
-  const getTotalPages = () => {
-    return Math.ceil(filteredLeads.length / itemsPerPage);
-  };
-
-  const handlePageChange = (page: number) => {
-    const total = getTotalPages();
-    if (page < 1) page = 1;
-    if (page > total) page = total;
-    setCurrentPage(page);
-  };
-
-  // Pagination functions for placements
-  const getPaginatedPlacements = () => {
-    const startIndex = (placementsPage - 1) * placementsPerPage;
-    const endIndex = startIndex + placementsPerPage;
-    return filteredPlacements.slice(startIndex, endIndex);
-  };
-
-  const getPlacementsTotalPages = () => {
-    return Math.ceil(filteredPlacements.length / placementsPerPage);
-  };
-
-  const handlePlacementsPageChange = (page: number) => {
-    const total = getPlacementsTotalPages();
-    if (page < 1) page = 1;
-    if (page > total) page = total;
-    setPlacementsPage(page);
-  };
-
-  const paginatedLeads = getPaginatedLeads();
-  const totalPages = getTotalPages();
-  const paginatedPlacements = getPaginatedPlacements();
-  const placementsTotalPages = getPlacementsTotalPages();
-
-  if (authLoading || licensedLoading || isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-2 text-muted-foreground">Loading your commission portal...</p>
-        </div>
-      </div>
-    );
+    points.push({
+      dayIndex,
+      dateKey: cursor,
+      value: runningTotal,
+    });
+    cursor = shiftDateKey(cursor, 1);
+    dayIndex += 1;
   }
 
-  if (!licensedAgentInfo) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground">Access denied. Licensed agent authentication required.</p>
-        </div>
-      </div>
-    );
+  return points;
+};
+
+const buildPayableTrend = ({
+  currentCycle,
+  currentItems,
+  previousCycle,
+  previousItems,
+}: {
+  currentCycle: PayCycle | null;
+  currentItems: CommissionItem[];
+  previousCycle: PayCycle | null;
+  previousItems: CommissionItem[];
+}): PayableTrend => {
+  const todayKey = formatDateKeyInTimeZone(new Date());
+  const currentUntil = currentCycle?.isCurrent ? todayKey : undefined;
+
+  const current = buildCyclePayableSeries(currentItems, currentCycle, currentUntil);
+  const previous = buildCyclePayableSeries(previousItems, previousCycle);
+
+  const cycleLength = Math.max(
+    getCycleDayCount(currentCycle),
+    getCycleDayCount(previousCycle),
+    1,
+  );
+
+  const todayDayIndex =
+    currentCycle?.isCurrent && current.length > 0
+      ? current[current.length - 1].dayIndex
+      : null;
+
+  return { current, previous, cycleLength, todayDayIndex };
+};
+
+const buildSmoothPath = (points: Array<{ x: number; y: number }>) => {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+
+  const path: string[] = [`M ${points[0].x} ${points[0].y}`];
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const p0 = points[index - 1] || points[index];
+    const p1 = points[index];
+    const p2 = points[index + 1];
+    const p3 = points[index + 2] || p2;
+    const tension = 0.18;
+    const c1x = p1.x + (p2.x - p0.x) * tension;
+    const c1y = p1.y + (p2.y - p0.y) * tension;
+    const c2x = p2.x - (p3.x - p1.x) * tension;
+    const c2y = p2.y - (p3.y - p1.y) * tension;
+    path.push(`C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`);
   }
+
+  return path.join(" ");
+};
+
+const toneClass = (tone: "blue" | "green" | "rose" | "amber") => {
+  switch (tone) {
+    case "blue":
+      return {
+        border: "border-primary/40",
+        text: "text-primary",
+        bg: "bg-primary/20",
+        header: "bg-white/[0.025]",
+      };
+    case "green":
+      return {
+        border: "border-emerald-900/60",
+        text: "text-emerald-300",
+        bg: "bg-emerald-950/40",
+        header: "bg-white/[0.025]",
+      };
+    case "rose":
+      return {
+        border: "border-red-900/50",
+        text: "text-red-300",
+        bg: "bg-red-950/40",
+        header: "bg-white/[0.025]",
+      };
+    case "amber":
+      return {
+        border: "border-white/20",
+        text: "text-slate-300",
+        bg: "bg-white/[0.07]",
+        header: "bg-white/[0.025]",
+      };
+  }
+};
+
+const boardAccentClass = (boardKey: BoardKey) => {
+  switch (boardKey) {
+    case "submitted":
+      return "bg-primary";
+    case "approved":
+      return "bg-emerald-800";
+    case "rejected":
+      return "bg-red-900";
+    case "chargeback":
+      return "bg-slate-500";
+  }
+};
+
+const boardCardHoverClass = (boardKey: BoardKey) => {
+  switch (boardKey) {
+    case "submitted":
+      return "hover:border-primary/50 hover:bg-primary/20 hover:shadow-[0_24px_54px_-34px_rgba(234,117,38,0.68)]";
+    case "approved":
+      return "hover:border-emerald-900/70 hover:bg-emerald-950/40 hover:shadow-[0_24px_54px_-34px_rgba(6,78,59,0.70)]";
+    case "rejected":
+      return "hover:border-red-900/60 hover:bg-red-950/40 hover:shadow-[0_24px_54px_-34px_rgba(127,29,29,0.70)]";
+    case "chargeback":
+      return "hover:border-white/25 hover:bg-white/[0.08] hover:shadow-[0_24px_54px_-34px_rgba(148,163,184,0.40)]";
+  }
+};
+
+const boardPillClass = (boardKey: BoardKey) => {
+  switch (boardKey) {
+    case "submitted":
+      return "border-primary/40 bg-primary/20 text-primary";
+    case "approved":
+      return "border-emerald-900/60 bg-emerald-950/40 text-emerald-200";
+    case "rejected":
+      return "border-red-900/50 bg-red-950/40 text-red-200";
+    case "chargeback":
+      return "border-white/20 bg-white/[0.06] text-slate-200";
+  }
+};
+
+const statusBadgeClass = (boardKey: BoardKey) => {
+  switch (boardKey) {
+    case "submitted":
+      return "border-primary/40 bg-primary/20 text-primary";
+    case "approved":
+      return "border-emerald-900/60 bg-emerald-950/40 text-emerald-200";
+    case "rejected":
+      return "border-red-900/50 bg-red-950/40 text-red-200";
+    case "chargeback":
+      return "border-white/20 bg-white/[0.06] text-slate-200";
+  }
+};
+
+const getBoardLabel = (boardKey: BoardKey) =>
+  BOARD_DEFINITIONS.find((board) => board.key === boardKey)?.title ?? boardKey;
+
+const getBoardAmount = (items: CommissionItem[], boardKey: BoardKey) => {
+  if (boardKey === "approved") {
+    return items.reduce((total, item) => total + item.commissionAmount, 0);
+  }
+
+  if (boardKey === "submitted") {
+    return items.reduce((total, item) => total + item.commissionAmount, 0);
+  }
+
+  if (boardKey === "chargeback") {
+    return -items.reduce((total, item) => total + item.commissionAmount, 0);
+  }
+
+  return 0;
+};
+
+const CommissionIncomeCard = ({
+  currentPayable,
+  loading,
+  previousPayable,
+  selectedCycleLabel,
+  trend,
+}: {
+  currentPayable: number;
+  loading: boolean;
+  previousPayable: number;
+  selectedCycleLabel: string;
+  trend: PayableTrend;
+}) => {
+  const [hoverDayIndex, setHoverDayIndex] = useState<number | null>(null);
+  const change = getPercentChange(currentPayable, previousPayable);
+  const isPositive = change >= 0;
+
+  const maxValue = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...trend.current.map((point) => point.value),
+        ...trend.previous.map((point) => point.value),
+      ),
+    [trend],
+  );
+
+  const innerWidth = INCOME_CHART_WIDTH - INCOME_CHART_PAD_X * 2;
+  const innerHeight = INCOME_CHART_HEIGHT - INCOME_CHART_PAD_TOP - INCOME_CHART_PAD_BOTTOM;
+  const baseY = INCOME_CHART_HEIGHT - INCOME_CHART_PAD_BOTTOM;
+  const stepX = trend.cycleLength > 1 ? innerWidth / (trend.cycleLength - 1) : 0;
+
+  const projectPoint = useCallback(
+    (point: TrendPoint) => {
+      const ratio = point.value / maxValue;
+      return {
+        ...point,
+        x: INCOME_CHART_PAD_X + stepX * point.dayIndex,
+        y: INCOME_CHART_PAD_TOP + innerHeight - ratio * innerHeight,
+      };
+    },
+    [innerHeight, maxValue, stepX],
+  );
+
+  const currentPoints = useMemo(
+    () => trend.current.map(projectPoint),
+    [projectPoint, trend],
+  );
+  const previousPoints = useMemo(
+    () => trend.previous.map(projectPoint),
+    [projectPoint, trend],
+  );
+
+  const currentLinePath = useMemo(
+    () => buildSmoothPath(currentPoints.map(({ x, y }) => ({ x, y }))),
+    [currentPoints],
+  );
+  const previousLinePath = useMemo(
+    () => buildSmoothPath(previousPoints.map(({ x, y }) => ({ x, y }))),
+    [previousPoints],
+  );
+
+  const currentAreaPath = useMemo(() => {
+    if (!currentLinePath || currentPoints.length === 0) return "";
+    const first = currentPoints[0];
+    const last = currentPoints[currentPoints.length - 1];
+    return `${currentLinePath} L ${last.x} ${baseY} L ${first.x} ${baseY} Z`;
+  }, [baseY, currentLinePath, currentPoints]);
+
+  const todayPoint =
+    trend.todayDayIndex !== null && currentPoints.length > 0
+      ? currentPoints[currentPoints.length - 1]
+      : null;
+
+  const hoverCurrent =
+    hoverDayIndex !== null
+      ? currentPoints.find((point) => point.dayIndex === hoverDayIndex) ?? null
+      : null;
+  const hoverPrevious =
+    hoverDayIndex !== null
+      ? previousPoints.find((point) => point.dayIndex === hoverDayIndex) ?? null
+      : null;
+  const hoverX = hoverCurrent?.x ?? hoverPrevious?.x ?? null;
+  const hoverTopY = Math.min(
+    hoverCurrent?.y ?? Number.POSITIVE_INFINITY,
+    hoverPrevious?.y ?? Number.POSITIVE_INFINITY,
+  );
+  const hoverDelta =
+    hoverCurrent && hoverPrevious ? hoverCurrent.value - hoverPrevious.value : null;
+
+  const labelEvery = Math.max(1, Math.ceil(trend.cycleLength / 6));
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8">
-        {/* Display Name Badge */}
-        <div className="mb-6 flex items-center justify-between">
-          <Badge variant="outline" className="flex items-center space-x-1 w-fit">
-            <User className="h-3 w-3" />
-            <span>{displayName}</span>
-          </Badge>
-          
-          {/* Quick Stats Summary */}
-          <div className="flex items-center space-x-4 text-sm">
-            <div className="flex items-center space-x-1">
-              <FileText className="h-4 w-4 text-blue-500" />
-              <span className="text-muted-foreground">Writing Leads:</span>
-              <span className="font-semibold">{leads.length}</span>
+    <div className="group relative flex h-full min-h-[220px] flex-1 overflow-hidden rounded-2xl border border-primary/20 bg-zinc-900/60 p-5 shadow-xl shadow-black/30 backdrop-blur-xl transition-colors hover:border-primary/50 lg:min-h-0">
+      <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/20 opacity-70 blur-3xl" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/25 to-transparent" />
+
+      <div className="relative grid h-full flex-1 gap-5 sm:grid-cols-[minmax(0,0.9fr)_minmax(220px,1.1fr)] sm:items-end">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-white/60">Commission earned</p>
+          <p className="mt-2 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            {loading ? "-" : formatCurrency(currentPayable)}
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold tabular-nums",
+                isPositive
+                  ? "border-primary/30 bg-primary/20 text-primary"
+                  : "border-rose-500/30 bg-rose-500/10 text-rose-300",
+              )}
+            >
+              {isPositive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+              {isPositive ? "+" : ""}
+              {change.toFixed(1)}%
+            </span>
+            <span className="text-sm text-white/50">vs last cycle</span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/40">
+            <span>{selectedCycleLabel}</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-1.5 w-3 rounded-sm bg-primary" />
+              This cycle
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-px w-3 border-t border-dashed border-white/50" />
+              Last cycle
+            </span>
+          </div>
+        </div>
+
+        <div className="relative w-full">
+          <svg
+            viewBox={`0 0 ${INCOME_CHART_WIDTH} ${INCOME_CHART_HEIGHT}`}
+            preserveAspectRatio="none"
+            className="h-28 w-full"
+            aria-hidden="true"
+            onMouseLeave={() => setHoverDayIndex(null)}
+          >
+            <defs>
+              <linearGradient id="commission-earned-area" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.45" />
+                <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+
+            {previousLinePath && (
+              <path
+                d={previousLinePath}
+                fill="none"
+                stroke="hsl(0 0% 100% / 0.45)"
+                strokeWidth={1.5}
+                strokeDasharray="4 4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+
+            {currentAreaPath && <path d={currentAreaPath} fill="url(#commission-earned-area)" />}
+            {currentLinePath && (
+              <path
+                d={currentLinePath}
+                fill="none"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+
+            {todayPoint && (
+              <circle
+                cx={todayPoint.x}
+                cy={todayPoint.y}
+                r={3.5}
+                fill="hsl(var(--primary))"
+                stroke="hsl(var(--primary))"
+                strokeWidth={1.5}
+                style={{ filter: "drop-shadow(0 0 6px hsl(var(--primary)))" }}
+              />
+            )}
+
+            {Array.from({ length: trend.cycleLength }).map((_, dayIndex) => {
+              const x = INCOME_CHART_PAD_X + stepX * dayIndex;
+              const rectWidth = stepX || innerWidth;
+              return (
+                <rect
+                  key={`hit-${dayIndex}`}
+                  x={x - rectWidth / 2}
+                  y={0}
+                  width={rectWidth}
+                  height={baseY}
+                  fill="transparent"
+                  onMouseEnter={() => setHoverDayIndex(dayIndex)}
+                  style={{ cursor: "pointer" }}
+                />
+              );
+            })}
+
+            {hoverX !== null && (
+              <g>
+                <line
+                  x1={hoverX}
+                  x2={hoverX}
+                  y1={INCOME_CHART_PAD_TOP}
+                  y2={baseY}
+                  strokeDasharray="3 3"
+                  strokeWidth={1}
+                  className="stroke-white/30"
+                />
+                {hoverPrevious && (
+                  <circle
+                    cx={hoverPrevious.x}
+                    cy={hoverPrevious.y}
+                    r={3.5}
+                    fill="hsl(0 0% 100% / 0.65)"
+                    stroke="hsl(0 0% 100% / 0.85)"
+                    strokeWidth={1.5}
+                  />
+                )}
+                {hoverCurrent && (
+                  <circle
+                    cx={hoverCurrent.x}
+                    cy={hoverCurrent.y}
+                    r={4.5}
+                    fill="hsl(var(--primary))"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    style={{ filter: "drop-shadow(0 0 6px hsl(var(--primary)))" }}
+                  />
+                )}
+              </g>
+            )}
+
+            {Array.from({ length: trend.cycleLength }).map((_, dayIndex) => {
+              const isLast = dayIndex === trend.cycleLength - 1;
+              const shouldShow = dayIndex === 0 || isLast || dayIndex % labelEvery === 0;
+              if (!shouldShow) return null;
+
+              const referencePoint =
+                trend.current.find((point) => point.dayIndex === dayIndex) ??
+                trend.previous.find((point) => point.dayIndex === dayIndex);
+              const dateLabel = referencePoint
+                ? new Intl.DateTimeFormat("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    timeZone: "UTC",
+                  }).format(new Date(`${referencePoint.dateKey}T12:00:00Z`))
+                : `Day ${dayIndex + 1}`;
+
+              const x = INCOME_CHART_PAD_X + stepX * dayIndex;
+              return (
+                <text
+                  key={`label-${dayIndex}`}
+                  x={x}
+                  y={INCOME_CHART_HEIGHT - 12}
+                  textAnchor="middle"
+                  fontSize="11"
+                  className="fill-white/40"
+                >
+                  {dateLabel}
+                </text>
+              );
+            })}
+          </svg>
+
+          {hoverX !== null && (hoverCurrent || hoverPrevious) && (
+            <div
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-[calc(100%+8px)] whitespace-nowrap rounded-md border border-white/10 bg-zinc-950/95 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-lg backdrop-blur"
+              style={{
+                left: `${(hoverX / INCOME_CHART_WIDTH) * 100}%`,
+                top: `${(hoverTopY / INCOME_CHART_HEIGHT) * 100}%`,
+              }}
+            >
+              <div className="text-[10px] uppercase tracking-wider text-white/40">
+                Day {(hoverDayIndex ?? 0) + 1}
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="inline-block h-1.5 w-3 shrink-0 rounded-sm bg-primary" />
+                <span className="tabular-nums">
+                  {hoverCurrent ? formatCurrency(hoverCurrent.value) : "—"}
+                </span>
+                {hoverCurrent && (
+                  <span className="text-[10px] text-white/40">
+                    {formatDateLabel(hoverCurrent.dateKey)}
+                  </span>
+                )}
+              </div>
+              {hoverPrevious && (
+                <div className="mt-0.5 flex items-center gap-2">
+                  <span className="inline-block h-px w-3 shrink-0 border-t border-dashed border-white/60" />
+                  <span className="tabular-nums text-white/70">
+                    {formatCurrency(hoverPrevious.value)}
+                  </span>
+                  <span className="text-[10px] text-white/40">
+                    {formatDateLabel(hoverPrevious.dateKey)}
+                  </span>
+                </div>
+              )}
+              {hoverDelta !== null && (
+                <div
+                  className={cn(
+                    "mt-1 text-[10px] font-semibold tabular-nums",
+                    hoverDelta >= 0 ? "text-primary" : "text-rose-300",
+                  )}
+                >
+                  {hoverDelta >= 0 ? "+" : "-"}
+                  {formatCurrency(Math.abs(hoverDelta))} vs last cycle
+                </div>
+              )}
             </div>
-            <div className="flex items-center space-x-1">
-              <Building2 className="h-4 w-4 text-green-500" />
-              <span className="text-muted-foreground">Placements:</span>
-              <span className="font-semibold">{placements.length}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StatusMetric = ({
+  amount,
+  amountLabel,
+  count,
+  detail,
+  label,
+  swatchClass,
+}: {
+  amount?: number;
+  amountLabel?: string;
+  count: number;
+  detail?: string;
+  label: string;
+  swatchClass: string;
+}) => (
+  <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+    <div className="flex items-start gap-3">
+      <span className={cn("mt-1 h-10 w-1 rounded-full", swatchClass)} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate text-sm font-medium text-white/75">{label}</p>
+          <p className="text-lg font-semibold tabular-nums text-white">{count}</p>
+        </div>
+        {detail ? (
+          <p className="mt-1 text-xs text-white/40">{detail}</p>
+        ) : amount !== undefined && amountLabel ? (
+          <p className="mt-1 text-xs text-white/40">
+            {formatCurrency(amount)} {amountLabel}
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-white/30">No value recorded</p>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
+const CommissionStatusMixCard = ({
+  loading,
+  totals,
+}: {
+  loading: boolean;
+  totals: CommissionTotals;
+}) => {
+  const totalRecords =
+    totals.submittedCount + totals.approvedCount + totals.rejectedCount + totals.chargebackCount;
+  const approvedRate = totalRecords > 0 ? (totals.approvedCount / totalRecords) * 100 : 0;
+
+  const segments = [
+    {
+      key: "submitted",
+      value: totals.submittedCount,
+      stroke: "stroke-[hsl(var(--primary))]",
+    },
+    {
+      key: "approved",
+      value: totals.approvedCount,
+      stroke: "stroke-emerald-800",
+    },
+    {
+      key: "rejected",
+      value: totals.rejectedCount,
+      stroke: "stroke-red-900",
+    },
+    {
+      key: "chargeback",
+      value: totals.chargebackCount,
+      stroke: "stroke-white/30",
+    },
+  ];
+
+  let rotation = -90;
+  const arcs = segments.map((segment) => {
+    const arcLengthDeg = totalRecords > 0 ? (segment.value / totalRecords) * 360 : 0;
+    const length = totalRecords > 0 ? (DONUT_CIRCUMFERENCE * arcLengthDeg) / 360 - DONUT_GAP : 0;
+    const nextArc = {
+      ...segment,
+      length: Math.max(0, length),
+      rotation,
+    };
+    rotation += arcLengthDeg;
+    return nextArc;
+  });
+
+  return (
+    <div className="group relative h-full min-h-[300px] overflow-hidden rounded-2xl border border-primary/20 bg-zinc-900/60 p-5 shadow-xl shadow-black/30 backdrop-blur-xl transition-colors hover:border-primary/50 lg:min-h-0">
+      <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-primary/10 opacity-70 blur-3xl" />
+
+      <div className="relative flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Attorney Status</h2>
+        </div>
+        <Badge className="border-white/10 bg-white/[0.05] text-white/70 hover:bg-white/[0.05]">
+          {totalRecords} records
+        </Badge>
+      </div>
+
+      <div className="relative mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_150px_minmax(0,1fr)] lg:items-center">
+        <div className="space-y-3">
+          <StatusMetric
+            amount={totals.submittedPotential}
+            amountLabel="pending"
+            count={totals.submittedCount}
+            label="Submitted"
+            swatchClass="bg-primary"
+          />
+          <StatusMetric
+            amount={totals.payable}
+            amountLabel="payable"
+            count={totals.approvedCount}
+            label="Approved"
+            swatchClass="bg-emerald-800"
+          />
+        </div>
+
+        <div className="mx-auto flex h-36 w-36 items-center justify-center">
+          <div className="relative h-36 w-36">
+            <svg viewBox="0 0 140 140" className="h-full w-full" aria-hidden="true">
+              <circle
+                cx="70"
+                cy="70"
+                r={DONUT_RADIUS}
+                fill="none"
+                strokeWidth={DONUT_STROKE}
+                className="stroke-white/[0.07]"
+              />
+              {arcs.filter((arc) => arc.value > 0 && arc.length > 0).map((arc) => (
+                <circle
+                  key={arc.key}
+                  cx="70"
+                  cy="70"
+                  r={DONUT_RADIUS}
+                  fill="none"
+                  strokeWidth={DONUT_STROKE}
+                  strokeLinecap="round"
+                  className={cn(arc.stroke, "transition-[stroke-dasharray] duration-300")}
+                  strokeDasharray={`${arc.length} ${DONUT_CIRCUMFERENCE}`}
+                  transform={`rotate(${arc.rotation} 70 70)`}
+                />
+              ))}
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-2xl font-semibold tabular-nums text-white">
+                {loading ? "-" : `${approvedRate.toFixed(0)}%`}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-white/40">
+                Approved
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Tabbed Interface */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="placements" className="flex items-center space-x-2">
-              <Building2 className="h-4 w-4" />
-              <span>Actual Placements</span>
-            </TabsTrigger>
-            <TabsTrigger value="writing" className="flex items-center space-x-2">
-              <FileText className="h-4 w-4" />
-              <span>Writing Leads</span>
-            </TabsTrigger>
-          </TabsList>
+        <div className="space-y-3">
+          <StatusMetric
+            detail={`${formatCurrency(totals.rejectedMissed)} not converted`}
+            count={totals.rejectedCount}
+            label="Rejected"
+            swatchClass="bg-red-900"
+          />
+          <StatusMetric
+            amount={totals.chargebackExposure}
+            amountLabel="exposure"
+            count={totals.chargebackCount}
+            label="Chargeback"
+            swatchClass="bg-slate-500"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
 
-          {/* Actual Placements Tab - Main Section */}
-          <TabsContent value="placements" className="space-y-6">
-            {/* Filters Card */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Filter className="h-5 w-5" />
-                  <span>Filters</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {/* Status Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="placement-status-filter">Issue Status</Label>
-                    <MultiSelect
-                      options={placements.length > 0 ? Array.from(
-                        new Set(
-                          placements
-                            .map(p => getColumnValue(p, 'status'))
-                            .filter(status => status && status.trim() !== '')
-                        )
-                      ).sort() : []}
-                      selected={placementStatusFilter}
-                      onChange={setPlacementStatusFilter}
-                      placeholder="Select statuses (multi-select)"
-                      className="w-full"
-                    />
+const CommissionPortal = () => {
+  const { user, loading: authLoading } = useAuth();
+  const { isLicensedAgent, loading: licensedLoading } = useLicensedAgent();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const payCycles = useMemo(() => buildPayCycles(), []);
+  const currentCycleKey = payCycles[0]?.key ?? getCurrentCycleKey();
+
+  const [selectedCycleKey, setSelectedCycleKey] = useState(currentCycleKey);
+  const [selectedAgentUserId, setSelectedAgentUserId] = useState(ALL_AGENTS_VALUE);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  const [closerDirectory, setCloserDirectory] = useState<LicensedCloserDirectoryEntry[]>([]);
+  const [callResultRows, setCallResultRows] = useState<CallResultRow[]>([]);
+  const [leadRows, setLeadRows] = useState<LeadStatusRow[]>([]);
+  const [previousCallResultRows, setPreviousCallResultRows] = useState<CallResultRow[]>([]);
+  const [previousLeadRows, setPreviousLeadRows] = useState<LeadStatusRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const selectedCycle = useMemo(
+    () => payCycles.find((cycle) => cycle.key === selectedCycleKey) ?? payCycles[0],
+    [payCycles, selectedCycleKey],
+  );
+  const previousCycle = useMemo(() => {
+    const selectedIndex = payCycles.findIndex((cycle) => cycle.key === selectedCycleKey);
+    return selectedIndex >= 0 ? payCycles[selectedIndex + 1] ?? null : null;
+  }, [payCycles, selectedCycleKey]);
+
+  const isCurrentCycle = selectedCycle?.isCurrent ?? selectedCycleKey === currentCycleKey;
+
+  useEffect(() => {
+    if (authLoading || licensedLoading) return;
+
+    const checkAccess = async () => {
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+
+      const roleFlags = await getPortalRoleFlags(user.id);
+      const nextIsSuperAdmin = roleFlags.isSuperAdmin;
+      const nextAuthorized = nextIsSuperAdmin || isLicensedAgent;
+
+      setIsSuperAdmin(nextIsSuperAdmin);
+      setIsAuthorized(nextAuthorized);
+      setAccessChecked(true);
+
+      if (!nextAuthorized) {
+        toast({
+          title: "Access denied",
+          description: "Commission data is available to licensed agents and super admins.",
+          variant: "destructive",
+        });
+        navigate("/leads", { replace: true });
+      }
+    };
+
+    checkAccess();
+  }, [authLoading, isLicensedAgent, licensedLoading, navigate, toast, user]);
+
+  useEffect(() => {
+    if (!isSuperAdmin && user?.id) {
+      setSelectedAgentUserId(user.id);
+    } else if (isSuperAdmin) {
+      setSelectedAgentUserId(ALL_AGENTS_VALUE);
+    }
+  }, [isSuperAdmin, user?.id]);
+
+  const fetchData = useCallback(async () => {
+    if (!accessChecked || !isAuthorized || !selectedCycle) return;
+
+    setRefreshing(true);
+
+    try {
+      const [directoryResult, currentCycleResult, previousCycleResult] = await Promise.allSettled([
+        fetchLicensedCloserDirectory(),
+        fetchCommissionCycleRows(selectedCycle),
+        fetchCommissionCycleRows(previousCycle),
+      ]);
+
+      const errors: string[] = [];
+
+      if (directoryResult.status === "fulfilled") {
+        setCloserDirectory(directoryResult.value);
+      } else {
+        setCloserDirectory([]);
+        errors.push("active closer roster");
+      }
+
+      if (currentCycleResult.status === "fulfilled") {
+        setCallResultRows(currentCycleResult.value.callResultRows);
+        setLeadRows(currentCycleResult.value.leadRows);
+      } else {
+        setCallResultRows([]);
+        setLeadRows([]);
+        errors.push("current pay cycle");
+      }
+
+      if (previousCycleResult.status === "fulfilled") {
+        setPreviousCallResultRows(previousCycleResult.value.callResultRows);
+        setPreviousLeadRows(previousCycleResult.value.leadRows);
+      } else {
+        setPreviousCallResultRows([]);
+        setPreviousLeadRows([]);
+        errors.push("previous pay cycle comparison");
+      }
+
+      if (errors.length > 0) {
+        toast({
+          title: "Some commission data could not be loaded",
+          description: `Missing: ${errors.join(", ")}.`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error loading commission data:", error);
+      toast({
+        title: "Unable to load commissions",
+        description: "Please refresh and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [accessChecked, isAuthorized, previousCycle, selectedCycle, toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedAgentUserId, selectedCycleKey]);
+
+  const closerDirectoryIndex = useMemo(
+    () => buildCloserDirectoryIndex(closerDirectory),
+    [closerDirectory],
+  );
+
+  const leadBySubmissionId = useMemo(() => buildLeadStatusMap(leadRows), [leadRows]);
+  const previousLeadBySubmissionId = useMemo(
+    () => buildLeadStatusMap(previousLeadRows),
+    [previousLeadRows],
+  );
+
+  const commissionItems = useMemo<CommissionItem[]>(
+    () =>
+      buildCommissionItemsForCycle({
+        callResultRows,
+        closerDirectoryIndex,
+        cycle: selectedCycle,
+        leadBySubmissionId,
+      }),
+    [callResultRows, closerDirectoryIndex, leadBySubmissionId, selectedCycle],
+  );
+  const previousCommissionItems = useMemo<CommissionItem[]>(
+    () =>
+      buildCommissionItemsForCycle({
+        callResultRows: previousCallResultRows,
+        closerDirectoryIndex,
+        cycle: previousCycle,
+        leadBySubmissionId: previousLeadBySubmissionId,
+      }),
+    [closerDirectoryIndex, previousCallResultRows, previousCycle, previousLeadBySubmissionId],
+  );
+
+  const agentOptions = useMemo(
+    () =>
+      closerDirectory
+        .filter((entry) => commissionItems.some((item) => item.closerUserId === entry.userId))
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    [closerDirectory, commissionItems],
+  );
+
+  const filterCommissionItems = useCallback((items: CommissionItem[]) => {
+    const query = normalizeText(searchQuery);
+
+    return items.filter((item) => {
+      if (!isSuperAdmin && user?.id && item.closerUserId !== user.id) return false;
+
+      if (
+        isSuperAdmin &&
+        selectedAgentUserId !== ALL_AGENTS_VALUE &&
+        item.closerUserId !== selectedAgentUserId
+      ) {
+        return false;
+      }
+
+      if (!query) return true;
+
+      const haystack = normalizeText(
+        [
+          item.leadName,
+          item.state,
+          item.attorney,
+          item.closerName,
+          item.submissionId,
+          getBoardLabel(item.boardKey),
+        ].join(" "),
+      );
+
+      return haystack.includes(query);
+    });
+  }, [isSuperAdmin, searchQuery, selectedAgentUserId, user?.id]);
+
+  const visibleItems = useMemo(
+    () => filterCommissionItems(commissionItems),
+    [commissionItems, filterCommissionItems],
+  );
+  const previousVisibleItems = useMemo(
+    () => filterCommissionItems(previousCommissionItems),
+    [filterCommissionItems, previousCommissionItems],
+  );
+
+  const itemsByBoard = useMemo(() => {
+    const grouped = new Map<BoardKey, CommissionItem[]>();
+    BOARD_DEFINITIONS.forEach((board) => grouped.set(board.key, []));
+
+    visibleItems.forEach((item) => {
+      grouped.get(item.boardKey)?.push(item);
+    });
+
+    return grouped;
+  }, [visibleItems]);
+
+  const totals = useMemo(() => calculateCommissionTotals(visibleItems), [visibleItems]);
+  const previousTotals = useMemo(
+    () => calculateCommissionTotals(previousVisibleItems),
+    [previousVisibleItems],
+  );
+  const payableTrend = useMemo(
+    () =>
+      buildPayableTrend({
+        currentCycle: selectedCycle,
+        currentItems: visibleItems,
+        previousCycle,
+        previousItems: previousVisibleItems,
+      }),
+    [previousCycle, previousVisibleItems, selectedCycle, visibleItems],
+  );
+
+  const pageCount = Math.max(1, Math.ceil(visibleItems.length / RECORDS_PER_PAGE));
+  const paginatedItems = visibleItems.slice(
+    (currentPage - 1) * RECORDS_PER_PAGE,
+    currentPage * RECORDS_PER_PAGE,
+  );
+
+  useEffect(() => {
+    if (currentPage > pageCount) {
+      setCurrentPage(pageCount);
+    }
+  }, [currentPage, pageCount]);
+
+  if (authLoading || licensedLoading || !accessChecked) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!isAuthorized || !selectedCycle) {
+    return null;
+  }
+
+  const renderLeadCard = (item: CommissionItem) => (
+    <div
+      key={item.id}
+      className={cn(
+        "group relative flex min-h-[158px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.065)_0%,rgba(255,255,255,0.032)_100%)] p-3.5 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.95)] transition-all duration-200 hover:-translate-y-0.5",
+        boardCardHoverClass(item.boardKey),
+      )}
+    >
+      <div className={cn("absolute inset-x-0 top-0 h-0.5 opacity-90", boardAccentClass(item.boardKey))} />
+
+      <div className="flex items-start justify-between gap-3 pt-1">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-white transition-colors">
+            {item.leadName}
+          </p>
+        </div>
+        <Badge variant="outline" className={cn("shrink-0 rounded-full px-2.5", boardPillClass(item.boardKey))}>
+          {item.state}
+        </Badge>
+      </div>
+
+      <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 text-xs">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Attorney
+          </p>
+          <p className="mt-1 truncate font-medium text-slate-200">{item.attorney}</p>
+        </div>
+        <div className="min-w-[76px] text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Commission
+          </p>
+          <p className="mt-1 text-base font-semibold text-white">
+            {formatCurrency(item.commissionAmount)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-auto flex items-end justify-between gap-3 border-t border-white/10 pt-3 text-xs">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Closer
+          </p>
+          <p className="mt-1 truncate font-medium text-slate-300">{item.closerName}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Call Date
+          </p>
+          <p className="mt-1 font-medium text-slate-300">{formatDateLabel(item.callDateKey)}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-full bg-zinc-950 text-white">
+      <div className="relative min-h-full overflow-hidden">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_at_top,hsl(var(--primary)/0.18),transparent_60%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+
+        <div className="relative container mx-auto px-2 py-6 [scrollbar-gutter:stable] sm:px-4 sm:py-8">
+          <div className="mx-auto max-w-7xl space-y-5 overflow-x-hidden">
+            <div
+              className="flex flex-col gap-3 animate-blur-in motion-reduce:animate-none"
+              style={{ animationDelay: "60ms" }}
+            >
+              <span className="inline-flex items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-wider text-primary">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
+                Commission
+              </span>
+
+              <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                    Commission Dashboard
+                  </h1>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Select value={selectedCycleKey} onValueChange={setSelectedCycleKey}>
+                    <SelectTrigger className="h-9 w-full rounded-full border-white/10 bg-white/[0.04] px-4 text-sm font-medium text-white/90 hover:bg-white/[0.07] focus:ring-primary/40 sm:w-[230px]">
+                      <CalendarDays className="mr-2 h-4 w-4 text-white/40" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-white/10 bg-zinc-950 text-white [--accent:240_3.7%_15.9%] [--accent-foreground:0_0%_98%] [--popover:240_10%_3.9%] [--popover-foreground:0_0%_98%]">
+                      {payCycles.map((cycle) => (
+                        <SelectItem key={cycle.key} value={cycle.key}>
+                          {cycle.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    variant="ghost"
+                    onClick={fetchData}
+                    disabled={refreshing}
+                    className="h-9 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-medium text-white/85 hover:border-primary/40 hover:bg-primary/15 hover:text-white disabled:text-slate-600"
+                  >
+                    <RefreshCw className={cn("mr-2 h-3.5 w-3.5", refreshing && "animate-spin")} />
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="grid gap-4 lg:h-[280px] lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-stretch animate-blur-in motion-reduce:animate-none"
+              style={{ animationDelay: "160ms" }}
+            >
+              <div className="flex min-h-0 flex-col gap-4">
+                <CommissionIncomeCard
+                  currentPayable={totals.payable}
+                  loading={loading || refreshing}
+                  previousPayable={previousTotals.payable}
+                  selectedCycleLabel={selectedCycle.label}
+                  trend={payableTrend}
+                />
+
+                <div className="shrink-0 rounded-2xl border border-primary/20 bg-zinc-900/60 p-3 shadow-xl shadow-black/25 backdrop-blur-xl transition-colors hover:border-primary/30">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="relative flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                      <Input
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="Search lead, attorney, state, or agent"
+                        className="h-9 rounded-full border-white/10 bg-white/[0.04] pl-9 pr-4 text-sm text-white/90 placeholder:text-white/30 hover:bg-white/[0.07] focus-visible:ring-primary/40"
+                      />
+                    </div>
+
+                    {isSuperAdmin && (
+                      <Select value={selectedAgentUserId} onValueChange={setSelectedAgentUserId}>
+                        <SelectTrigger className="h-9 w-full rounded-full border-white/10 bg-white/[0.04] px-4 text-sm font-medium text-white/90 hover:bg-white/[0.07] focus:ring-primary/40 sm:w-[210px]">
+                          <User className="mr-2 h-4 w-4 text-white/40" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="border-white/10 bg-zinc-950 text-white [--accent:240_3.7%_15.9%] [--accent-foreground:0_0%_98%] [--popover:240_10%_3.9%] [--popover-foreground:0_0%_98%]">
+                          <SelectItem value={ALL_AGENTS_VALUE}>All Agents</SelectItem>
+                          {agentOptions.map((agent) => (
+                            <SelectItem key={agent.userId} value={agent.userId}>
+                              {agent.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
+                </div>
+              </div>
 
-                  {/* Frequency Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="placement-frequency-filter">Time Period</Label>
-                    <Select value={placementFrequencyFilter} onValueChange={setPlacementFrequencyFilter}>
-                      <SelectTrigger id="placement-frequency-filter">
-                        <SelectValue placeholder="All Time" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Time</SelectItem>
-                        <SelectItem value="24hours">Last 24 Hours</SelectItem>
-                        <SelectItem value="7days">Last 7 Days</SelectItem>
-                        <SelectItem value="30days">Last 30 Days</SelectItem>
-                        <SelectItem value="6months">Last 6 Months</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+              <CommissionStatusMixCard loading={loading || refreshing} totals={totals} />
+            </div>
 
-                  {/* Start Date Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="placement-start-date">Issue Date From</Label>
-                    <Input
-                      id="placement-start-date"
-                      type="date"
-                      value={placementStartDate}
-                      onChange={(e) => setPlacementStartDate(e.target.value)}
-                    />
-                  </div>
+      <div
+        className="animate-blur-in motion-reduce:animate-none"
+        style={{ animationDelay: "240ms" }}
+      >
+      {loading ? (
+        <div className="flex items-center justify-center rounded-2xl border border-dashed border-primary/20 bg-zinc-900/60 py-16 text-white/50 shadow-xl shadow-black/25 backdrop-blur-xl">
+          <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+          Loading commission data...
+        </div>
+      ) : isCurrentCycle ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {BOARD_DEFINITIONS.map((board) => {
+            const items = itemsByBoard.get(board.key) || [];
+            const Icon = board.icon;
+            const tone = toneClass(board.tone);
+            const boardAmount = getBoardAmount(items, board.key);
 
-                  {/* End Date Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="placement-end-date">Issue Date To</Label>
-                    <Input
-                      id="placement-end-date"
-                      type="date"
-                      value={placementEndDate}
-                      onChange={(e) => setPlacementEndDate(e.target.value)}
-                    />
+            return (
+              <section
+                key={board.key}
+                className="flex min-h-[420px] min-w-0 flex-col overflow-hidden rounded-2xl border border-primary/20 bg-zinc-900/60 shadow-xl shadow-black/30 backdrop-blur-xl transition-colors hover:border-primary/30"
+              >
+                <div className={cn("border-b border-white/10 p-4", tone.header)}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10",
+                          tone.bg,
+                        )}
+                      >
+                        <Icon className={cn("h-4 w-4", tone.text)} />
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="truncate text-sm font-semibold text-white">{board.title}</h2>
+                        <p className="text-xs text-slate-500">
+                          {items.length} lead{items.length === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn("shrink-0 bg-white/[0.06]", tone.border, tone.text)}
+                    >
+                      {boardAmount < 0 ? "-" : ""}
+                      {formatCurrency(Math.abs(boardAmount))}
+                    </Badge>
                   </div>
                 </div>
 
-                {/* Clear Filters Button */}
-                {(placementStatusFilter.length > 0 || placementFrequencyFilter !== 'all' || placementStartDate || placementEndDate) && (
-                  <div className="mt-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setPlacementStatusFilter([]);
-                        setPlacementFrequencyFilter('all');
-                        setPlacementStartDate('');
-                        setPlacementEndDate('');
-                      }}
-                    >
-                      Clear All Filters
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Building2 className="h-5 w-5 text-green-600" />
-                  <span>Policy Placements on Carriers</span>
-                  <Badge variant="outline" className="ml-2">
-                    {filteredPlacements.length} Total{getSalesAgentName() ? ` for ${getSalesAgentName()}` : ''}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {placementsLoading ? (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-2"></div>
-                    <p className="text-sm text-muted-foreground">Loading placements from Monday.com...</p>
-                  </div>
-                ) : !isMondayApiConfigured() ? (
-                  <div className="text-center py-8">
-                    <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-2" />
-                    <p className="font-semibold mb-1">Monday.com API Not Configured</p>
-                    <p className="text-sm text-muted-foreground">
-                      Please add your Monday.com API token to environment variables as VITE_MONDAY_API_TOKEN
-                    </p>
-                  </div>
-                ) : filteredPlacements.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground">
-                      No policy placements found{getSalesAgentName() ? ` for ${getSalesAgentName()}` : ''}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Placements Stats - Row 1 */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <Card>
-                        <CardContent className="p-4 text-center">
-                          <div className="flex items-center justify-center space-x-2 mb-2">
-                            <Activity className="h-4 w-4 text-blue-500" />
-                            <span className="text-sm text-muted-foreground">Total Placements</span>
-                          </div>
-                          <div className="text-3xl font-bold text-blue-600">{filteredPlacements.length}</div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4 text-center">
-                          <div className="flex items-center justify-center space-x-2 mb-2">
-                            <ShieldCheck className="h-4 w-4 text-blue-500" />
-                            <span className="text-sm text-muted-foreground">Total GI</span>
-                          </div>
-                          <div className="text-3xl font-bold text-blue-600">
-                            {filteredPlacements.filter(p => getPolicyType(p) === 'GI').length}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4 text-center">
-                          <div className="flex items-center justify-center space-x-2 mb-2">
-                            <Shield className="h-4 w-4 text-orange-500" />
-                            <span className="text-sm text-muted-foreground">Total Non-GI</span>
-                          </div>
-                          <div className="text-3xl font-bold text-orange-600">
-                            {filteredPlacements.filter(p => getPolicyType(p) === 'Non GI').length}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-center space-x-2 mb-3">
-                            <BarChart3 className="h-4 w-4 text-blue-500" />
-                            <span className="text-sm font-medium text-muted-foreground">GI vs Non-GI Distribution</span>
-                          </div>
-                          {(() => {
-                            const giCount = filteredPlacements.filter(p => getPolicyType(p) === 'GI').length;
-                            const nonGiCount = filteredPlacements.filter(p => getPolicyType(p) === 'Non GI').length;
-                            const total = giCount + nonGiCount;
-                            const giPercentage = total > 0 ? Math.round((giCount / total) * 100) : 0;
-                            const nonGiPercentage = total > 0 ? Math.round((nonGiCount / total) * 100) : 0;
-
-                            // SVG donut chart parameters
-                            const size = 110;
-                            const strokeWidth = 12;
-                            const radius = (size - strokeWidth) / 2;
-                            const circumference = 2 * Math.PI * radius;
-                            const giArcLength = (circumference * giPercentage) / 100;
-                            const nonGiArcLength = (circumference * nonGiPercentage) / 100;
-
-                            return (
-                              <div className="flex items-center justify-center space-x-5">
-                                {/* GI Stats - Left Side */}
-                                <div className="flex flex-col items-end space-y-1">
-                                  <div className="flex items-center space-x-1.5 mb-0.5">
-                                    <span className="text-xs font-semibold text-blue-700">GI</span>
-                                    <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                                  </div>
-                                  <span className="text-3xl font-bold text-blue-600">{giPercentage}%</span>
-                                  <span className="text-sm text-muted-foreground font-medium">({giCount})</span>
-                                </div>
-                                
-                                {/* Two-color Circular Progress */}
-                                <div className="relative flex items-center justify-center">
-                                  <svg width={size} height={size} className="transform -rotate-90">
-                                    {/* Non-GI segment (Orange) - starts at 0 */}
-                                    <circle
-                                      cx={size / 2}
-                                      cy={size / 2}
-                                      r={radius}
-                                      fill="none"
-                                      stroke="#f97316"
-                                      strokeWidth={strokeWidth}
-                                      strokeDasharray={`${nonGiArcLength} ${circumference}`}
-                                      strokeLinecap="round"
-                                      className="transition-all duration-300"
-                                    />
-                                    {/* GI segment (Blue) - continues from Non-GI */}
-                                    <circle
-                                      cx={size / 2}
-                                      cy={size / 2}
-                                      r={radius}
-                                      fill="none"
-                                      stroke="#3b82f6"
-                                      strokeWidth={strokeWidth}
-                                      strokeDasharray={`${giArcLength} ${circumference}`}
-                                      strokeDashoffset={-nonGiArcLength}
-                                      strokeLinecap="round"
-                                      className="transition-all duration-300"
-                                    />
-                                  </svg>
-                                </div>
-                                
-                                {/* Non-GI Stats - Right Side */}
-                                <div className="flex flex-col items-start space-y-1">
-                                  <div className="flex items-center space-x-1.5 mb-0.5">
-                                    <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                                    <span className="text-xs font-semibold text-orange-900">Non-GI</span>
-                                  </div>
-                                  <span className="text-3xl font-bold text-orange-600">{nonGiPercentage}%</span>
-                                  <span className="text-sm text-muted-foreground font-medium">({nonGiCount})</span>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </CardContent>
-                      </Card>
+                <div className="flex-1 space-y-3 p-3">
+                  {items.length > 0 ? (
+                    items.map(renderLeadCard)
+                  ) : (
+                    <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.03] text-center text-sm text-slate-500">
+                      No {board.title.toLowerCase()} leads
                     </div>
-
-                    {/* Placements Stats - Row 2 */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <Card>
-                        <CardContent className="p-4 text-center">
-                          <div className="flex items-center justify-center space-x-2 mb-2">
-                            <TrendingUp className="h-4 w-4 text-blue-500" />
-                            <span className="text-sm text-muted-foreground">Avg Premium</span>
-                          </div>
-                          <div className="text-3xl font-bold text-blue-600">
-                            ${filteredPlacements.length > 0 ? Math.round(filteredPlacements.reduce((sum, p) => sum + getPremium(p), 0) / filteredPlacements.length).toLocaleString() : '0'}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card className="md:col-span-1">
-                        <CardContent className="p-4 text-center">
-                          <div className="flex items-center justify-center space-x-2 mb-2">
-                            <Award className="h-4 w-4 text-orange-500" />
-                            <span className="text-sm text-muted-foreground">Avg Placement per Week</span>
-                          </div>
-                          <div className="text-3xl font-bold text-orange-600">
-                            {(() => {
-                              if (filteredPlacements.length === 0) return '0';
-
-                              // Get all valid issue dates
-                              const validDates = filteredPlacements
-                                .map(p => getColumnValue(p, 'date_mkq1d86z'))
-                                .filter(dateStr => dateStr && dateStr.trim() !== '')
-                                .map(dateStr => new Date(dateStr))
-                                .filter(date => !isNaN(date.getTime()))
-                                .sort((a, b) => a.getTime() - b.getTime());
-
-                              if (validDates.length === 0) return '0';
-
-                              const earliestDate = validDates[0];
-                              const latestDate = validDates[validDates.length - 1];
-
-                              // Calculate weeks between earliest and latest date
-                              const timeDiff = latestDate.getTime() - earliestDate.getTime();
-                              const weeksDiff = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24 * 7))); // Minimum 1 week
-
-                              return (filteredPlacements.length / weeksDiff).toFixed(1);
-                            })()}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Placements List */}
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <h3 className="font-semibold text-lg">Policy Placements</h3>
-                        {placementsTotalPages > 1 && (
-                          <div className="text-sm text-muted-foreground">
-                            Page {placementsPage} of {placementsTotalPages}
-                          </div>
-                        )}
-                      </div>
-                      {paginatedPlacements.map((item) => {
-                        const carrier = getColumnValue(item, 'color_mknkq2qd'); // Carrier (GTL, etc.)
-                        const policyStatus = getColumnValue(item, 'color_mkp5sj20'); // Policy Status (Not Yet payed, etc.)
-                        const premium = getPremium(item); // Premium from 'numbers' column
-                        const policyNumber = getColumnValue(item, 'text_mkpx3j6w'); // Policy Number (GTL6186318)
-                        const issueStatus = getColumnValue(item, 'status'); // Issue Status (Issued Not Paid, etc.)
-                        const salesAgent = getColumnValue(item, 'color_mkq0rkaw'); // Sales Agent (Isaac Reed)
-                        const effectiveDate = getColumnValue(item, 'text_mkq196kp'); // Effective Date (text field)
-                        const issueDate = getColumnValue(item, 'date_mkq1d86z'); // Issue Date
-                        const leadSource = getColumnValue(item, 'dropdown_mkq2x0kx'); // Lead Source (Zupax Marketing)
-                        const phone = getColumnValue(item, 'text_mkq268v3'); // Phone Number
-                        const applicationDate = getColumnValue(item, 'date1'); // Application Date
-                        const policyType = getPolicyType(item); // Policy Type (GI or Non GI)
-
-                        return (
-                        <Card key={item.id} className="hover:shadow-md transition-shadow">
-                          <CardContent className="p-4">
-                            <div className="flex justify-between items-start">
-                              <div className="space-y-2 flex-1">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-2">
-                                    <h4 className="font-semibold text-lg">{item.name}</h4>
-                                    {issueStatus && (
-                                      <Badge variant="outline" className="text-xs">
-                                        {issueStatus}
-                                      </Badge>
-                                    )}
-                                    {policyStatus && (
-                                      <Badge variant="outline" className="text-xs bg-yellow-50">
-                                        {policyStatus}
-                                      </Badge>
-                                    )}
-                                    {policyType && (
-                                      <Badge 
-                                        variant="outline" 
-                                        className={`text-xs ${
-                                          policyType === 'GI' ? 'border-blue-500 text-blue-700 bg-blue-50' : 
-                                          policyType === 'Non GI' ? 'border-orange-500 text-orange-700 bg-orange-50' : ''
-                                        }`}
-                                      >
-                                        {policyType}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  {premium > 0 && (
-                                    <div className="text-right">
-                                      <div className="text-xs text-muted-foreground">Premium</div>
-                                      <div className="text-lg font-bold text-green-600">
-                                        ${premium.toLocaleString()}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Main Policy Details */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
-                                  {carrier && (
-                                    <div className="text-sm">
-                                      <span className="text-muted-foreground">Carrier:</span>
-                                      <span className="ml-1 font-medium">{carrier}</span>
-                                    </div>
-                                  )}
-                                  {policyNumber && (
-                                    <div className="text-sm">
-                                      <span className="text-muted-foreground">Policy #:</span>
-                                      <span className="ml-1 font-medium">{policyNumber}</span>
-                                    </div>
-                                  )}
-                                  {salesAgent && (
-                                    <div className="text-sm">
-                                      <span className="text-muted-foreground">Sales Agent:</span>
-                                      <span className="ml-1 font-medium">{salesAgent}</span>
-                                    </div>
-                                  )}
-                                  {leadSource && (
-                                    <div className="text-sm">
-                                      <span className="text-muted-foreground">Lead Source:</span>
-                                      <span className="ml-1 font-medium">{leadSource}</span>
-                                    </div>
-                                  )}
-                                  {applicationDate && (
-                                    <div className="text-sm">
-                                      <span className="text-muted-foreground">App Date:</span>
-                                      <span className="ml-1 font-medium">{applicationDate}</span>
-                                    </div>
-                                  )}
-                                  {issueDate && (
-                                    <div className="text-sm">
-                                      <span className="text-muted-foreground">Issue Date:</span>
-                                      <span className="ml-1 font-medium">{issueDate}</span>
-                                    </div>
-                                  )}
-                                  {effectiveDate && (
-                                    <div className="text-sm">
-                                      <span className="text-muted-foreground">Effective:</span>
-                                      <span className="ml-1 font-medium">{effectiveDate}</span>
-                                    </div>
-                                  )}
-                                  {phone && (
-                                    <div className="text-sm">
-                                      <Phone className="h-3 w-3 inline mr-1 text-muted-foreground" />
-                                      <span className="font-medium">{phone}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                      })}
-
-                      {/* Pagination Controls */}
-                      {placementsTotalPages > 1 && (
-                        <div className="flex items-center justify-between mt-6 pt-4 border-t">
-                          <div className="text-sm text-muted-foreground">
-                            Showing {((placementsPage - 1) * placementsPerPage) + 1} to {Math.min(placementsPage * placementsPerPage, filteredPlacements.length)} of {filteredPlacements.length} placements
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handlePlacementsPageChange(placementsPage - 1)}
-                              disabled={placementsPage === 1}
-                            >
-                              Previous
-                            </Button>
-                            <div className="flex items-center gap-1">
-                              {/* Compact page list: show first, last, current +/- neighbors with ellipses */}
-                              {(() => {
-                                const maxButtons = 7; // total buttons to show including first/last
-                                const total = placementsTotalPages;
-                                const current = placementsPage;
-                                const pages: Array<number | string> = [];
-
-                                if (total <= maxButtons) {
-                                  for (let i = 1; i <= total; i++) pages.push(i);
-                                } else {
-                                  const side = 1; // neighbors on each side of current
-                                  const left = Math.max(2, current - side);
-                                  const right = Math.min(total - 1, current + side);
-
-                                  pages.push(1);
-                                  if (left > 2) pages.push('left-ellipsis');
-
-                                  for (let p = left; p <= right; p++) pages.push(p);
-
-                                  if (right < total - 1) pages.push('right-ellipsis');
-                                  pages.push(total);
-                                }
-
-                                return pages.map((p, idx) => {
-                                  if (typeof p === 'string') {
-                                    return (
-                                      <span key={p + idx} className="px-2 text-sm text-muted-foreground">…</span>
-                                    );
-                                  }
-
-                                  return (
-                                    <Button
-                                      key={p}
-                                      variant={current === p ? 'default' : 'outline'}
-                                      size="sm"
-                                      onClick={() => handlePlacementsPageChange(Number(p))}
-                                      className="w-8 h-8 p-0"
-                                    >
-                                      {p}
-                                    </Button>
-                                  );
-                                });
-                              })()}
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handlePlacementsPageChange(placementsPage + 1)}
-                              disabled={placementsPage === placementsTotalPages}
-                            >
-                              Next
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Writing Leads Tab - Original Content */}
-          <TabsContent value="writing" className="space-y-6">
-        {/* Stats - 5 Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <User className="h-4 w-4 text-blue-500" />
-                <span className="text-sm text-muted-foreground">All Time APP</span>
-              </div>
-              <p className="text-2xl font-bold">{leads.length}</p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <CheckCircle2 className="h-4 w-4 text-cyan-500" />
-                <span className="text-sm text-muted-foreground">This Month APP</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {leads.filter(l => {
-                  if (!l.created_at) return false;
-                  const leadDate = new Date(l.created_at);
-                  const now = new Date();
-                  return leadDate.getMonth() === now.getMonth() && leadDate.getFullYear() === now.getFullYear();
-                }).length}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Calendar className="h-4 w-4 text-yellow-500" />
-                <span className="text-sm text-muted-foreground">This Week APP</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {leads.filter(l => {
-                  const weekAgo = new Date();
-                  weekAgo.setDate(weekAgo.getDate() - 7);
-                  return l.created_at && new Date(l.created_at) > weekAgo;
-                }).length}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Clock className="h-4 w-4 text-orange-500" />
-                <span className="text-sm text-muted-foreground">Today APP</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {leads.filter(l => {
-                  if (!l.created_at) return false;
-                  const leadDate = new Date(l.created_at);
-                  const today = new Date();
-                  return leadDate.toDateString() === today.toDateString();
-                }).length}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <AlertCircle className="h-4 w-4 text-indigo-500" />
-                <span className="text-sm text-muted-foreground">Daily Avg APP This Week</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {(() => {
-                  const weekLeads = leads.filter(l => {
-                    const weekAgo = new Date();
-                    weekAgo.setDate(weekAgo.getDate() - 7);
-                    return l.created_at && new Date(l.created_at) > weekAgo;
-                  });
-                  return (weekLeads.length / 7).toFixed(1);
-                })()}
-              </p>
-            </CardContent>
-          </Card>
+                  )}
+                </div>
+              </section>
+            );
+          })}
         </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-primary/20 bg-zinc-900/60 shadow-xl shadow-black/30 backdrop-blur-xl">
+          <div>
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_72px_minmax(0,1.15fr)_minmax(0,1fr)_96px_112px] gap-4 border-b border-white/10 px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 lg:grid">
+              <span>Lead</span>
+              <span>Agent</span>
+              <span>State</span>
+              <span>Attorney</span>
+              <span>Status</span>
+              <span className="text-right">Commission</span>
+              <span>Call Date</span>
+            </div>
 
-        {/* Graphs - 2 Charts */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {/* Graph 1: APP Distribution by Carrier */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">APP by Carrier</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {(() => {
-                  const carrierData = leads.reduce((acc, lead) => {
-                    const carrier = lead.carrier || 'Unknown';
-                    if (!acc[carrier]) {
-                      acc[carrier] = { count: 0, premium: 0 };
-                    }
-                    acc[carrier].count++;
-                    acc[carrier].premium += lead.monthly_premium || 0;
-                    return acc;
-                  }, {} as Record<string, { count: number; premium: number }>);
+            <div className="divide-y divide-white/[0.06]">
+              {paginatedItems.length > 0 ? (
+                paginatedItems.map((item, rowIndex) => {
+                  const absoluteRowIndex = (currentPage - 1) * RECORDS_PER_PAGE + rowIndex;
+                  const isStripedRow = absoluteRowIndex % 2 === 0;
 
-                  const sortedCarriers = Object.entries(carrierData)
-                    .sort((a, b) => b[1].premium - a[1].premium)
-                    .slice(0, 5);
-
-                  const maxPremium = sortedCarriers[0]?.[1].premium || 1;
-
-                  return sortedCarriers.map(([carrier, data]) => (
-                    <div key={carrier} className="space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-medium">{carrier}</span>
-                        <span className="text-muted-foreground">${data.premium.toLocaleString()} ({data.count})</span>
-                      </div>
-                      <div className="w-full bg-secondary rounded-full h-2">
-                        <div
-                          className="bg-primary rounded-full h-2 transition-all"
-                          style={{ width: `${(data.premium / maxPremium) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  ));
-                })()}
-                {leads.length === 0 && (
-                  <p className="text-center text-muted-foreground py-8">No data available</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Graph 2: APP Over Time (Weekdays Only) */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Total APP (Last 7 Weekdays)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {(() => {
-                // Get last 7 weekdays (excluding Saturday and Sunday)
-                const last7Weekdays = [];
-                let daysAdded = 0;
-                let dayOffset = 0;
-                
-                while (daysAdded < 7) {
-                  const date = new Date();
-                  date.setDate(date.getDate() - dayOffset);
-                  date.setHours(0, 0, 0, 0);
-                  
-                  const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
-                  if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Saturday or Sunday
-                    last7Weekdays.unshift(date);
-                    daysAdded++;
-                  }
-                  dayOffset++;
-                }
-
-                const dailyData = last7Weekdays.map(date => {
-                  const count = leads.filter(l => {
-                    if (!l.created_at) return false;
-                    const leadDate = new Date(l.created_at);
-                    leadDate.setHours(0, 0, 0, 0);
-                    return leadDate.getTime() === date.getTime();
-                  }).length;
-
-                  return {
-                    date: format(date, 'MMM d'),
-                    fullDate: format(date, 'MMM dd, yyyy'),
-                    count,
-                    dailyTarget: 10,
-                    weeklyAvg: 8
-                  };
-                });
-
-                if (leads.length === 0) {
                   return (
-                    <div className="flex items-center justify-center" style={{ height: 300 }}>
-                      <p className="text-center text-muted-foreground">No data available</p>
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "grid gap-3 px-4 py-4 transition-colors lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_72px_minmax(0,1.15fr)_minmax(0,1fr)_96px_112px] lg:items-center lg:gap-4",
+                      isStripedRow
+                        ? "bg-primary/[0.08] hover:bg-primary/[0.13]"
+                        : "hover:bg-white/[0.05]",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-white">{item.leadName}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500 lg:hidden">
+                        {item.attorney}
+                      </p>
                     </div>
-                  );
-                }
-
-                return (
-                  <div>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <LineChart
-                        data={dailyData}
-                        margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis 
-                          dataKey="date" 
-                          tick={{ fontSize: 11 }}
-                          interval="preserveStartEnd"
-                          minTickGap={30}
-                          className="text-muted-foreground"
-                        />
-                        <YAxis 
-                          tick={{ fontSize: 11 }}
-                          className="text-muted-foreground"
-                        />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--background))', 
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '6px'
-                          }}
-                          labelStyle={{ color: 'hsl(var(--foreground))' }}
-                          itemStyle={{ color: 'hsl(var(--foreground))' }}
-                          formatter={(value: number, name: string) => {
-                            if (name === 'count') return [value, 'Submissions'];
-                            if (name === 'dailyTarget') return [value, 'Daily Target'];
-                            if (name === 'weeklyAvg') return [value, 'Weekly Avg'];
-                            return [value, name];
-                          }}
-                        />
-                        <Legend 
-                          wrapperStyle={{ fontSize: '12px' }}
-                          formatter={(value: string) => {
-                            if (value === 'count') return 'Actual';
-                            if (value === 'dailyTarget') return 'Daily Target (10)';
-                            if (value === 'weeklyAvg') return 'Weekly Avg (8)';
-                            return value;
-                          }}
-                        />
-                        
-                        {/* Target lines */}
-                        <ReferenceLine 
-                          y={10} 
-                          stroke="#22c55e" 
-                          strokeDasharray="5 5" 
-                          strokeWidth={2}
-                          label={{ value: '', position: 'insideTopRight' }}
-                        />
-                        <ReferenceLine 
-                          y={8} 
-                          stroke="#f97316" 
-                          strokeDasharray="5 5" 
-                          strokeWidth={2}
-                          label={{ value: '', position: 'insideTopRight' }}
-                        />
-                        
-                        {/* Data line */}
-                        <Line 
-                          type="monotone" 
-                          dataKey="count" 
-                          stroke="#3b82f6" 
-                          strokeWidth={3}
-                          dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
-                          activeDot={{ r: 6 }}
-                          name="count"
-                        />
-                        
-                        {/* Hidden lines for legend */}
-                        <Line 
-                          type="monotone" 
-                          dataKey="dailyTarget" 
-                          stroke="#22c55e" 
-                          strokeWidth={0}
-                          dot={false}
-                          legendType="line"
-                          strokeDasharray="5 5"
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="weeklyAvg" 
-                          stroke="#f97316" 
-                          strokeWidth={0}
-                          dot={false}
-                          legendType="line"
-                          strokeDasharray="5 5"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                    
-                    {/* Stats below graph */}
-                    <div className="mt-4 pt-4 border-t grid grid-cols-3 gap-4 text-center">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Avg Daily</p>
-                        <p className="text-lg font-bold">
-                          {dailyData.length > 0 ? (dailyData.reduce((sum, d) => sum + d.count, 0) / 7).toFixed(1) : '0'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Days Above Target</p>
-                        <p className="text-lg font-bold text-green-600">
-                          {dailyData.filter(d => d.count >= 10).length}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Target Achievement</p>
-                        <p className="text-lg font-bold text-blue-600">
-                          {dailyData.length > 0 ? Math.round((dailyData.reduce((sum, d) => sum + d.count, 0) / (7 * 10)) * 100) : '0'}%
-                        </p>
-                      </div>
+                    <div className="min-w-0 text-sm text-slate-300">
+                      <span className="text-slate-500 lg:hidden">Agent: </span>
+                      <span className="truncate">{item.closerName}</span>
+                    </div>
+                    <div className="text-sm text-slate-300">
+                      <span className="text-slate-500 lg:hidden">State: </span>
+                      {item.state}
+                    </div>
+                    <div className="hidden min-w-0 truncate text-sm text-slate-300 lg:block">
+                      {item.attorney}
+                    </div>
+                    <div>
+                      <Badge variant="outline" className={statusBadgeClass(item.boardKey)}>
+                        {getBoardLabel(item.boardKey)}
+                      </Badge>
+                    </div>
+                    <div className="text-sm font-semibold text-white lg:text-right">
+                      {formatCurrency(item.commissionAmount)}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-slate-400">
+                      <Clock3 className="h-3.5 w-3.5" />
+                      {formatDateLabel(item.callDateKey)}
                     </div>
                   </div>
-                );
-              })()}
-            </CardContent>
-          </Card>
+                  );
+                })
+              ) : (
+                <div className="px-4 py-16 text-center text-sm text-slate-500">
+                  No commission rows for this pay cycle
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3 text-sm text-slate-400">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Showing {paginatedItems.length} of {visibleItems.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                className="border-white/10 bg-white/[0.06] text-slate-200 hover:bg-white/[0.10] hover:text-white disabled:text-slate-600"
+              >
+                Previous
+              </Button>
+              <Badge variant="outline" className="border-white/10 bg-white/[0.06] text-slate-300">
+                {currentPage} / {pageCount}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= pageCount}
+                onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
+                className="border-white/10 bg-white/[0.06] text-slate-200 hover:bg-white/[0.10] hover:text-white disabled:text-slate-600"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </div>
-          </TabsContent>
-        </Tabs>
+            )}
+      </div>
+          </div>
+        </div>
       </div>
     </div>
   );
