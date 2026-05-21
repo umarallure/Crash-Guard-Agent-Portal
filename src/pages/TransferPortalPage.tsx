@@ -31,8 +31,7 @@ import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
-import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
-import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
+import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
@@ -423,7 +422,7 @@ const TransferPortalPage = () => {
   const [editPipeline, setEditPipeline] = useState("transfer_portal");
   const [editStage, setEditStage] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
-  const { unblockedStateCodes } = useSalesMapCoverageStates();
+  const { stateOptions } = useSalesMapCoverageStates();
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -489,7 +488,7 @@ const TransferPortalPage = () => {
     }
 
     if (selectedStates.length > 0) {
-      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
+      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
     }
 
     // Apply search filter
@@ -527,15 +526,6 @@ const TransferPortalPage = () => {
     });
     return LEAD_TAG_OPTIONS.filter((tag) => set.has(tag));
   }, [data]);
-
-  const stateOptions = useMemo(() => {
-    return getStateFilterOptions(data).map((option) => ({
-      ...option,
-      itemClassName: unblockedStateCodes.has(option.value)
-        ? SALES_MAP_ACTIVE_STATE_OPTION_CLASS
-        : undefined,
-    }));
-  }, [data, unblockedStateCodes]);
 
   const { toast } = useToast();
 
@@ -622,7 +612,7 @@ const TransferPortalPage = () => {
   useEffect(() => {
     setFilteredData(applyFilters(data));
     setCurrentPage(1); // Reset to first page when filters change
-  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, publisherFilters, selectedStates, searchTerm, tagFilter]);
+  }, [data, datePreset, customStartDate, customEndDate, sourceTypeFilter, publisherFilters, selectedStates, searchTerm, tagFilter, stateOptions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

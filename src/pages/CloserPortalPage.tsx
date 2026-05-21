@@ -20,8 +20,7 @@ import { usePipelineStages } from "@/hooks/usePipelineStages";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
-import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
-import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
+import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
@@ -207,7 +206,7 @@ const CloserPortalPage = () => {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [assignmentAgents, setAssignmentAgents] = useState<LeadAssignmentAgentOption[]>([]);
   const [assignmentSavingId, setAssignmentSavingId] = useState<string | null>(null);
-  const { unblockedStateCodes } = useSalesMapCoverageStates();
+  const { stateOptions } = useSalesMapCoverageStates();
   const currentOperationalDateKey = useMemo(
     () => getCloserPortalOperationalDateKey(timeTick) ?? "",
     [timeTick]
@@ -414,7 +413,7 @@ const CloserPortalPage = () => {
     }
 
     if (selectedStates.length > 0) {
-      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
+      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
     }
 
     if (searchTerm) {
@@ -451,15 +450,6 @@ const CloserPortalPage = () => {
     });
     return LEAD_TAG_OPTIONS.filter((tag) => set.has(tag));
   }, [data]);
-
-  const stateOptions = useMemo(() => {
-    return getStateFilterOptions(data).map((option) => ({
-      ...option,
-      itemClassName: unblockedStateCodes.has(option.value)
-        ? SALES_MAP_ACTIVE_STATE_OPTION_CLASS
-        : undefined,
-    }));
-  }, [data, unblockedStateCodes]);
 
   const fetchNoteCounts = async (rows: CloserPortalRow[]) => {
     const leadIds = rows.map((row) => row.id).filter(Boolean);
@@ -578,7 +568,7 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [activeSessionIds, data, leadVendorFilter, searchTerm, selectedStates, statusFilter, tagFilter, timeFilter, timeTick]);
+  }, [activeSessionIds, data, leadVendorFilter, searchTerm, selectedStates, statusFilter, tagFilter, timeFilter, timeTick, stateOptions]);
 
   useEffect(() => {
     if (closerStagesLoading) return;

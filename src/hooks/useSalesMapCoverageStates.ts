@@ -1,20 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { SALES_MAP_ACTIVE_STATE_CODE_SET } from "@/lib/salesMapActiveStates";
+import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
+import { getStateFilterOptions, type StateFilterSourceRow } from "@/lib/stateFilter";
+
+type SalesMapStateRow = Required<Pick<StateFilterSourceRow, "state_code" | "state_name" | "availability_status">>;
+
+type SalesMapStatesQueryClient = {
+  from: (table: "sales_map_states") => {
+    select: (columns: "state_code, state_name, availability_status") => {
+      order: (
+        column: "state_name",
+        options: { ascending: boolean },
+      ) => Promise<{ data: SalesMapStateRow[] | null; error: { message?: string } | null }>;
+    };
+  };
+};
 
 export function useSalesMapCoverageStates() {
-  const [unblockedStateCodes, setUnblockedStateCodes] = useState<Set<string>>(
-    () => new Set(SALES_MAP_ACTIVE_STATE_CODE_SET)
-  );
+  const [salesMapStates, setSalesMapStates] = useState<SalesMapStateRow[]>([]);
 
   useEffect(() => {
     let cancelled = false;
 
     const fetchCoverageStates = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as unknown as SalesMapStatesQueryClient)
         .from("sales_map_states")
-        .select("state_code")
-        .eq("availability_status", "unblocked");
+        .select("state_code, state_name, availability_status")
+        .order("state_name", { ascending: true });
 
       if (cancelled) return;
 
@@ -23,13 +35,7 @@ export function useSalesMapCoverageStates() {
         return;
       }
 
-      const next = new Set(SALES_MAP_ACTIVE_STATE_CODE_SET);
-      (data ?? [])
-        .map((row) => (row.state_code || "").trim().toUpperCase())
-        .filter(Boolean)
-        .forEach((code) => next.add(code));
-
-      setUnblockedStateCodes(next);
+      setSalesMapStates(data ?? []);
     };
 
     fetchCoverageStates();
@@ -39,5 +45,31 @@ export function useSalesMapCoverageStates() {
     };
   }, []);
 
-  return useMemo(() => ({ unblockedStateCodes }), [unblockedStateCodes]);
+  const stateOptions = useMemo(
+    () =>
+      getStateFilterOptions(salesMapStates).map((option) => ({
+        ...option,
+        itemClassName:
+          option.availabilityStatus === "unblocked"
+            ? SALES_MAP_ACTIVE_STATE_OPTION_CLASS
+            : undefined,
+      })),
+    [salesMapStates],
+  );
+
+  const unblockedStateCodes = useMemo(
+    () =>
+      new Set(
+        salesMapStates
+          .filter((state) => state.availability_status === "unblocked")
+          .map((state) => state.state_code.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    [salesMapStates],
+  );
+
+  return useMemo(
+    () => ({ stateOptions, unblockedStateCodes }),
+    [stateOptions, unblockedStateCodes],
+  );
 }
