@@ -22,7 +22,9 @@ import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
+import { useBrokerSolFilterOptions } from "@/hooks/useBrokerSolFilterOptions";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
+import { ALL_SOL_FILTER_VALUE, matchesSolPeriodFilter } from "@/lib/solPeriods";
 import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
 import {
   applyLeadAssignmentToRows,
@@ -64,6 +66,7 @@ interface CloserPortalRow {
   is_callback?: boolean;
   source_type?: string;
   state?: string;
+  accident_date?: string | null;
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -199,6 +202,7 @@ const CloserPortalPage = () => {
   const [statusFilter, setStatusFilter] = useState(ALL_FILTER_VALUE);
   const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  const [brokerSolFilter, setBrokerSolFilter] = useState<string>(ALL_SOL_FILTER_VALUE);
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [timeTick, setTimeTick] = useState(() => Date.now());
@@ -207,6 +211,7 @@ const CloserPortalPage = () => {
   const [assignmentAgents, setAssignmentAgents] = useState<LeadAssignmentAgentOption[]>([]);
   const [assignmentSavingId, setAssignmentSavingId] = useState<string | null>(null);
   const { stateOptions } = useSalesMapCoverageStates();
+  const { solOptions } = useBrokerSolFilterOptions();
   const currentOperationalDateKey = useMemo(
     () => getCloserPortalOperationalDateKey(timeTick) ?? "",
     [timeTick]
@@ -416,6 +421,13 @@ const CloserPortalPage = () => {
       filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
     }
 
+    if (
+      brokerSolFilter !== ALL_SOL_FILTER_VALUE &&
+      solOptions.some((option) => option.value === brokerSolFilter)
+    ) {
+      filtered = filtered.filter((record) => matchesSolPeriodFilter(record.accident_date, brokerSolFilter));
+    }
+
     if (searchTerm) {
       const query = searchTerm.toLowerCase();
       filtered = filtered.filter((record) =>
@@ -530,6 +542,7 @@ const CloserPortalPage = () => {
           is_callback: isCallback,
           source_type: isCallback ? "callback" : "zapier",
           state: getLeadRecordString(leadRecord, "state"),
+          accident_date: getLeadRecordString(leadRecord, "accident_date"),
         };
       });
 
@@ -568,7 +581,7 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [activeSessionIds, data, leadVendorFilter, searchTerm, selectedStates, statusFilter, tagFilter, timeFilter, timeTick, stateOptions]);
+  }, [activeSessionIds, brokerSolFilter, data, leadVendorFilter, searchTerm, selectedStates, statusFilter, tagFilter, timeFilter, timeTick, stateOptions, solOptions]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
@@ -608,6 +621,7 @@ const CloserPortalPage = () => {
     timeFilter !== DEFAULT_CLOSER_PORTAL_TIME_FILTER ||
     statusFilter !== ALL_FILTER_VALUE ||
     selectedStates.length > 0 ||
+    brokerSolFilter !== ALL_SOL_FILTER_VALUE ||
     leadVendorFilter !== ALL_FILTER_VALUE ||
     tagFilter !== ALL_LEAD_TAGS_VALUE;
 
@@ -615,6 +629,7 @@ const CloserPortalPage = () => {
     setTimeFilter(DEFAULT_CLOSER_PORTAL_TIME_FILTER);
     setStatusFilter(ALL_FILTER_VALUE);
     setSelectedStates([]);
+    setBrokerSolFilter(ALL_SOL_FILTER_VALUE);
     setLeadVendorFilter(ALL_FILTER_VALUE);
     setTagFilter(ALL_LEAD_TAGS_VALUE);
   };
@@ -964,7 +979,7 @@ const CloserPortalPage = () => {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Time Period</label>
                       <Select
@@ -1047,6 +1062,25 @@ const CloserPortalPage = () => {
                         selectedDisplayMode="scroll"
                         highlightSelectedOptions={false}
                       />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Broker SOL</label>
+                      <Select value={brokerSolFilter} onValueChange={setBrokerSolFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Broker SOLs" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={ALL_SOL_FILTER_VALUE}>All Broker SOLs</SelectItem>
+                            {solOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 

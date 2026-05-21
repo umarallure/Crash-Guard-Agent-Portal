@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
-import { addMonths, differenceInCalendarMonths, endOfDay, isAfter, startOfDay } from "date-fns";
 
 import { supabase } from "@/integrations/supabase/client";
 import { getStateMatchToken } from "@/lib/stateFilter";
+import { getSolStatus, isSolValid } from "@/lib/solPeriods";
 
 type LawyerRequirementType = "broker_lawyer" | "internal_lawyer";
 
@@ -51,51 +51,6 @@ const normalizeLawyerType = (value: unknown): LawyerRequirementType | null => {
   }
 
   return null;
-};
-
-const getSolLimitMonths = (sol: string | null): number | null => {
-  switch (sol) {
-    case "3month":
-      return 3;
-    case "6month":
-      return 6;
-    case "12month":
-      return 12;
-    case "24month":
-      return 24;
-    default:
-      return null;
-  }
-};
-
-const getSolExpiryDate = (accidentDate: Date | undefined, sol: string | null): Date | null => {
-  if (!accidentDate) return null;
-
-  const solLimitMonths = getSolLimitMonths(sol);
-  if (solLimitMonths === null) return null;
-
-  return endOfDay(addMonths(startOfDay(accidentDate), solLimitMonths));
-};
-
-const isSolValid = (accidentDate: Date | undefined, sol: string | null): boolean => {
-  const expiryDate = getSolExpiryDate(accidentDate, sol);
-  if (!expiryDate) return true;
-
-  return !isAfter(startOfDay(new Date()), expiryDate);
-};
-
-const getSolStatus = (
-  accidentDate: Date | undefined,
-  sol: string | null
-): { valid: boolean; monthsRemaining?: number } => {
-  const expiryDate = getSolExpiryDate(accidentDate, sol);
-  if (!expiryDate) return { valid: true };
-
-  const today = startOfDay(new Date());
-  const valid = !isAfter(today, expiryDate);
-  const monthsRemaining = Math.max(0, differenceInCalendarMonths(expiryDate, today));
-
-  return { valid, monthsRemaining };
 };
 
 const normalizeBool = (val: boolean | string | undefined): boolean => {
