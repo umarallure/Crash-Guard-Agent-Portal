@@ -37,8 +37,7 @@ import { isDateInRange, type DateRangePreset } from "@/lib/dateRangeFilter";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
-import { getStateFilterOptions, matchesStateFilter } from "@/lib/stateFilter";
-import { SALES_MAP_ACTIVE_STATE_OPTION_CLASS } from "@/lib/salesMapActiveStates";
+import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
@@ -476,7 +475,7 @@ const SubmissionPortalPage = () => {
   const [editStage, setEditStage] = useState("");
   const [editReason, setEditReason] = useState("");
   const [editNotes, setEditNotes] = useState("");
-  const { unblockedStateCodes } = useSalesMapCoverageStates();
+  const { stateOptions } = useSalesMapCoverageStates();
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -608,7 +607,7 @@ const SubmissionPortalPage = () => {
     }
 
     if (selectedStates.length > 0) {
-      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates));
+      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
     }
 
     // Apply search filter
@@ -646,15 +645,6 @@ const SubmissionPortalPage = () => {
     });
     return LEAD_TAG_OPTIONS.filter((tag) => set.has(tag));
   }, [data]);
-
-  const stateOptions = useMemo(() => {
-    return getStateFilterOptions(data).map((option) => ({
-      ...option,
-      itemClassName: unblockedStateCodes.has(option.value)
-        ? SALES_MAP_ACTIVE_STATE_OPTION_CLASS
-        : undefined,
-    }));
-  }, [data, unblockedStateCodes]);
 
   const generateVerificationLogSummary = (logs: CallLog[], submission?: any): string => {
     if (!logs || logs.length === 0) {
@@ -955,7 +945,7 @@ const SubmissionPortalPage = () => {
   // Update filtered data whenever data or filters change
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, datePreset, customStartDate, customEndDate, statusFilter, publisherFilters, selectedStates, searchTerm, tagFilter]);
+  }, [data, datePreset, customStartDate, customEndDate, statusFilter, publisherFilters, selectedStates, searchTerm, tagFilter, stateOptions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
