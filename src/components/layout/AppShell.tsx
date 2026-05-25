@@ -301,6 +301,12 @@ const AppShell = ({
         show: canAccessAgentPages,
       },
       {
+        label: 'Lawyers Criteria',
+        to: '/lawyer-requirements',
+        icon: <Scale className="h-4 w-4 text-current" />,
+        show: isAdmin && canAccessAgentPages,
+      },
+      {
         label: 'Commission',
         to: '/commission-portal',
         icon: <DollarSign className="h-4 w-4 text-current" />,
@@ -310,12 +316,6 @@ const AppShell = ({
         label: 'Deel',
         to: '/deel',
         icon: <Landmark className="h-4 w-4 text-current" />,
-      },
-      {
-        label: 'Lawyers Criteria',
-        to: '/lawyer-requirements',
-        icon: <Scale className="h-4 w-4 text-current" />,
-        show: isAdmin && canAccessAgentPages,
       },
     ];
 
