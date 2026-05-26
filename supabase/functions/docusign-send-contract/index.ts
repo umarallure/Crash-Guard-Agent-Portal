@@ -12,6 +12,7 @@ type SendTemplateRequest = {
   recipientName?: string;
   accidentDate?: string;
   accidentAddress?: string;
+  dateOfBirth?: string;
   templateId?: string;
   deliveryMethod?: ContractDeliveryMethod;
   debug?: boolean;
@@ -509,6 +510,7 @@ serve(async (req) => {
   const recipientName = asTrimmedString(body.recipientName) || "Signer";
   const accidentDate = asTrimmedString(body.accidentDate);
   const accidentAddress = asTrimmedString(body.accidentAddress);
+  const dateOfBirth = asTrimmedString(body.dateOfBirth);
   const recipientPhoneCountryCode = normalizeCountryCode(body.recipientPhoneCountryCode);
   const recipientPhone = normalizePhoneNumber(body.recipientPhone, recipientPhoneCountryCode);
   const deliveryMethod = resolveDeliveryMethod(body.deliveryMethod, recipientEmail, recipientPhone);
@@ -625,6 +627,9 @@ serve(async (req) => {
         ["dateofaccident", accidentDate],
         ["accidentaddress", accidentAddress],
         ["accidentlocation", accidentAddress],
+        ["dateofbirth", dateOfBirth],
+        ["dob", dateOfBirth],
+        ["birthdate", dateOfBirth],
       ]);
 
       const updatedTabs = prefillTextTabs.map((tab: Record<string, unknown>) => {
