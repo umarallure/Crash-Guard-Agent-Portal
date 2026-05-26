@@ -567,6 +567,12 @@ export type Database = {
         Row: {
           account_type: string | null
           additional_notes: string | null
+          broker_dropped_note: string | null
+          broker_dropped_note_updated_at: string | null
+          broker_dropped_note_updated_by: string | null
+          broker_rejection_note: string | null
+          broker_rejection_note_updated_at: string | null
+          broker_rejection_note_updated_by: string | null
           age: number | null
           agent: string | null
           beneficiary_account: string | null
@@ -631,6 +637,12 @@ export type Database = {
         Insert: {
           account_type?: string | null
           additional_notes?: string | null
+          broker_dropped_note?: string | null
+          broker_dropped_note_updated_at?: string | null
+          broker_dropped_note_updated_by?: string | null
+          broker_rejection_note?: string | null
+          broker_rejection_note_updated_at?: string | null
+          broker_rejection_note_updated_by?: string | null
           age?: number | null
           agent?: string | null
           beneficiary_account?: string | null
@@ -695,6 +707,12 @@ export type Database = {
         Update: {
           account_type?: string | null
           additional_notes?: string | null
+          broker_dropped_note?: string | null
+          broker_dropped_note_updated_at?: string | null
+          broker_dropped_note_updated_by?: string | null
+          broker_rejection_note?: string | null
+          broker_rejection_note_updated_at?: string | null
+          broker_rejection_note_updated_by?: string | null
           age?: number | null
           agent?: string | null
           beneficiary_account?: string | null

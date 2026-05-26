@@ -194,18 +194,38 @@ const DailyDealFlowLeadDetailsPage = () => {
       try {
         const { data, error } = await supabase
           .from('leads')
-          .select('additional_notes, created_at, updated_at')
+          .select('additional_notes, created_at, updated_at, broker_rejection_note, broker_rejection_note_updated_at, broker_dropped_note, broker_dropped_note_updated_at')
           .eq('submission_id', lead.submission_id)
           .maybeSingle();
 
-        if (!error && data?.additional_notes) {
-          const noteText = (data.additional_notes as string).trim();
-          if (noteText) {
+        if (!error && data) {
+          const rejectionNote = (data.broker_rejection_note as string | null)?.trim();
+          if (rejectionNote) {
             entries.push({
-              source: 'Leads',
-              note: noteText,
-              timestamp: data.updated_at || data.created_at || null,
+              source: 'Broker - Rejected by Attorney',
+              note: rejectionNote,
+              timestamp: data.broker_rejection_note_updated_at || data.updated_at || data.created_at || null,
             });
+          }
+
+          const droppedNote = (data.broker_dropped_note as string | null)?.trim();
+          if (droppedNote) {
+            entries.push({
+              source: 'Broker - Dropped',
+              note: droppedNote,
+              timestamp: data.broker_dropped_note_updated_at || data.updated_at || data.created_at || null,
+            });
+          }
+
+          if (data.additional_notes) {
+            const noteText = (data.additional_notes as string).trim();
+            if (noteText) {
+              entries.push({
+                source: 'Leads',
+                note: noteText,
+                timestamp: data.updated_at || data.created_at || null,
+              });
+            }
           }
         }
       } catch (e) {

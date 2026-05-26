@@ -463,6 +463,34 @@ const LeadDetailsPage = () => {
     }
   };
 
+  const brokerDispositionNotes = useMemo(() => {
+    if (!lead) return [] as DailyDealFlowNote[];
+
+    const entries: DailyDealFlowNote[] = [];
+    const rejectionNote = (lead.broker_rejection_note || "").trim();
+    if (rejectionNote) {
+      entries.push({
+        id: "broker-rejection-note",
+        note: rejectionNote,
+        created_at: lead.broker_rejection_note_updated_at || lead.updated_at || "",
+        author_name: "Broker",
+        source: "Rejected by Attorney",
+      });
+    }
+
+    const droppedNote = (lead.broker_dropped_note || "").trim();
+    if (droppedNote) {
+      entries.push({
+        id: "broker-dropped-note",
+        note: droppedNote,
+        created_at: lead.broker_dropped_note_updated_at || lead.updated_at || "",
+        author_name: "Broker",
+        source: "Dropped",
+      });
+    }
+
+    return entries;
+  }, [lead]);
   const headerTitle = useMemo(() => {
     if (!lead) return "Lead Details";
     const name = lead.customer_full_name ? String(lead.customer_full_name) : "Lead";
@@ -655,34 +683,61 @@ const LeadDetailsPage = () => {
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Loading notes...
                   </div>
-                ) : notes.length === 0 ? (
+                ) : notes.length === 0 && brokerDispositionNotes.length === 0 ? (
                   <div className="text-sm text-muted-foreground">No notes found for this lead.</div>
                 ) : (
                   <div className="space-y-6">
-                    <div className="space-y-3">
-                      <div className="text-sm font-medium text-foreground">Daily Deal Flow Notes</div>
-                      {notes.map((n) => {
-                        const author = (n.author_name || "").trim() || "Daily Deal Flow";
-                        const source = (n.source || "").trim() || "Daily Deal Flow";
-                        const dateText = n.created_at ? format(new Date(n.created_at), "PPpp") : "";
-                        return (
-                          <div key={n.id} className="rounded-md border p-3">
-                            <div className="text-sm text-muted-foreground mb-1">
-                              <span className="font-medium text-foreground">{author}</span>
-                              <span className="mx-1">•</span>
-                              <span>{source}</span>
-                              {dateText && (
-                                <>
-                                  <span className="mx-1">•</span>
-                                  <span>{dateText}</span>
-                                </>
-                              )}
+                    {brokerDispositionNotes.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium text-foreground">Broker Notes</div>
+                        {brokerDispositionNotes.map((n) => {
+                          const dateText = n.created_at ? format(new Date(n.created_at), "PPpp") : "";
+                          return (
+                            <div key={n.id} className="rounded-md border p-3">
+                              <div className="text-sm text-muted-foreground mb-1">
+                                <span className="font-medium text-foreground">{n.author_name}</span>
+                                <span className="mx-1">•</span>
+                                <span>{n.source}</span>
+                                {dateText && (
+                                  <>
+                                    <span className="mx-1">•</span>
+                                    <span>{dateText}</span>
+                                  </>
+                                )}
+                              </div>
+                              <div className="whitespace-pre-wrap text-sm text-foreground">{n.note}</div>
                             </div>
-                            <div className="whitespace-pre-wrap text-sm text-foreground">{n.note}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {notes.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium text-foreground">Daily Deal Flow Notes</div>
+                        {notes.map((n) => {
+                          const author = (n.author_name || "").trim() || "Daily Deal Flow";
+                          const source = (n.source || "").trim() || "Daily Deal Flow";
+                          const dateText = n.created_at ? format(new Date(n.created_at), "PPpp") : "";
+                          return (
+                            <div key={n.id} className="rounded-md border p-3">
+                              <div className="text-sm text-muted-foreground mb-1">
+                                <span className="font-medium text-foreground">{author}</span>
+                                <span className="mx-1">•</span>
+                                <span>{source}</span>
+                                {dateText && (
+                                  <>
+                                    <span className="mx-1">•</span>
+                                    <span>{dateText}</span>
+                                  </>
+                                )}
+                              </div>
+                              <div className="whitespace-pre-wrap text-sm text-foreground">{n.note}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>

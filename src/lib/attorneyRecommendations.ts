@@ -43,6 +43,12 @@ type LawyerRequirementRow = {
   submission_link: string | null;
 };
 
+type BrokerAttorneyRequirementLinkRow = {
+  broker_id: string;
+  broker_attorney_id: string;
+  lawyer_requirement_id: string;
+};
+
 type OrderRow = {
   id: string;
   lawyer_id: string;
@@ -73,6 +79,8 @@ export type AttorneyRecommendation = {
   accountType: AttorneyAccountType;
   attorneyUserId: string | null;
   attorneyProfileId: string | null;
+  brokerAttorneyId: string | null;
+  brokerId: string | null;
   requirementId: string | null;
   submissionLink: string | null;
   attorneyName: string;
@@ -347,7 +355,7 @@ export const getAttorneyRecommendations = async (
     };
   }
 
-  const [internalProfilesResult, brokerProfilesResult, requirementsResult, ordersResult] = await Promise.all([
+  const [internalProfilesResult, brokerProfilesResult, requirementsResult, brokerLinksResult, ordersResult] = await Promise.all([
     supabaseUntyped
       .from("attorney_profiles")
       .select("id,user_id,full_name,primary_email,direct_phone,licensed_states,account_type,availability_status,case_rate_per_deal,criteria")
@@ -362,6 +370,9 @@ export const getAttorneyRecommendations = async (
       .eq("lawyer_type", "broker_lawyer")
       .order("attorney_name", { ascending: true }),
     supabaseUntyped
+      .from("broker_attorney_requirement_links")
+      .select("broker_id,broker_attorney_id,lawyer_requirement_id"),
+    supabaseUntyped
       .from("orders")
       .select("id,lawyer_id,target_states,case_type,case_subtype,criteria,quota_total,quota_filled,status,expires_at,created_at")
       .eq("status", "OPEN")
@@ -371,15 +382,20 @@ export const getAttorneyRecommendations = async (
   if (internalProfilesResult.error) throw internalProfilesResult.error;
   if (brokerProfilesResult.error) throw brokerProfilesResult.error;
   if (requirementsResult.error) throw requirementsResult.error;
+  if (brokerLinksResult.error) throw brokerLinksResult.error;
   if (ordersResult.error) throw ordersResult.error;
 
   const internalProfiles = (internalProfilesResult.data ?? []) as AttorneyProfileRow[];
   const brokerProfiles = (brokerProfilesResult.data ?? []) as AttorneyProfileRow[];
   const requirements = (requirementsResult.data ?? []) as LawyerRequirementRow[];
+  const brokerLinks = (brokerLinksResult.data ?? []) as BrokerAttorneyRequirementLinkRow[];
   const orderRows = (ordersResult.data ?? []) as OrderRow[];
 
   const profileByUserId = new Map(
     [...internalProfiles, ...brokerProfiles].map((profile) => [profile.user_id, profile])
+  );
+  const brokerLinkByRequirementId = new Map(
+    brokerLinks.map((link) => [link.lawyer_requirement_id, link])
   );
   const ordersByLawyerId = new Map<string, AttorneyRecommendationOrder[]>();
   for (const row of orderRows) {
@@ -395,6 +411,7 @@ export const getAttorneyRecommendations = async (
     .filter((requirement) => requirement.lawyer_type === "broker_lawyer")
     .map<AttorneyRecommendation>((requirement) => {
       const profile = requirement.attorney_id ? profileByUserId.get(requirement.attorney_id) : null;
+      const brokerLink = brokerLinkByRequirementId.get(requirement.id) ?? null;
       const coverageStates = normalizeStates(requirement.states);
       const stateMatch = coverageStates.includes(leadState);
       const sol = evaluateSol(requirement.sol, accidentDate);
@@ -410,6 +427,9 @@ export const getAttorneyRecommendations = async (
       if (profile?.account_type && profile.account_type !== "broker_lawyer") {
         warnings.push(`Linked profile is ${profile.account_type}`);
       }
+      if (!brokerLink?.broker_attorney_id || !brokerLink?.broker_id) {
+        warnings.push("No broker attorney link configured");
+      }
 
       const isMatch = stateMatch && sol.ok && docs.ok;
 
@@ -418,6 +438,8 @@ export const getAttorneyRecommendations = async (
         accountType: "broker_lawyer",
         attorneyUserId: requirement.attorney_id,
         attorneyProfileId: profile?.id ?? null,
+        brokerAttorneyId: brokerLink?.broker_attorney_id ?? null,
+        brokerId: brokerLink?.broker_id ?? null,
         requirementId: requirement.id,
         submissionLink: requirement.submission_link ?? null,
         attorneyName: getAttorneyDisplayName(profile, requirement.attorney_name),
@@ -487,6 +509,8 @@ export const getAttorneyRecommendations = async (
         accountType: "internal_lawyer",
         attorneyUserId: profile.user_id,
         attorneyProfileId: profile.id,
+        brokerAttorneyId: null,
+        brokerId: null,
         requirementId: null,
         submissionLink: null,
         attorneyName: getAttorneyDisplayName(profile, null),

@@ -582,6 +582,18 @@ export const CallResultForm = ({
   const selectedSubmittedLawyerId = selectedSubmittedLawyer?.id || "";
   const selectedSubmittedLawyerName = selectedSubmittedLawyer?.attorney_name || "";
   const isBrokerFulfillment = attorneyFulfillmentMode === "broker";
+  const selectedBrokerSubmissionLawyer =
+    selectedSubmittedLawyer && selectedSubmittedLawyer.isNoCoverage !== true
+      ? selectedSubmittedLawyer
+      : null;
+  const selectedSubmittedBrokerAttorneyId =
+    selectedBrokerSubmissionLawyer?.broker_attorney_id?.trim() || null;
+  const selectedSubmittedBrokerId =
+    selectedBrokerSubmissionLawyer?.broker_id?.trim() || null;
+  const shouldPersistSubmittedBrokerAttorney =
+    isBrokerFulfillment &&
+    submissionStatus !== "nocoverage" &&
+    Boolean(selectedSubmittedBrokerAttorneyId && selectedSubmittedBrokerId);
   const showSubmissionStatusField = isBrokerFulfillment && Boolean(selectedSubmittedLawyerId);
   const resolveAssignedInternalAttorneyUserId = async () => {
     const candidate = assignedAttorneyId.trim();
@@ -1298,7 +1310,8 @@ export const CallResultForm = ({
   const syncModifiedVerifiedFieldsToLeads = async (
     statusOverride?: string | null,
     tagOverride?: string | null,
-    assignedAttorneyUserIdOverride?: string | null
+    assignedAttorneyUserIdOverride?: string | null,
+    brokerAttorneyIdOverride?: string | null
   ) => {
     const booleanFields = new Set([
       "police_attended",
@@ -1356,6 +1369,13 @@ export const CallResultForm = ({
       updateRecord.assigned_attorney_id = isLeadAttorneySubmittedStatus(normalizedStatusOverride)
         ? assignedInternalAttorneyUserId || null
         : null;
+      if (
+        isBrokerFulfillment &&
+        brokerAttorneyIdOverride &&
+        isLeadAttorneySubmittedStatus(normalizedStatusOverride)
+      ) {
+        updateRecord.assigned_broker_attorney_id = brokerAttorneyIdOverride;
+      }
     }
 
     const normalizedTagOverride = (tagOverride || "").trim();
@@ -1492,7 +1512,13 @@ export const CallResultForm = ({
         passengers_count: passengersCount ? parseInt(passengersCount) : null,
         call_source: callSource,
         submitted_attorney: isBrokerFulfillment ? selectedSubmittedLawyerName || null : null,
-        submitted_attorney_status: isBrokerFulfillment && selectedSubmittedLawyerId ? submissionStatus : null
+        submitted_attorney_status: isBrokerFulfillment && selectedSubmittedLawyerId ? submissionStatus || null : null,
+        submitted_broker_attorney_id: shouldPersistSubmittedBrokerAttorney
+          ? selectedSubmittedBrokerAttorneyId
+          : null,
+        submitted_broker_id: shouldPersistSubmittedBrokerAttorney
+          ? selectedSubmittedBrokerId
+          : null
       };
 
       const { data: { user } } = await supabase.auth.getUser();
@@ -1608,7 +1634,12 @@ export const CallResultForm = ({
       }
 
       try {
-        await syncModifiedVerifiedFieldsToLeads(finalStatus, selectedTag, assignedInternalAttorneyUserId);
+        await syncModifiedVerifiedFieldsToLeads(
+          finalStatus,
+          selectedTag,
+          assignedInternalAttorneyUserId,
+          shouldPersistSubmittedBrokerAttorney ? selectedSubmittedBrokerAttorneyId : null
+        );
       } catch (leadSyncError: unknown) {
         console.error("Failed to sync verification edits to leads:", leadSyncError);
         const leadSyncMessage =
@@ -1665,7 +1696,13 @@ export const CallResultForm = ({
                 insurance_documents: insuranceDocuments ? insuranceDocuments : null,
                 police_report: policeReport ? policeReport : null,
                 submitted_attorney: isBrokerFulfillment ? selectedSubmittedLawyerName || null : null,
-                submitted_attorney_status: isBrokerFulfillment && selectedSubmittedLawyerId ? submissionStatus : null,
+                submitted_attorney_status: isBrokerFulfillment && selectedSubmittedLawyerId ? submissionStatus || null : null,
+                submitted_broker_attorney_id: shouldPersistSubmittedBrokerAttorney
+                  ? selectedSubmittedBrokerAttorneyId
+                  : null,
+                submitted_broker_id: shouldPersistSubmittedBrokerAttorney
+                  ? selectedSubmittedBrokerId
+                  : null,
               }
             });
 

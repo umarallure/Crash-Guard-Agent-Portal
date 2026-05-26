@@ -54,6 +54,8 @@ type RequestBody = {
   police_report?: string | null;
   submitted_attorney?: string | null;
   submitted_attorney_status?: string | null;
+  submitted_broker_attorney_id?: string | null;
+  submitted_broker_id?: string | null;
 };
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -211,7 +213,9 @@ serve(async (req)=>{
       police_report = null,
       assigned_attorney_id = null,
       submitted_attorney = null,
-      submitted_attorney_status = null
+      submitted_attorney_status = null,
+      submitted_broker_attorney_id = null,
+      submitted_broker_id = null
     } = body;
     // Validate required fields
     if (!submission_id) {
@@ -319,7 +323,9 @@ serve(async (req)=>{
       'insurance_documents',
       'police_report',
       'submitted_attorney',
-      'submitted_attorney_status'
+      'submitted_attorney_status',
+      'submitted_broker_attorney_id',
+      'submitted_broker_id'
     ] as const;
     const buildDailyDealFlowUpdate = (leadRow = leadData)=>{
       const payload: Record<string, unknown> = {};
@@ -396,9 +402,13 @@ serve(async (req)=>{
           is_callback: dealFlowIsCallback,
           is_retention_call,
           assigned_attorney_id,
+          submitted_broker_attorney_id,
+          submitted_broker_id,
           medical_treatment_proof,
           insurance_documents,
-          police_report
+          police_report,
+          submitted_attorney,
+          submitted_attorney_status
         }).select().single();
         if (error) {
           console.error('Error inserting new daily deal flow entry:', error);
@@ -470,7 +480,9 @@ serve(async (req)=>{
             insurance_documents,
             police_report,
             submitted_attorney,
-            submitted_attorney_status
+            submitted_attorney_status,
+            submitted_broker_attorney_id,
+            submitted_broker_id
           }).select().single();
           if (error) {
             console.error('Error inserting new daily deal flow entry:', error);
@@ -545,7 +557,9 @@ serve(async (req)=>{
           insurance_documents,
           police_report,
           submitted_attorney,
-          submitted_attorney_status
+          submitted_attorney_status,
+          submitted_broker_attorney_id,
+          submitted_broker_id
         }).select().single();
         if (error) {
           console.error('Error inserting new daily deal flow entry:', error);
