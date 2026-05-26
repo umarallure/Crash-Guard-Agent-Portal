@@ -3743,6 +3743,7 @@ const CallResultUpdate = () => {
           deliveryMethod: contractDeliveryMethod,
           accidentDate: lead?.accident_date || "",
           accidentAddress: verifiedFieldValues?.accident_location || lead?.accident_location || "",
+          dateOfBirth: lead?.date_of_birth || "",
           templateId: selectedTemplateId,
         },
       });
