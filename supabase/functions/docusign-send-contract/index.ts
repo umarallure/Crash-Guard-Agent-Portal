@@ -641,7 +641,7 @@ serve(async (req) => {
 
         for (const key of lookupKeys) {
           const matchedValue = valuesToSet.get(key);
-          if (matchedValue !== undefined) {
+          if (matchedValue) {
             return { ...tab, value: matchedValue };
           }
         }
