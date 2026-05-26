@@ -14,6 +14,8 @@ import { toast } from "sonner";
 
 export type QualifiedLawyer = {
   id: string;
+  broker_attorney_id: string;
+  broker_id: string;
   requirement_id: string;
   attorney_id: string | null;
   attorney_name: string;
@@ -114,9 +116,13 @@ const formatDateOnly = (date?: Date) => {
 const toQualifiedLawyer = (recommendation: AttorneyRecommendation): QualifiedLawyer => {
   const reasons = new Set(recommendation.reasons);
   const requirement = recommendation.requirement;
+  const brokerAttorneyId = recommendation.brokerAttorneyId ?? "";
+  const brokerId = recommendation.brokerId ?? "";
 
   return {
-    id: recommendation.requirementId ?? recommendation.id,
+    id: brokerAttorneyId || recommendation.requirementId || recommendation.id,
+    broker_attorney_id: brokerAttorneyId,
+    broker_id: brokerId,
     requirement_id: recommendation.requirementId ?? recommendation.id,
     attorney_id: recommendation.attorneyUserId,
     attorney_name: recommendation.attorneyName,
@@ -193,7 +199,11 @@ export const QualifiedLawyersCard = ({
 
         if (cancelled) return;
         setResolvedLeadState(result.leadState);
-        setQualifiedLawyers(result.broker.map(toQualifiedLawyer));
+        setQualifiedLawyers(
+          result.broker
+            .filter((recommendation) => Boolean(recommendation.brokerAttorneyId && recommendation.brokerId))
+            .map(toQualifiedLawyer)
+        );
       } catch (err) {
         if (cancelled) return;
         setQualifiedLawyers([]);
