@@ -16,6 +16,7 @@ export type QualifiedLawyer = {
   id: string;
   broker_attorney_id: string;
   broker_id: string;
+  broker_name: string | null;
   requirement_id: string;
   attorney_id: string | null;
   attorney_name: string;
@@ -123,6 +124,7 @@ const toQualifiedLawyer = (recommendation: AttorneyRecommendation): QualifiedLaw
     id: brokerAttorneyId || recommendation.requirementId || recommendation.id,
     broker_attorney_id: brokerAttorneyId,
     broker_id: brokerId,
+    broker_name: recommendation.brokerName,
     requirement_id: recommendation.requirementId ?? recommendation.id,
     attorney_id: recommendation.attorneyUserId,
     attorney_name: recommendation.attorneyName,
@@ -436,18 +438,29 @@ export const QualifiedLawyersCard = ({
       >
         <div className="min-w-0 space-y-3">
           {/* Badges */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-semibold text-muted-foreground">#{String(rank).padStart(2, "0")}</span>
-            <Badge className={
-              tone === "available"
-                ? "rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139] dark:bg-orange-500/30 dark:text-orange-100 dark:hover:bg-orange-500/30"
-                : "rounded-full border border-slate-300/90 bg-slate-100 px-2 py-0 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/15 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white/10"
-            }>
-              {tone === "available" ? "Ready" : "Needs Review"}
-            </Badge>
-            {isSelected ? (
-              <Badge className="rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139] dark:bg-orange-500/40 dark:text-orange-50 dark:hover:bg-orange-500/40">
-                Selected
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground">#{String(rank).padStart(2, "0")}</span>
+              <Badge className={
+                tone === "available"
+                  ? "rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139] dark:bg-orange-500/30 dark:text-orange-100 dark:hover:bg-orange-500/30"
+                  : "rounded-full border border-slate-300/90 bg-slate-100 px-2 py-0 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/15 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white/10"
+              }>
+                {tone === "available" ? "Ready" : "Needs Review"}
+              </Badge>
+              {isSelected ? (
+                <Badge className="rounded-full bg-[#2c3139] px-2 py-0 text-[10px] font-semibold text-white hover:bg-[#2c3139] dark:bg-orange-500/40 dark:text-orange-50 dark:hover:bg-orange-500/40">
+                  Selected
+                </Badge>
+              ) : null}
+            </div>
+            {lawyer.broker_name ? (
+              <Badge
+                variant="outline"
+                title={`Broker: ${lawyer.broker_name}`}
+                className="max-w-[8.5rem] shrink-0 rounded-full border-slate-300/90 bg-white/80 px-2 py-0 text-[10px] font-semibold text-slate-600 dark:border-white/15 dark:bg-white/5 dark:text-zinc-300"
+              >
+                <span className="truncate">{lawyer.broker_name}</span>
               </Badge>
             ) : null}
           </div>

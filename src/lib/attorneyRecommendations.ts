@@ -49,6 +49,11 @@ type BrokerAttorneyRequirementLinkRow = {
   lawyer_requirement_id: string;
 };
 
+type BrokerProfileRow = {
+  user_id: string;
+  company_name: string | null;
+};
+
 type OrderRow = {
   id: string;
   lawyer_id: string;
@@ -81,6 +86,7 @@ export type AttorneyRecommendation = {
   attorneyProfileId: string | null;
   brokerAttorneyId: string | null;
   brokerId: string | null;
+  brokerName: string | null;
   requirementId: string | null;
   submissionLink: string | null;
   attorneyName: string;
@@ -355,7 +361,7 @@ export const getAttorneyRecommendations = async (
     };
   }
 
-  const [internalProfilesResult, brokerProfilesResult, requirementsResult, brokerLinksResult, ordersResult] = await Promise.all([
+  const [internalProfilesResult, brokerProfilesResult, requirementsResult, brokerLinksResult, brokerAccountsResult, ordersResult] = await Promise.all([
     supabaseUntyped
       .from("attorney_profiles")
       .select("id,user_id,full_name,primary_email,direct_phone,licensed_states,account_type,availability_status,case_rate_per_deal,criteria")
@@ -373,6 +379,9 @@ export const getAttorneyRecommendations = async (
       .from("broker_attorney_requirement_links")
       .select("broker_id,broker_attorney_id,lawyer_requirement_id"),
     supabaseUntyped
+      .from("broker_profiles")
+      .select("user_id,company_name"),
+    supabaseUntyped
       .from("orders")
       .select("id,lawyer_id,target_states,case_type,case_subtype,criteria,quota_total,quota_filled,status,expires_at,created_at")
       .eq("status", "OPEN")
@@ -389,6 +398,8 @@ export const getAttorneyRecommendations = async (
   const brokerProfiles = (brokerProfilesResult.data ?? []) as AttorneyProfileRow[];
   const requirements = (requirementsResult.data ?? []) as LawyerRequirementRow[];
   const brokerLinks = (brokerLinksResult.data ?? []) as BrokerAttorneyRequirementLinkRow[];
+  // Broker account names are best-effort: a missing RLS grant should not break recommendations.
+  const brokerAccounts = (brokerAccountsResult.error ? [] : brokerAccountsResult.data ?? []) as BrokerProfileRow[];
   const orderRows = (ordersResult.data ?? []) as OrderRow[];
 
   const profileByUserId = new Map(
@@ -396,6 +407,12 @@ export const getAttorneyRecommendations = async (
   );
   const brokerLinkByRequirementId = new Map(
     brokerLinks.map((link) => [link.lawyer_requirement_id, link])
+  );
+  const brokerNameByUserId = new Map(
+    brokerAccounts.map((account) => [
+      account.user_id,
+      (account.company_name?.trim() || null) as string | null,
+    ])
   );
   const ordersByLawyerId = new Map<string, AttorneyRecommendationOrder[]>();
   for (const row of orderRows) {
@@ -440,6 +457,7 @@ export const getAttorneyRecommendations = async (
         attorneyProfileId: profile?.id ?? null,
         brokerAttorneyId: brokerLink?.broker_attorney_id ?? null,
         brokerId: brokerLink?.broker_id ?? null,
+        brokerName: brokerLink?.broker_id ? brokerNameByUserId.get(brokerLink.broker_id) ?? null : null,
         requirementId: requirement.id,
         submissionLink: requirement.submission_link ?? null,
         attorneyName: getAttorneyDisplayName(profile, requirement.attorney_name),
@@ -511,6 +529,7 @@ export const getAttorneyRecommendations = async (
         attorneyProfileId: profile.id,
         brokerAttorneyId: null,
         brokerId: null,
+        brokerName: null,
         requirementId: null,
         submissionLink: null,
         attorneyName: getAttorneyDisplayName(profile, null),
