@@ -10,6 +10,8 @@ import { AgentActivityDashboard } from "@/components/AgentActivityDashboard";
 import ReportsPage from "./pages/Reports";
 import Auth from "./pages/Auth";
 import CenterAuth from "./pages/CenterAuth";
+import Terms from "./pages/Terms";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import Leads from "./pages/Leads";
 import CenterLeadPortal from "./pages/CenterLeadPortal";
 import CenterCalendarView from "./pages/CenterCalendarView";
@@ -67,6 +69,8 @@ const App = () => (
             <Route path="/" element={<Auth />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/center-auth" element={<CenterAuth />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route 
               path="/dashboard" 
               element={

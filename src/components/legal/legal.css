@@ -1,0 +1,58 @@
+/* Legal document typography (Privacy Policy / Terms) — companion to LegalPage.tsx */
+
+.ap-legal {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.ap-legal > section + section {
+  margin-top: 2rem;
+}
+
+.ap-legal h2 {
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.5rem;
+}
+
+.ap-legal p {
+  margin: 0 0 0.75rem;
+}
+
+.ap-legal p:last-child {
+  margin-bottom: 0;
+}
+
+.ap-legal ul {
+  margin: 0 0 0.75rem;
+  padding-left: 1.15rem;
+  list-style: disc;
+}
+
+.ap-legal li {
+  margin-bottom: 0.4rem;
+}
+
+.ap-legal a {
+  color: #e8915f;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+}
+
+.ap-legal a:hover {
+  color: #ffffff;
+}
+
+.ap-legal strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+}
+
+.ap-legal .ap-legal-lead {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 1rem;
+}

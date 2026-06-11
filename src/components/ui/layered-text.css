@@ -1,0 +1,74 @@
+/* LayeredText effect — companion styles for layered-text.tsx */
+
+.layered-text {
+  margin-inline: auto;
+  font-weight: 900;
+  letter-spacing: -2px;
+  text-transform: uppercase;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  font-size: var(--lt-font);
+}
+
+.layered-text__list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.layered-text__line {
+  position: relative;
+  overflow: hidden;
+  height: var(--lt-lh);
+  transform: translateX(var(--lt-tx)) var(--lt-skew);
+}
+
+.layered-text__col {
+  transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--lt-delay, 0s);
+  will-change: transform;
+}
+
+.layered-text:hover .layered-text__col {
+  transform: translateY(var(--lt-shift));
+}
+
+.layered-text__word {
+  height: var(--lt-lh);
+  margin: 0;
+  padding-inline: 15px;
+  line-height: calc(var(--lt-lh) - 5px);
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+@media (max-width: 767px) {
+  .layered-text {
+    font-size: var(--lt-font-md);
+  }
+
+  .layered-text__line {
+    height: var(--lt-lh-md);
+    transform: translateX(var(--lt-tx-md)) var(--lt-skew);
+  }
+
+  .layered-text__word {
+    height: var(--lt-lh-md);
+    line-height: calc(var(--lt-lh-md) - 5px);
+  }
+
+  .layered-text:hover .layered-text__col {
+    transform: translateY(var(--lt-shift-md));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layered-text__col {
+    transition: none;
+  }
+}
