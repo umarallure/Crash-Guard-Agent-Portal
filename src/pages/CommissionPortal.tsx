@@ -273,8 +273,12 @@ const getApproxTimestampRange = (startKey: string, endKey: string) => {
 const isInboundCommissionCall = (row: CallResultRow) =>
   normalizeText(row.call_source) !== AGENT_CALLBACK_CALL_SOURCE;
 
-const getCommissionAmountForCall = (row: CallResultRow) =>
-  isInboundCommissionCall(row) ? INBOUND_COMMISSION_AMOUNT : OUTBOUND_COMMISSION_AMOUNT;
+const getCommissionAmountForCall = (_row: CallResultRow) =>
+  // TODO: Agent callback commissions to be implemented later. For now every call,
+  // including "Agent Callback" call_source, pays the inbound amount ($50). Restore
+  // the outbound branch below when callback commissions are built out properly.
+  // isInboundCommissionCall(_row) ? INBOUND_COMMISSION_AMOUNT : OUTBOUND_COMMISSION_AMOUNT;
+  INBOUND_COMMISSION_AMOUNT;
 
 const getBoardKeyForLeadStatus = (value: string | null | undefined): BoardKey | null => {
   const status = normalizeText(value);
@@ -477,7 +481,9 @@ const fetchCallResultRows = async (
       const dateKey = getCallResultDateKey(typedRow);
 
       if (!isDateKeyInRange(dateKey, startKey, endKey)) return;
-      if (!isInboundCommissionCall(typedRow)) return;
+      // TODO: Agent callback commissions to be implemented later. Guard disabled
+      // for now so "Agent Callback" call_source rows flow into the portal.
+      // if (!isInboundCommissionCall(typedRow)) return;
 
       deduped.set(typedRow.id, typedRow);
     });
@@ -568,7 +574,9 @@ const buildCommissionItemsForCycle = ({
   callResultRows.forEach((row) => {
     const submissionId = String(row.submission_id || "").trim();
     if (!submissionId) return;
-    if (!isInboundCommissionCall(row)) return;
+    // TODO: Agent callback commissions to be implemented later. Guard disabled
+    // for now so "Agent Callback" call_source rows flow into the portal.
+    // if (!isInboundCommissionCall(row)) return;
 
     const entry = resolveCloserEntry(closerDirectoryIndex, {
       names: [row.agent_who_took_call, row.licensed_agent_account],
