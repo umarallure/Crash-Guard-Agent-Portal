@@ -450,6 +450,33 @@ const normalizePhoneForLookup = (value: string | null | undefined) => {
   return "";
 };
 
+const getTrimmedValue = (value: unknown) => {
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const firstNonEmptyValue = (...values: unknown[]) => {
+  for (const value of values) {
+    const trimmed = getTrimmedValue(value);
+    if (trimmed) return trimmed;
+  }
+
+  return "";
+};
+
+const buildClientAddressForContract = (
+  verifiedFieldValues: Record<string, string>,
+  lead: Lead | null,
+) => {
+  const streetAddress = firstNonEmptyValue(verifiedFieldValues.street_address, lead?.street_address);
+  const city = firstNonEmptyValue(verifiedFieldValues.city, lead?.city);
+  const state = firstNonEmptyValue(verifiedFieldValues.state, lead?.state);
+  const zipCode = firstNonEmptyValue(verifiedFieldValues.zip_code, lead?.zip_code);
+  const stateZip = [state, zipCode].filter(Boolean).join(" ");
+  const cityStateZip = [city, stateZip].filter(Boolean).join(", ");
+
+  return [streetAddress, cityStateZip].filter(Boolean).join(", ");
+};
+
 const normalizeRetainerEnvelopeStatus = (value: unknown): RetainerEnvelopeStatus => {
   const normalized = String(value || "").trim().toLowerCase();
   if (["sent", "viewed", "signed", "declined", "voided"].includes(normalized)) {
@@ -3723,6 +3750,12 @@ const CallResultUpdate = () => {
     const isEmailDelivery = contractDeliveryMethod === "email";
     const isSmsDelivery = contractDeliveryMethod === "sms_only";
     const recipientName = (contractRecipientName || "").trim() || email || normalizedPhone;
+    const clientAddress = buildClientAddressForContract(verifiedFieldValues, lead);
+    const clientPhone = firstNonEmptyValue(
+      verifiedFieldValues.phone_number,
+      lead?.phone_number,
+      contractRecipientPhone,
+    );
     if (!submissionId) {
       toast({
         title: "Error",
@@ -3772,6 +3805,8 @@ const CallResultUpdate = () => {
           deliveryMethod: contractDeliveryMethod,
           accidentDate: lead?.accident_date || "",
           accidentAddress: verifiedFieldValues?.accident_location || lead?.accident_location || "",
+          clientAddress,
+          clientPhone,
           dateOfBirth: lead?.date_of_birth || "",
           templateId: selectedTemplateId,
         },

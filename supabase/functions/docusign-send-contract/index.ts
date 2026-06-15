@@ -12,6 +12,8 @@ type SendTemplateRequest = {
   recipientName?: string;
   accidentDate?: string;
   accidentAddress?: string;
+  clientAddress?: string;
+  clientPhone?: string;
   dateOfBirth?: string;
   templateId?: string;
   deliveryMethod?: ContractDeliveryMethod;
@@ -43,6 +45,11 @@ type RetainerAgreementPayload = {
   last_event: string;
   last_event_at: string;
   last_synced_at: string;
+};
+
+type LeadPrefillValues = {
+  clientAddress: string;
+  clientPhone: string;
 };
 
 const corsHeaders = {
@@ -303,6 +310,31 @@ function asTrimmedString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    const trimmed = asTrimmedString(value);
+    if (trimmed) return trimmed;
+  }
+
+  return "";
+}
+
+function formatClientAddress(parts: {
+  streetAddress?: unknown;
+  city?: unknown;
+  state?: unknown;
+  zipCode?: unknown;
+}) {
+  const streetAddress = asTrimmedString(parts.streetAddress);
+  const city = asTrimmedString(parts.city);
+  const state = asTrimmedString(parts.state);
+  const zipCode = asTrimmedString(parts.zipCode);
+  const stateZip = [state, zipCode].filter(Boolean).join(" ");
+  const cityStateZip = [city, stateZip].filter(Boolean).join(", ");
+
+  return [streetAddress, cityStateZip].filter(Boolean).join(", ");
+}
+
 function resolveDeliveryMethod(
   rawDeliveryMethod: unknown,
   recipientEmail: string,
@@ -412,6 +444,29 @@ async function persistSentRetainerAgreement(payload: RetainerAgreementPayload) {
   }
 }
 
+async function fetchLeadPrefillValues(args: { leadId: string; submissionId: string }): Promise<LeadPrefillValues> {
+  const supabase = getSupabaseAdmin();
+  const selectColumns = "phone_number,street_address,city,state,zip_code";
+  const query = supabase.from("leads").select(selectColumns);
+  const { data, error } = args.leadId
+    ? await query.eq("id", args.leadId).maybeSingle()
+    : await query.eq("submission_id", args.submissionId).maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Failed to fetch lead prefill values");
+  }
+
+  return {
+    clientAddress: formatClientAddress({
+      streetAddress: data?.street_address,
+      city: data?.city,
+      state: data?.state,
+      zipCode: data?.zip_code,
+    }),
+    clientPhone: asTrimmedString(data?.phone_number),
+  };
+}
+
 async function createJwt(config: DocusignConfig): Promise<string> {
   const header = { alg: "RS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
@@ -510,6 +565,8 @@ serve(async (req) => {
   const recipientName = asTrimmedString(body.recipientName) || "Signer";
   const accidentDate = asTrimmedString(body.accidentDate);
   const accidentAddress = asTrimmedString(body.accidentAddress);
+  const requestedClientAddress = asTrimmedString(body.clientAddress);
+  const requestedClientPhone = firstNonEmptyString(body.clientPhone, body.recipientPhone);
   const dateOfBirth = asTrimmedString(body.dateOfBirth);
   const recipientPhoneCountryCode = normalizeCountryCode(body.recipientPhoneCountryCode);
   const recipientPhone = normalizePhoneNumber(body.recipientPhone, recipientPhoneCountryCode);
@@ -559,6 +616,18 @@ serve(async (req) => {
         status: templateRes.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    let clientAddress = requestedClientAddress;
+    let clientPhone = requestedClientPhone;
+    if ((!clientAddress || !clientPhone) && (leadId || submissionId)) {
+      try {
+        const leadPrefillValues = await fetchLeadPrefillValues({ leadId, submissionId });
+        clientAddress = clientAddress || leadPrefillValues.clientAddress;
+        clientPhone = clientPhone || leadPrefillValues.clientPhone;
+      } catch (error) {
+        logError("Failed to fetch fallback lead prefill values", error);
+      }
     }
 
     logInfo("Starting docusign-send-contract", {
@@ -627,6 +696,10 @@ serve(async (req) => {
         ["dateofaccident", accidentDate],
         ["accidentaddress", accidentAddress],
         ["accidentlocation", accidentAddress],
+        ["clientaddress", clientAddress],
+        ["address", clientAddress],
+        ["clientphone", clientPhone],
+        ["phone", clientPhone],
         ["dateofbirth", dateOfBirth],
         ["dob", dateOfBirth],
         ["birthdate", dateOfBirth],
