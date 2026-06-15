@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Eye, Loader2, RefreshCw, SlidersHorizontal, StickyNote, UserPlus, X } from "lucide-react";
+import { Eye, Link2, Loader2, Plus, RefreshCw, SlidersHorizontal, StickyNote, UserPlus, X } from "lucide-react";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
+import { CloserCreateLeadModal } from "@/components/CloserCreateLeadModal";
+import { linkedRelationshipLabel } from "@/lib/linkedLeads";
 import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { ColumnInfoPopover } from "@/components/ColumnInfoPopover";
 import { matchesStateFilter } from "@/lib/stateFilter";
@@ -67,6 +69,8 @@ interface CloserPortalRow {
   source_type?: string;
   state?: string;
   accident_date?: string | null;
+  linked_lead_id?: string | null;
+  linked_relationship?: string | null;
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -220,6 +224,9 @@ const CloserPortalPage = () => {
     () => (currentOperationalDateKey ? shiftDateKey(currentOperationalDateKey, -1) : ""),
     [currentOperationalDateKey]
   );
+
+  // Add lead modal state
+  const [createLeadOpen, setCreateLeadOpen] = useState(false);
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -543,6 +550,8 @@ const CloserPortalPage = () => {
           source_type: isCallback ? "callback" : "zapier",
           state: getLeadRecordString(leadRecord, "state"),
           accident_date: getLeadRecordString(leadRecord, "accident_date"),
+          linked_lead_id: getLeadRecordString(leadRecord, "linked_lead_id") || null,
+          linked_relationship: getLeadRecordString(leadRecord, "linked_relationship") || null,
         };
       });
 
@@ -587,6 +596,16 @@ const CloserPortalPage = () => {
     if (closerStagesLoading) return;
     void fetchData();
   }, [closerStagesLoading, currentOperationalDateKey]);
+
+  // Parent leads do not carry linked_lead_id themselves; badge them when a
+  // loaded child row points at them.
+  const linkedParentIds = useMemo(() => {
+    const set = new Set<string>();
+    data.forEach((row) => {
+      if (row.linked_lead_id) set.add(row.linked_lead_id);
+    });
+    return set;
+  }, [data]);
 
   const leadsByStage = useMemo(() => {
     const grouped = new Map<string, CloserPortalRow[]>();
@@ -945,6 +964,10 @@ const CloserPortalPage = () => {
               <Badge variant="secondary" className="px-3 py-1 tabular-nums shrink-0">
                 {filteredData.length} records
               </Badge>
+              <Button variant="outline" onClick={() => setCreateLeadOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Lead
+              </Button>
               <Button onClick={handleRefresh} disabled={refreshing}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
                 Refresh
@@ -1195,6 +1218,12 @@ const CloserPortalPage = () => {
                                     <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
                                       {statusText}
                                     </Badge>
+                                    {(row.linked_lead_id || linkedParentIds.has(row.id)) ? (
+                                      <Badge variant="outline" className="max-w-full w-fit gap-1 truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
+                                        <Link2 className="h-3 w-3" />
+                                        {row.linked_lead_id ? linkedRelationshipLabel(row.linked_relationship) : "Linked"}
+                                      </Badge>
+                                    ) : null}
                                     <LeadAssignmentControl
                                       agents={assignmentAgents}
                                       assignedAgentId={row.assigned_agent_id}
@@ -1250,6 +1279,15 @@ const CloserPortalPage = () => {
           </div>
         </div>
       </div>
+
+      <CloserCreateLeadModal
+        open={createLeadOpen}
+        mode="standalone"
+        onClose={() => setCreateLeadOpen(false)}
+        onLeadCreated={() => {
+          void fetchData();
+        }}
+      />
 
       <ClaimDroppedCallModal
         open={claimModalOpen}

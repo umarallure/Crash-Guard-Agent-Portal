@@ -30,7 +30,10 @@ import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
 import { LeadTaskCreateButton } from "@/pages/TaskManagement/components/LeadTaskCreateButton";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search, Download } from "lucide-react";
+import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search, Download, Link2 } from "lucide-react";
+import { CloserCreateLeadModal } from "@/components/CloserCreateLeadModal";
+import { ToastAction } from "@/components/ui/toast";
+import { fetchLinkedLeads, linkedRelationshipLabel, type LinkedLeadSummary } from "@/lib/linkedLeads";
 import { US_STATES } from "@/lib/us-states";
 import { LEAD_TAG_OPTIONS, getLeadTagToneClass } from "@/lib/leadTags";
 import { getStateMatchToken } from "@/lib/stateFilter";
@@ -75,6 +78,8 @@ interface Lead {
   assigned_agent_id?: string | null;
   assigned_agent_by?: string | null;
   assigned_agent_at?: string | null;
+  linked_lead_id?: string | null;
+  linked_relationship?: string | null;
 }
 
 interface DncProviderDetail {
@@ -1082,6 +1087,8 @@ const CallResultUpdate = () => {
   const assignedAttorneyId = searchParams.get("assignedAttorneyId");
   const [lead, setLead] = useState<Lead | null>(null);
   const [selectedTag, setSelectedTag] = useState<string>("");
+  const [attachLeadOpen, setAttachLeadOpen] = useState(false);
+  const [linkedLeads, setLinkedLeads] = useState<LinkedLeadSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [verificationSessionId, setVerificationSessionId] = useState<string | null>(null);
@@ -1208,6 +1215,28 @@ const CallResultUpdate = () => {
   useEffect(() => {
     setSelectedTag((lead?.tag || "").trim());
   }, [lead?.id, lead?.tag]);
+
+  const loadLinkedLeads = useCallback(async () => {
+    if (!lead?.id) {
+      setLinkedLeads([]);
+      return;
+    }
+
+    try {
+      const linked = await fetchLinkedLeads({
+        id: lead.id,
+        linked_lead_id: lead.linked_lead_id ?? null,
+      });
+      setLinkedLeads(linked);
+    } catch (error) {
+      console.warn("Failed to load linked leads", error);
+      setLinkedLeads([]);
+    }
+  }, [lead?.id, lead?.linked_lead_id]);
+
+  useEffect(() => {
+    void loadLinkedLeads();
+  }, [loadLinkedLeads]);
 
   const screeningPhone = normalizePhoneForLookup(verifiedFieldValues.phone_number || lead?.phone_number);
   const callFlowSections = useMemo(() => callScriptTabs.flatMap((tab) => tab.sections), []);
@@ -3956,6 +3985,48 @@ const CallResultUpdate = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      <CloserCreateLeadModal
+        open={attachLeadOpen}
+        mode="attach"
+        sourceLead={{
+          id: lead.id,
+          submission_id: lead.submission_id,
+          customer_full_name: lead.customer_full_name,
+          lead_vendor: lead.lead_vendor ?? null,
+          tag: lead.tag ?? null,
+          accident_date: lead.accident_date ?? null,
+          accident_location: lead.accident_location ?? null,
+          accident_scenario: lead.accident_scenario ?? null,
+          injuries: lead.injuries ?? null,
+          medical_attention: lead.medical_attention ?? null,
+          police_attended: lead.police_attended ?? null,
+          insured: lead.insured ?? null,
+          vehicle_registration: lead.vehicle_registration ?? null,
+          insurance_company: lead.insurance_company ?? null,
+          third_party_vehicle_registration: lead.third_party_vehicle_registration ?? null,
+          other_party_admit_fault: lead.other_party_admit_fault ?? null,
+          passengers_count: lead.passengers_count ?? null,
+        }}
+        onClose={() => setAttachLeadOpen(false)}
+        onLeadCreated={({ submission_id: newSubmissionId }) => {
+          void loadLinkedLeads();
+          toast({
+            title: "Linked lead created",
+            description: `Submission ID: ${newSubmissionId}`,
+            action: (
+              <ToastAction
+                altText="Open lead"
+                onClick={() =>
+                  navigate(`/call-result-update?submissionId=${encodeURIComponent(newSubmissionId)}`)
+                }
+              >
+                Open lead
+              </ToastAction>
+            ),
+          });
+        }}
+      />
+
       <div className="w-full px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
         <div className="space-y-8">
         {/* ── Header ── */}
@@ -4019,7 +4090,7 @@ const CallResultUpdate = () => {
                   </>
                 ) : null}
               </div>
-              <div className="pt-1">
+              <div className="flex flex-wrap items-center gap-2 pt-1">
                 <LeadTaskCreateButton
                   lead={{
                     id: lead.id,
@@ -4028,7 +4099,37 @@ const CallResultUpdate = () => {
                     phoneNumber: lead.phone_number,
                   }}
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAttachLeadOpen(true)}
+                >
+                  <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                  Attach Lead
+                </Button>
               </div>
+              {linkedLeads.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-xs font-medium text-muted-foreground">Linked leads:</span>
+                  {linkedLeads.map((linkedLead) => (
+                    <button
+                      key={linkedLead.id}
+                      type="button"
+                      onClick={() =>
+                        navigate(`/call-result-update?submissionId=${encodeURIComponent(linkedLead.submission_id || "")}`)
+                      }
+                    >
+                      <Badge variant="outline" className="cursor-pointer gap-1 hover:bg-muted">
+                        <Link2 className="h-3 w-3" />
+                        {linkedLead.direction === "parent"
+                          ? `Original: ${linkedLead.customer_full_name || linkedLead.submission_id}`
+                          : `${linkedRelationshipLabel(linkedLead.linked_relationship)}: ${linkedLead.customer_full_name || linkedLead.submission_id}`}
+                      </Badge>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col items-start gap-3 sm:items-end">

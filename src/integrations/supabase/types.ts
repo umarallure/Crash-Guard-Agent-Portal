@@ -633,6 +633,8 @@ export type Database = {
           zip_code: string | null
           is_callback: boolean | null
           is_retention_call: boolean | null
+          linked_lead_id: string | null
+          linked_relationship: string | null
         }
         Insert: {
           account_type?: string | null
@@ -703,6 +705,8 @@ export type Database = {
           zip_code?: string | null
           is_callback?: boolean | null
           is_retention_call?: boolean | null
+          linked_lead_id?: string | null
+          linked_relationship?: string | null
         }
         Update: {
           account_type?: string | null
@@ -773,8 +777,18 @@ export type Database = {
           zip_code?: string | null
           is_callback?: boolean | null
           is_retention_call?: boolean | null
+          linked_lead_id?: string | null
+          linked_relationship?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "leads_linked_lead_id_fkey"
+            columns: ["linked_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       portal_stages: {
         Row: {

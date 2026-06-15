@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { format } from "date-fns";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, Link2, Loader2, Plus } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -16,6 +16,7 @@ import { LeadDocumentsTab } from "@/components/LeadDocumentsTab";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 import { fetchVisibleLeadById, fetchVisibleLeadBySubmissionId } from "@/lib/leadAssignments";
+import { fetchLinkedLeads, linkedRelationshipLabel, type LinkedLeadSummary } from "@/lib/linkedLeads";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
@@ -116,6 +117,7 @@ const LeadDetailsPage = () => {
   const { toast } = useToast();
 
   const [lead, setLead] = useState<LeadRow | null>(null);
+  const [linkedLeads, setLinkedLeads] = useState<LinkedLeadSummary[]>([]);
   const [dailyDealFlowId, setDailyDealFlowId] = useState<string | null>(null);
   const [dailyDealFlowStatus, setDailyDealFlowStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -491,6 +493,34 @@ const LeadDetailsPage = () => {
 
     return entries;
   }, [lead]);
+  useEffect(() => {
+    let mounted = true;
+
+    const loadLinkedLeads = async () => {
+      if (!lead?.id) {
+        if (mounted) setLinkedLeads([]);
+        return;
+      }
+
+      try {
+        const linked = await fetchLinkedLeads({
+          id: lead.id,
+          linked_lead_id: lead.linked_lead_id ?? null,
+        });
+        if (mounted) setLinkedLeads(linked);
+      } catch (error) {
+        console.warn("Failed to load linked leads", error);
+        if (mounted) setLinkedLeads([]);
+      }
+    };
+
+    void loadLinkedLeads();
+
+    return () => {
+      mounted = false;
+    };
+  }, [lead?.id, lead?.linked_lead_id]);
+
   const headerTitle = useMemo(() => {
     if (!lead) return "Lead Details";
     const name = lead.customer_full_name ? String(lead.customer_full_name) : "Lead";
@@ -567,6 +597,42 @@ const LeadDetailsPage = () => {
                     { label: "Retention Call", value: displayValue(lead.is_retention_call) },
                   ]}
                 />
+
+                {linkedLeads.length > 0 && (
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex items-center gap-1.5 text-sm font-semibold">
+                      <Link2 className="h-4 w-4 text-muted-foreground" />
+                      Linked Leads
+                    </div>
+                    <div className="space-y-2">
+                      {linkedLeads.map((linkedLead) => (
+                        <div
+                          key={linkedLead.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="text-sm font-medium truncate">
+                              {linkedLead.direction === "parent"
+                                ? `Original lead: ${linkedLead.customer_full_name || "Unknown"}`
+                                : `${linkedRelationshipLabel(linkedLead.linked_relationship)}: ${linkedLead.customer_full_name || "Unknown"}`}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              <span className="font-mono">{linkedLead.submission_id || "—"}</span>
+                              {linkedLead.status ? <span> · {linkedLead.status}</span> : null}
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate(`/leads/${encodeURIComponent(linkedLead.id)}`)}
+                          >
+                            View Lead
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
