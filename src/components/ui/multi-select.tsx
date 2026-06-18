@@ -25,6 +25,7 @@ interface MultiSelectProps {
   maxVisibleBadges?: number | null;
   selectedDisplayMode?: 'wrap' | 'scroll';
   highlightSelectedOptions?: boolean;
+  disabled?: boolean;
 }
 
 export function MultiSelect({
@@ -36,6 +37,7 @@ export function MultiSelect({
   maxVisibleBadges = 3,
   selectedDisplayMode = 'wrap',
   highlightSelectedOptions = true,
+  disabled = false,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -92,18 +94,21 @@ export function MultiSelect({
   }, [filteredOptions, safeSelected]);
 
   const handleUnselect = React.useCallback((item: string) => {
+    if (disabled) return;
     onChange(safeSelected.filter((selectedItem) => selectedItem !== item));
-  }, [safeSelected, onChange]);
+  }, [disabled, safeSelected, onChange]);
 
   const handleSelect = React.useCallback((item: string) => {
+    if (disabled) return;
     if (safeSelected.includes(item)) {
       onChange(safeSelected.filter((selectedItem) => selectedItem !== item));
     } else {
       onChange([...safeSelected, item]);
     }
-  }, [safeSelected, onChange]);
+  }, [disabled, safeSelected, onChange]);
 
   const handleToggleAll = React.useCallback(() => {
+    if (disabled) return;
     const filteredValues = filteredOptions.map((option) => option.value);
 
     if (allFilteredSelected) {
@@ -111,15 +116,16 @@ export function MultiSelect({
     } else {
       onChange([...new Set([...safeSelected, ...filteredValues])]);
     }
-  }, [allFilteredSelected, filteredOptions, onChange, safeSelected]);
+  }, [allFilteredSelected, disabled, filteredOptions, onChange, safeSelected]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={disabled ? false : open} onOpenChange={(nextOpen) => !disabled && setOpen(nextOpen)}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          disabled={disabled}
           className={cn('w-full justify-between min-h-10 h-auto', className)}
         >
           <div
@@ -151,7 +157,7 @@ export function MultiSelect({
                   <button
                     className="ml-1 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !disabled) {
                         handleUnselect(item);
                       }
                     }}
@@ -184,6 +190,7 @@ export function MultiSelect({
             placeholder="Search..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            disabled={disabled}
             className="w-full px-3 py-2 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
@@ -194,6 +201,7 @@ export function MultiSelect({
                 variant="ghost"
                 size="sm"
                 onClick={handleToggleAll}
+                disabled={disabled}
                 className="w-full justify-start text-xs"
               >
                 {allFilteredSelected ? 'Deselect All' : 'Select All'}
@@ -207,6 +215,7 @@ export function MultiSelect({
                   key={option.value}
                   type="button"
                   onClick={() => handleSelect(option.value)}
+                  disabled={disabled}
                   className={cn(
                     'w-full text-left px-3 py-2 text-sm rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer flex items-center',
                     highlightSelectedOptions && safeSelected.includes(option.value) && 'bg-accent text-accent-foreground',

@@ -346,11 +346,16 @@ export const OrderRecommendationsCard = (props: {
       const value = lead[key];
       return typeof value === "string" && value.trim() ? value.trim() : null;
     };
+    const overrideText = (value: string | null | undefined) => {
+      const normalized = String(value ?? "").trim();
+      return normalized || null;
+    };
     const bool = (key: string) => (typeof lead[key] === "boolean" ? lead[key] : null);
     const number = (key: string) => {
       const value = Number(lead[key]);
       return Number.isFinite(value) ? value : null;
     };
+    const overrideState = getStateMatchToken(props.leadOverrides?.state) || overrideText(props.leadOverrides?.state);
 
     const insertValues: Record<string, unknown> = {
       submission_id: sid,
@@ -359,17 +364,17 @@ export const OrderRecommendationsCard = (props: {
       client_phone_number: text("phone_number"),
       lead_vendor: text("lead_vendor"),
       status: text("status"),
-      state: text("state") || getStateMatchToken(props.leadOverrides?.state) || null,
+      state: overrideState || text("state") || null,
       zip_code: text("zip_code"),
       email: text("email"),
-      accident_date: text("accident_date") || props.leadOverrides?.accident_date || null,
-      prior_attorney_involved: bool("prior_attorney_involved") ?? props.leadOverrides?.prior_attorney_involved ?? false,
+      accident_date: overrideText(props.leadOverrides?.accident_date) || text("accident_date"),
+      prior_attorney_involved: props.leadOverrides?.prior_attorney_involved ?? bool("prior_attorney_involved") ?? false,
       prior_attorney_details: text("prior_attorney_details"),
       medical_attention: text("medical_attention"),
       police_attended: bool("police_attended") ?? false,
       accident_location: text("accident_location"),
       accident_scenario: text("accident_scenario"),
-      insured: bool("insured") ?? props.leadOverrides?.insured ?? false,
+      insured: props.leadOverrides?.insured ?? bool("insured") ?? false,
       injuries: text("injuries"),
       vehicle_registration: text("vehicle_registration"),
       insurance_company: text("insurance_company"),

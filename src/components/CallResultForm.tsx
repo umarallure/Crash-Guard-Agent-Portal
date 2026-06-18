@@ -706,78 +706,81 @@ export const CallResultForm = ({
     };
 
     Object.entries(verifiedFieldValues).forEach(([fieldName, rawValue]) => {
-      const value = rawValue ?? '';
+      const value = String(rawValue ?? '');
       if (!value || value === 'null' || value === 'undefined') return;
+      if (prev[fieldName] === value) return;
 
       switch (fieldName) {
         case 'accident_date':
-          if (!accidentDate) {
+          {
             const parsed = new Date(value);
             if (!Number.isNaN(parsed.getTime())) setAccidentDate(parsed);
           }
           break;
         case 'accident_location':
-          if (!accidentLocation) setAccidentLocation(value);
+          setAccidentLocation(value);
           break;
         case 'accident_scenario':
-          if (!accidentScenario) setAccidentScenario(value);
+          setAccidentScenario(value);
           break;
         case 'injuries':
-          if (!injuries) setInjuries(value);
+          setInjuries(value);
           break;
         case 'medical_attention':
-          if (!medicalAttention) setMedicalAttention(value);
+          setMedicalAttention(value);
           break;
         case 'police_attended':
-          if (policeAttended === null) {
+          {
             const b = normalizeBoolean(value);
             if (b !== null) setPoliceAttended(b);
           }
           break;
         case 'medical_treatment_proof':
-          if (!medicalTreatmentProof) setMedicalTreatmentProof(String(value).toLowerCase());
+          setMedicalTreatmentProof(String(value).toLowerCase());
           break;
         case 'insurance_documents':
-          if (!insuranceDocuments) setInsuranceDocuments(String(value).toLowerCase());
+          setInsuranceDocuments(String(value).toLowerCase());
           break;
         case 'police_report':
-          if (!policeReport) setPoliceReport(String(value).toLowerCase());
+          setPoliceReport(String(value).toLowerCase());
           break;
         case 'insured':
-          if (insured === null) {
+          {
             const b = normalizeBoolean(value);
             if (b !== null) setInsured(b);
           }
           break;
         case 'vehicle_registration':
-          if (!vehicleRegistration) setVehicleRegistration(value);
+          setVehicleRegistration(value);
           break;
         case 'insurance_company':
-          if (!insuranceCompany) setInsuranceCompany(value);
+          setInsuranceCompany(value);
           break;
         case 'third_party_vehicle_registration':
-          if (!thirdPartyVehicleRegistration) setThirdPartyVehicleRegistration(value);
+          setThirdPartyVehicleRegistration(value);
           break;
         case 'other_party_admit_fault':
-          if (otherPartyAdmitFault === null) {
+          {
             const b = normalizeBoolean(value);
             if (b !== null) setOtherPartyAdmitFault(b);
           }
           break;
         case 'passengers_count':
-          if (!passengersCount) setPassengersCount(String(value));
+          setPassengersCount(String(value));
           break;
         case 'prior_attorney_involved':
-          if (priorAttorneyInvolved === null) {
+          {
             const b = normalizeBoolean(value);
             if (b !== null) setPriorAttorneyInvolved(b);
           }
           break;
         case 'prior_attorney_details':
-          if (!priorAttorneyDetails) setPriorAttorneyDetails(value);
+          setPriorAttorneyDetails(value);
           break;
         case 'additional_notes':
-          if (!publicSlackNotes.trim()) setPublicSlackNotes(value);
+          if (!publicSlackNotes.trim() || publicSlackNotes === prev.additional_notes) {
+            setPublicSlackNotes(value);
+          }
           break;
         default:
           break;
@@ -787,23 +790,6 @@ export const CallResultForm = ({
     prevVerifiedFieldValuesRef.current = verifiedFieldValues;
   }, [
     verifiedFieldValues,
-    accidentDate,
-    accidentLocation,
-    accidentScenario,
-    injuries,
-    medicalAttention,
-    policeAttended,
-    medicalTreatmentProof,
-    insuranceDocuments,
-    policeReport,
-    insured,
-    vehicleRegistration,
-    insuranceCompany,
-    thirdPartyVehicleRegistration,
-    otherPartyAdmitFault,
-    passengersCount,
-    priorAttorneyInvolved,
-    priorAttorneyDetails,
     publicSlackNotes,
   ]);
 

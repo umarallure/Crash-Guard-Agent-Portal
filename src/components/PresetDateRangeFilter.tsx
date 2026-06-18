@@ -20,6 +20,7 @@ type PresetDateRangeFilterProps = {
   inputClassName?: string;
   containerClassName?: string;
   customFieldsClassName?: string;
+  disabled?: boolean;
 };
 
 export const PresetDateRangeFilter = ({
@@ -33,10 +34,15 @@ export const PresetDateRangeFilter = ({
   inputClassName,
   containerClassName,
   customFieldsClassName,
+  disabled = false,
 }: PresetDateRangeFilterProps) => {
   return (
     <div className={containerClassName || "space-y-3"}>
-      <Select value={preset} onValueChange={(value) => onPresetChange(value as DateRangePreset)}>
+      <Select
+        value={preset}
+        onValueChange={(value) => onPresetChange(value as DateRangePreset)}
+        disabled={disabled}
+      >
         <SelectTrigger className={selectClassName}>
           <SelectValue placeholder="Date Filter" />
         </SelectTrigger>
@@ -58,12 +64,14 @@ export const PresetDateRangeFilter = ({
             type="date"
             value={customStartDate}
             onChange={(e) => onCustomStartDateChange(e.target.value)}
+            disabled={disabled}
             className={inputClassName}
           />
           <Input
             type="date"
             value={customEndDate}
             onChange={(e) => onCustomEndDateChange(e.target.value)}
+            disabled={disabled}
             className={inputClassName}
           />
         </div>

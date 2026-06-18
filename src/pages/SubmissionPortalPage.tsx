@@ -21,6 +21,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { AttorneyLeadFilterSelect } from "@/components/AttorneyLeadFilterSelect";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ClipboardList, Eye, FileText, Loader2, Pencil, RefreshCw, Scale, SlidersHorizontal, StickyNote, UserPlus, Wallet, X } from "lucide-react";
@@ -40,9 +41,11 @@ import { logCallUpdate, getLeadInfo } from "@/lib/callLogging";
 import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { useBrokerSolFilterOptions } from "@/hooks/useBrokerSolFilterOptions";
+import { useAttorneyLeadFilterOptions } from "@/hooks/useAttorneyLeadFilterOptions";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { formatDateUS, formatDateTimeUS } from "@/lib/dateUtils";
 import { ALL_SOL_FILTER_VALUE, matchesSolPeriodFilter } from "@/lib/solPeriods";
+import { matchesAttorneyLeadFilter } from "@/lib/attorneyLeadFilter";
 import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
 import {
   applyLeadAssignmentToRows,
@@ -144,6 +147,7 @@ type SharedPipelineFilterStorage = {
   leadVendorFilter: string;
   selectedStates: string[];
   brokerSolFilter: string;
+  attorneyFilterId: string;
   searchTerm: string;
 };
 
@@ -178,6 +182,7 @@ const readSharedPipelineFilters = (): SharedPipelineFilterStorage | null => {
       leadVendorFilter: typeof parsed.leadVendorFilter === "string" ? parsed.leadVendorFilter : "__ALL__",
       selectedStates: Array.isArray(parsed.selectedStates) ? parsed.selectedStates.filter((state): state is string => typeof state === "string") : [],
       brokerSolFilter: typeof parsed.brokerSolFilter === "string" ? parsed.brokerSolFilter : ALL_SOL_FILTER_VALUE,
+      attorneyFilterId: typeof parsed.attorneyFilterId === "string" ? parsed.attorneyFilterId : "",
       searchTerm: typeof parsed.searchTerm === "string" ? parsed.searchTerm : "",
     };
   } catch {
@@ -468,6 +473,7 @@ const SubmissionPortalPage = () => {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedStates, setSelectedStates] = useState<string[]>(savedSharedFilters?.selectedStates ?? []);
   const [brokerSolFilter, setBrokerSolFilter] = useState<string>(savedSharedFilters?.brokerSolFilter ?? ALL_SOL_FILTER_VALUE);
+  const [attorneyFilterId, setAttorneyFilterId] = useState<string>(savedSharedFilters?.attorneyFilterId ?? "");
   const [tagFilter, setTagFilter] = useState<string>(ALL_LEAD_TAGS_VALUE);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
@@ -483,6 +489,12 @@ const SubmissionPortalPage = () => {
   const [editNotes, setEditNotes] = useState("");
   const { stateOptions } = useSalesMapCoverageStates();
   const { solOptions } = useBrokerSolFilterOptions();
+  const { options: attorneyFilterOptions, loading: attorneyFilterOptionsLoading } = useAttorneyLeadFilterOptions();
+  const selectedAttorneyFilter = useMemo(
+    () => attorneyFilterOptions.find((option) => option.id === attorneyFilterId) ?? null,
+    [attorneyFilterId, attorneyFilterOptions],
+  );
+  const isAttorneyFilterActive = Boolean(selectedAttorneyFilter);
 
   // Claim call modal state
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -522,6 +534,11 @@ const SubmissionPortalPage = () => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!attorneyFilterId || attorneyFilterOptionsLoading) return;
+    if (!selectedAttorneyFilter) setAttorneyFilterId("");
+  }, [attorneyFilterId, attorneyFilterOptionsLoading, selectedAttorneyFilter]);
 
   const boardVisibleRows = useMemo(() => {
     return filteredData.filter((row) => Boolean(deriveStageKey(row)));
@@ -591,37 +608,41 @@ const SubmissionPortalPage = () => {
 
   // Apply filters
   const applyFilters = (records: SubmissionPortalRow[]): SubmissionPortalRow[] => {
-    let filtered = records;
+    let filtered = selectedAttorneyFilter
+      ? records.filter((record) => matchesAttorneyLeadFilter(record, selectedAttorneyFilter, stateOptions))
+      : records;
 
-    // Apply date filter
-    filtered = filtered.filter((record) =>
-      isDateInRange(record.date || record.submission_date || record.created_at || null, datePreset, customStartDate, customEndDate)
-    );
+    if (!selectedAttorneyFilter) {
+      // Apply date filter
+      filtered = filtered.filter((record) =>
+        isDateInRange(record.date || record.submission_date || record.created_at || null, datePreset, customStartDate, customEndDate)
+      );
 
-    // Apply status filter
-    if (statusFilter !== "__ALL__") {
-      filtered = filtered.filter((record) => deriveStageKey(record) === statusFilter);
-    }
+      // Apply status filter
+      if (statusFilter !== "__ALL__") {
+        filtered = filtered.filter((record) => deriveStageKey(record) === statusFilter);
+      }
 
-    // Apply publisher filter
-    if (publisherFilters.length > 0) {
-      const selectedPublishers = new Set(publisherFilters);
-      filtered = filtered.filter((record) => selectedPublishers.has((record.lead_vendor || '').trim()));
-    }
+      // Apply publisher filter
+      if (publisherFilters.length > 0) {
+        const selectedPublishers = new Set(publisherFilters);
+        filtered = filtered.filter((record) => selectedPublishers.has((record.lead_vendor || '').trim()));
+      }
 
-    if (tagFilter !== ALL_LEAD_TAGS_VALUE) {
-      filtered = filtered.filter((record) => (record.tag || '') === tagFilter);
-    }
+      if (tagFilter !== ALL_LEAD_TAGS_VALUE) {
+        filtered = filtered.filter((record) => (record.tag || '') === tagFilter);
+      }
 
-    if (selectedStates.length > 0) {
-      filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
-    }
+      if (selectedStates.length > 0) {
+        filtered = filtered.filter((record) => matchesStateFilter(record.state, selectedStates, stateOptions));
+      }
 
-    if (
-      brokerSolFilter !== ALL_SOL_FILTER_VALUE &&
-      solOptions.some((option) => option.value === brokerSolFilter)
-    ) {
-      filtered = filtered.filter((record) => matchesSolPeriodFilter(record.accident_date, brokerSolFilter));
+      if (
+        brokerSolFilter !== ALL_SOL_FILTER_VALUE &&
+        solOptions.some((option) => option.value === brokerSolFilter)
+      ) {
+        filtered = filtered.filter((record) => matchesSolPeriodFilter(record.accident_date, brokerSolFilter));
+      }
     }
 
     // Apply search filter
@@ -960,7 +981,7 @@ const SubmissionPortalPage = () => {
   // Update filtered data whenever data or filters change
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [data, datePreset, customStartDate, customEndDate, statusFilter, publisherFilters, selectedStates, brokerSolFilter, searchTerm, tagFilter, stateOptions, solOptions]);
+  }, [data, datePreset, customStartDate, customEndDate, statusFilter, publisherFilters, selectedStates, brokerSolFilter, selectedAttorneyFilter, searchTerm, tagFilter, stateOptions, solOptions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -972,11 +993,12 @@ const SubmissionPortalPage = () => {
       leadVendorFilter: publisherFilters.length === 1 ? publisherFilters[0] : "__ALL__",
       selectedStates,
       brokerSolFilter,
+      attorneyFilterId,
       searchTerm: "",
     };
 
     window.localStorage.setItem(SHARED_PIPELINE_FILTER_STORAGE_KEY, JSON.stringify(sharedFiltersToPersist));
-  }, [datePreset, customStartDate, customEndDate, publisherFilters, selectedStates, brokerSolFilter]);
+  }, [attorneyFilterId, datePreset, customStartDate, customEndDate, publisherFilters, selectedStates, brokerSolFilter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1599,7 +1621,7 @@ const SubmissionPortalPage = () => {
             >
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Filters
-              {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
+              {(attorneyFilterId || datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                 <span className="ml-2 flex h-2 w-2 rounded-full bg-primary" />
               )}
             </Button>
@@ -1626,10 +1648,11 @@ const SubmissionPortalPage = () => {
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-semibold text-foreground">Filters</span>
-                    {(datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
+                    {(attorneyFilterId || datePreset !== "all" || statusFilter !== "__ALL__" || selectedStates.length > 0 || brokerSolFilter !== ALL_SOL_FILTER_VALUE || publisherFilters.length > 0 || tagFilter !== ALL_LEAD_TAGS_VALUE) && (
                       <button
                         type="button"
                         onClick={() => {
+                          setAttorneyFilterId("");
                           setDatePreset("all");
                           setCustomStartDate("");
                           setCustomEndDate("");
@@ -1638,6 +1661,7 @@ const SubmissionPortalPage = () => {
                           setBrokerSolFilter(ALL_SOL_FILTER_VALUE);
                           setPublisherFilters([]);
                           setTagFilter(ALL_LEAD_TAGS_VALUE);
+                          setSearchTerm("");
                         }}
                         className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition"
                       >
@@ -1655,7 +1679,18 @@ const SubmissionPortalPage = () => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-7">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attorney</label>
+                    <AttorneyLeadFilterSelect
+                      options={attorneyFilterOptions}
+                      value={attorneyFilterId}
+                      onValueChange={setAttorneyFilterId}
+                      loading={attorneyFilterOptionsLoading}
+                      placeholder="All Attorneys"
+                    />
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Range</label>
                     <PresetDateRangeFilter
@@ -1668,6 +1703,7 @@ const SubmissionPortalPage = () => {
                       selectClassName="w-full"
                       containerClassName="relative"
                       customFieldsClassName="absolute left-0 top-full z-20 mt-2 grid w-56 grid-cols-1 gap-2 rounded-md border bg-background p-2 shadow-md"
+                      disabled={isAttorneyFilterActive}
                     />
                   </div>
 
@@ -1682,12 +1718,13 @@ const SubmissionPortalPage = () => {
                       maxVisibleBadges={null}
                       selectedDisplayMode="scroll"
                       highlightSelectedOptions={false}
+                      disabled={isAttorneyFilterActive}
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tag</label>
-                    <Select value={tagFilter} onValueChange={setTagFilter}>
+                    <Select value={tagFilter} onValueChange={setTagFilter} disabled={isAttorneyFilterActive}>
                       <SelectTrigger>
                         <SelectValue placeholder="All Tags" />
                       </SelectTrigger>
@@ -1704,7 +1741,7 @@ const SubmissionPortalPage = () => {
 
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</label>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <Select value={statusFilter} onValueChange={setStatusFilter} disabled={isAttorneyFilterActive}>
                       <SelectTrigger>
                         <SelectValue placeholder="All Statuses" />
                       </SelectTrigger>
@@ -1730,12 +1767,13 @@ const SubmissionPortalPage = () => {
                       maxVisibleBadges={null}
                       selectedDisplayMode="scroll"
                       highlightSelectedOptions={false}
+                      disabled={isAttorneyFilterActive}
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Broker SOL</label>
-                    <Select value={brokerSolFilter} onValueChange={setBrokerSolFilter}>
+                    <Select value={brokerSolFilter} onValueChange={setBrokerSolFilter} disabled={isAttorneyFilterActive}>
                       <SelectTrigger>
                         <SelectValue placeholder="All Broker SOLs" />
                       </SelectTrigger>

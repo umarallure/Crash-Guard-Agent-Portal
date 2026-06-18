@@ -507,9 +507,12 @@ const getRetainerStatusLabel = (status: RetainerEnvelopeStatus) => {
   }
 };
 
+const filenameControlCharacterPattern = new RegExp(`[${String.fromCharCode(0)}-${String.fromCharCode(31)}]`, "g");
+
 const sanitizeDownloadFilename = (value: string | null | undefined) => {
   const cleaned = String(value || "")
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/[<>:"/\\|?*]/g, "_")
+    .replace(filenameControlCharacterPattern, "_")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -2980,10 +2983,10 @@ const CallResultUpdate = () => {
                   submissionId={submissionId!}
                   leadId={lead.id}
                   leadOverrides={{
-                    state: lead.state,
+                    state: brokerLeadState || lead.state || null,
                     accident_date: verifiedFieldValues?.accident_date || lead.accident_date || null,
-                    insured: lead.insured ?? null,
-                    prior_attorney_involved: lead.prior_attorney_involved ?? null,
+                    insured: toBooleanFlag(verifiedFieldValues?.insured) ?? lead.insured ?? null,
+                    prior_attorney_involved: toBooleanFlag(verifiedFieldValues?.prior_attorney_involved) ?? lead.prior_attorney_involved ?? null,
                   }}
                   currentAssignedAttorneyId={currentAssignedAttorneyId}
                   onAssigned={({ lawyerId }) => setCurrentAssignedAttorneyId(lawyerId)}

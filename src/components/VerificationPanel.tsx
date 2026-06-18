@@ -500,6 +500,8 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
   const stepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const activeStepEyebrowRef = useRef<string | null>(null);
   const suppressedLinkedEyebrowRef = useRef<string | null>(null);
+  const valueUpdateTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pendingValueUpdatesRef = useRef<Record<string, { value: string; originalValue: string | null }>>({});
   
   const {
     session,
@@ -663,6 +665,27 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
     });
   }, [openStepSections, updateLinkedVerificationStep, verificationItems]);
 
+  useEffect(() => {
+    return () => {
+      Object.entries(valueUpdateTimersRef.current).forEach(([itemId, timerId]) => {
+        clearTimeout(timerId);
+        const pendingUpdate = pendingValueUpdatesRef.current[itemId];
+        if (!pendingUpdate) return;
+
+        void supabase
+          .from('verification_items')
+          .update({
+            verified_value: pendingUpdate.value,
+            is_modified: pendingUpdate.originalValue !== pendingUpdate.value,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', itemId);
+      });
+      valueUpdateTimersRef.current = {};
+      pendingValueUpdatesRef.current = {};
+    };
+  }, []);
+
   const upsertCustomVerificationItem = async (fieldName: 'medical_treatment_proof' | 'insurance_documents' | 'police_report', updates: { verified_value?: string; is_verified?: boolean }) => {
     const existing = customItems[fieldName];
 
@@ -768,16 +791,25 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       [itemId]: newValue
     }));
 
-    if (onFieldVerified && verificationItems) {
+    if (verificationItems) {
       const item = verificationItems.find((v) => v.id === itemId);
       if (item) {
-        onFieldVerified(item.field_name, newValue, Boolean(item.is_verified));
+        pendingValueUpdatesRef.current[itemId] = {
+          value: newValue,
+          originalValue: item.original_value,
+        };
+        onFieldVerified?.(item.field_name, newValue, Boolean(item.is_verified));
       }
     }
     
-    // Debounce the database update
-    setTimeout(() => {
-      updateVerifiedValue(itemId, newValue);
+    if (valueUpdateTimersRef.current[itemId]) {
+      clearTimeout(valueUpdateTimersRef.current[itemId]);
+    }
+
+    valueUpdateTimersRef.current[itemId] = setTimeout(() => {
+      delete valueUpdateTimersRef.current[itemId];
+      delete pendingValueUpdatesRef.current[itemId];
+      void updateVerifiedValue(itemId, newValue);
     }, 500);
   };
 
