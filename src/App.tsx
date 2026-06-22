@@ -53,6 +53,7 @@ import SlackWorkspace from "./pages/SlackWorkspace";
 import ProductsPage from "./pages/ProductsPage";
 import DeelPage from "./pages/DeelPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import InternalTransferChecker from "./pages/InternalTransferChecker";
 import AppShell from "@/components/layout/AppShell";
 import { Navigate } from "react-router-dom";
 
@@ -479,6 +480,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Notifications">
                     <NotificationsPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/internal-transfer-checker"
+              element={
+                <ProtectedRoute>
+                  <AppShell title="Internal Transfer Checker">
+                    <InternalTransferChecker />
                   </AppShell>
                 </ProtectedRoute>
               }
