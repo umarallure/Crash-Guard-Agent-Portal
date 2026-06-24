@@ -25,6 +25,7 @@ import {
   Moon,
   Landmark,
   DollarSign,
+  Search,
 } from 'lucide-react';
 
 import { TbUserShield } from "react-icons/tb";
@@ -311,6 +312,12 @@ const AppShell = ({
         to: '/commission-portal',
         icon: <DollarSign className="h-4 w-4 text-current" />,
         show: canAccessAgentPages,
+      },
+      {
+        label: 'Transfer Checker',
+        to: '/internal-transfer-checker',
+        icon: <Search className="h-4 w-4 text-current" />,
+        show: true,
       },
       {
         label: 'Deel',
