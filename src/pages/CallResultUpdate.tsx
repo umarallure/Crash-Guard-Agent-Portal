@@ -30,7 +30,7 @@ import { DocumentUploadCard } from "@/components/DocumentUploadCard";
 import { QualifiedLawyersCard, type SelectedLawyer } from "@/components/QualifiedLawyersCard";
 import { LeadTaskCreateButton } from "@/pages/TaskManagement/components/LeadTaskCreateButton";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search, Download, Link2 } from "lucide-react";
+import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, XCircle, AlertCircle, FileText, ShieldAlert, ChevronDown, ChevronUp, Info, RefreshCw, Scale, Copy, Check, Search, Download, Link2 } from "lucide-react";
 import { CloserCreateLeadModal } from "@/components/CloserCreateLeadModal";
 import { ToastAction } from "@/components/ui/toast";
 import { fetchLinkedLeads, linkedRelationshipLabel, type LinkedLeadSummary } from "@/lib/linkedLeads";
@@ -1147,6 +1147,16 @@ const CallResultUpdate = () => {
   const [handoffDidCopied, setHandoffDidCopied] = useState(false);
   const [dncInputPhone, setDncInputPhone] = useState("");
   const [isDisclaimerCollapsed, setIsDisclaimerCollapsed] = useState(false);
+  const [leadSearchPhone, setLeadSearchPhone] = useState("");
+  const [leadSearchResults, setLeadSearchResults] = useState<any[]>([]);
+  const [leadSearchLoading, setLeadSearchLoading] = useState(false);
+  const [leadSearchError, setLeadSearchError] = useState<string | null>(null);
+  const [leadSearchHasSearched, setLeadSearchHasSearched] = useState(false);
+  const [portalStages, setPortalStages] = useState<any[]>([]);
+  const [stageRules, setStageRules] = useState<any[]>([]);
+  const [attorneyNamesInternal, setAttorneyNamesInternal] = useState<Record<string, string>>({});
+  const [brokerAttorneyNamesInternal, setBrokerAttorneyNamesInternal] = useState<Record<string, { name: string; firm: string | null }>>({});
+  const [isLeadSearchCollapsed, setIsLeadSearchCollapsed] = useState(false);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
   const [isAttorneyRecommendationCollapsed, setIsAttorneyRecommendationCollapsed] = useState(false);
   const [isAttorneyDisclosureCollapsed, setIsAttorneyDisclosureCollapsed] = useState(false);
@@ -1269,6 +1279,43 @@ const CallResultUpdate = () => {
   }, [loadLinkedLeads]);
 
   const screeningPhone = normalizePhoneForLookup(verifiedFieldValues.phone_number || lead?.phone_number);
+
+  // ---- Lead search pipeline / stage helpers ----
+  const PIPELINE_COLORS: Record<string, string> = {
+    transfer_portal: "bg-blue-100 text-blue-800",
+    submission_portal: "bg-green-100 text-green-800",
+    closer_portal: "bg-purple-100 text-purple-800",
+    cold_call_pipeline: "bg-orange-100 text-orange-800",
+    payment_status: "bg-yellow-100 text-yellow-800",
+    lawyer_portal: "bg-indigo-100 text-indigo-800",
+  };
+  const PIPELINE_LABELS: Record<string, string> = {
+    transfer_portal: "Transfer",
+    submission_portal: "Submission",
+    closer_portal: "Closer",
+    cold_call_pipeline: "Cold Call",
+    payment_status: "Payment",
+    lawyer_portal: "Lawyer",
+  };
+
+  const getStageInfo = useCallback((statusKey: string | null) => {
+    if (!statusKey) return null;
+    for (const ps of portalStages) {
+      if (ps.key === statusKey) {
+        const stageName = `${ps.pipeline} - ${ps.label}`;
+        const rule = stageRules.find((r: any) => r.stage_name === stageName);
+        return {
+          pipeline: ps.pipeline,
+          label: ps.label,
+          stageName,
+          message: rule?.message || null,
+          isAddable: rule?.is_addable ?? null,
+        };
+      }
+    }
+    return null;
+  }, [portalStages, stageRules]);
+
   const callFlowSections = useMemo(() => callScriptTabs.flatMap((tab) => tab.sections), []);
   const scriptSectionIndexByEyebrow = useMemo(
     () => new Map(callFlowSections.map((section, index) => [section.eyebrow, index])),
@@ -1793,6 +1840,182 @@ const CallResultUpdate = () => {
           </Collapsible>
         </Card>
       )}
+    </div>
+  );
+
+  const leadSearchCardContent = (() => {
+    if (!leadSearchPhone.trim() && !leadSearchHasSearched) {
+      return null;
+    }
+    if (leadSearchLoading) {
+      return (
+        <div className="space-y-3 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 dark:text-blue-300" />
+            <span className="text-sm text-muted-foreground">Searching for leads...</span>
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        </div>
+      );
+    }
+    if (leadSearchError) {
+      return (
+        <div className="space-y-3">
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Search failed</AlertTitle>
+            <AlertDescription>{leadSearchError}</AlertDescription>
+          </Alert>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 border-blue-400/80 bg-blue-50 text-blue-900 hover:bg-blue-100 hover:text-blue-950 dark:border-blue-400/40 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20 dark:hover:text-blue-100"
+            onClick={() => {
+              setLeadSearchError(null);
+              void handleLeadSearch();
+            }}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </div>
+      );
+    }
+    if (leadSearchResults.length === 0) {
+      return (
+        <Alert className="border-slate-400/50 text-slate-700 [&>svg]:text-slate-700 dark:text-slate-300">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>No leads found</AlertTitle>
+          <AlertDescription>No leads match the phone number entered.</AlertDescription>
+        </Alert>
+      );
+    }
+    return (
+      <div className="space-y-3 animate-fade-in">
+          {leadSearchResults.map((ld: any) => {
+            const stageInfo = getStageInfo(ld.status);
+            const attorneyName = ld.assigned_attorney_id ? attorneyNamesInternal[ld.assigned_attorney_id] : undefined;
+            const brokerAttorney = ld.assigned_broker_attorney_id ? brokerAttorneyNamesInternal[ld.assigned_broker_attorney_id] : undefined;
+            return (
+              <Card key={ld.id} className="border-blue-200/60 dark:border-blue-400/20">
+                <CardContent className="p-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className="text-base font-semibold">
+                        {ld.customer_full_name || "Unnamed Lead"}
+                      </h3>
+                      {ld.tag && (
+                        <Badge variant="outline" className="text-xs">{ld.tag}</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      {ld.phone_number && <span>{ld.phone_number}</span>}
+                      {ld.state && <span>{ld.state}</span>}
+                    </div>
+                    {stageInfo && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          {stageInfo.pipeline && PIPELINE_LABELS[stageInfo.pipeline] && (
+                            <Badge className={PIPELINE_COLORS[stageInfo.pipeline] || "bg-gray-100 text-gray-800"}>
+                              {PIPELINE_LABELS[stageInfo.pipeline]}
+                            </Badge>
+                          )}
+                          {stageInfo && (
+                            <span className="text-xs text-muted-foreground">
+                              {stageInfo.stageName.split(" - ").slice(1).join(" - ")}
+                            </span>
+                          )}
+                        </div>
+                        {stageInfo.message && (
+                          <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
+                            stageInfo.isAddable
+                              ? "bg-green-50 text-green-800 border border-green-200"
+                              : "bg-red-50 text-red-800 border border-red-200"
+                          }`}>
+                            {stageInfo.isAddable
+                              ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                              : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                            }
+                            <span>{stageInfo.message}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!stageInfo && ld.status && (
+                      <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-gray-50 text-gray-600 border border-gray-200">
+                        <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>Stage: {ld.status} — no transfer rule defined</span>
+                      </div>
+                    )}
+                    {!ld.status && (
+                      <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-gray-50 text-gray-600 border border-gray-200">
+                        <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>No stage status assigned</span>
+                      </div>
+                    )}
+                    {(attorneyName || brokerAttorney) && (
+                      <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wider">
+                          <Scale className="h-3 w-3" />
+                          Currently submitted to Broker / Attorney
+                        </div>
+                        <div className="space-y-1">
+                          {attorneyName && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800 hover:bg-purple-100">
+                                Attorney
+                              </Badge>
+                              <span>{attorneyName}</span>
+                            </div>
+                          )}
+                          {brokerAttorney && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-100">
+                                Broker
+                              </Badge>
+                              <div>
+                                <span>{brokerAttorney.name}</span>
+                                {brokerAttorney.firm && (
+                                  <span className="text-muted-foreground ml-1">({brokerAttorney.firm})</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+    );
+  })();
+
+  const leadSearchSection = (
+    <div>
+      <Card className="border-blue-200/80 bg-blue-50/30 shadow-sm dark:border-blue-400/25 dark:bg-blue-500/5">
+        <Collapsible open={!isLeadSearchCollapsed} onOpenChange={(open) => setIsLeadSearchCollapsed(!open)}>
+          <CollapsibleTrigger asChild>
+            <button type="button" className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-blue-50/60 dark:hover:bg-blue-500/10">
+              <div className="flex items-center gap-2.5">
+                <Search className="h-4 w-4 text-blue-600 dark:text-blue-300" />
+                <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">Lead Lookup</span>
+                <span className="hidden text-xs text-blue-700/70 sm:inline dark:text-blue-300/70">Find lead by phone</span>
+              </div>
+              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-blue-700 transition-transform dark:text-blue-300 ${!isLeadSearchCollapsed ? "rotate-180" : ""}`} />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t border-blue-200/60 px-5 pb-4 pt-3 dark:border-blue-400/20">{leadSearchCardContent}</div>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
     </div>
   );
 
@@ -3079,6 +3302,7 @@ const CallResultUpdate = () => {
   const callSupportCards = (
     <div className="space-y-4">
       {preCallCards}
+      {leadSearchSection}
       <Card>
         <Collapsible open={!isScriptCollapsed} onOpenChange={(open) => setIsScriptCollapsed(!open)}>
           <CardHeader className="pb-4">
@@ -3385,6 +3609,82 @@ const CallResultUpdate = () => {
       setDncLookupLoading(false);
     }
   }, [screeningPhone, lead?.id]);
+
+  const handleLeadSearch = useCallback(async (phoneOverride?: string) => {
+    const trimmed = (phoneOverride ?? leadSearchPhone).trim();
+    if (!trimmed) return;
+    setLeadSearchLoading(true);
+    setLeadSearchError(null);
+    setLeadSearchHasSearched(true);
+    setLeadSearchResults([]);
+    try {
+      const cleanPhone = trimmed.replace(/\D/g, "");
+      const phonePattern = cleanPhone.length >= 4 ? cleanPhone : trimmed;
+      const { data: leads, error } = await supabase
+        .from("leads")
+        .select("id, customer_full_name, phone_number, state, status, submission_id, created_at, tag, assigned_attorney_id, assigned_broker_attorney_id")
+        .ilike("phone_number", `%${phonePattern}%`)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setLeadSearchResults(leads || []);
+      const attrIds: string[] = [];
+      const brokerIds: string[] = [];
+      for (const l of leads || []) {
+        if (l.assigned_attorney_id) attrIds.push(l.assigned_attorney_id);
+        if (l.assigned_broker_attorney_id) brokerIds.push(l.assigned_broker_attorney_id);
+      }
+      const [stagesResult, rulesResult] = await Promise.all([
+        supabase.from("portal_stages").select("pipeline, key, label").eq("is_active", true),
+        supabase.from("ssn_duplicate_stage_rules").select("stage_name, message, is_addable").eq("is_active", true),
+      ]);
+      if (stagesResult.error) throw stagesResult.error;
+      if (rulesResult.error) throw rulesResult.error;
+      setPortalStages(stagesResult.data || []);
+      setStageRules(rulesResult.data || []);
+      if (attrIds.length > 0) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("user_id, display_name")
+          .in("user_id", attrIds);
+        if (profileData) {
+          const nameMap: Record<string, string> = {};
+          for (const p of profileData) nameMap[p.user_id] = p.display_name || "Unknown Attorney";
+          setAttorneyNamesInternal(nameMap);
+        }
+      } else {
+        setAttorneyNamesInternal({});
+      }
+      if (brokerIds.length > 0) {
+        const { data: brokerData } = await supabase
+          .from("broker_attorneys")
+          .select("id, attorney_name, firm_name")
+          .in("id", brokerIds);
+        if (brokerData) {
+          const nameMap: Record<string, { name: string; firm: string | null }> = {};
+          for (const b of brokerData) nameMap[b.id] = { name: b.attorney_name || "Unknown", firm: b.firm_name };
+          setBrokerAttorneyNamesInternal(nameMap);
+        }
+      } else {
+        setBrokerAttorneyNamesInternal({});
+      }
+    } catch (error) {
+      console.error("Lead search failed:", error);
+      setLeadSearchError(error instanceof Error ? error.message : "Failed to search leads");
+    } finally {
+      setLeadSearchLoading(false);
+    }
+  }, [leadSearchPhone]); // phoneOverride bypasses the closure value
+
+  const lastAutoSearchedPhone = useRef("");
+  useEffect(() => {
+    const normalized = normalizePhoneForLookup(dncInputPhone);
+    if (normalized && normalized !== lastAutoSearchedPhone.current) {
+      lastAutoSearchedPhone.current = normalized;
+      setLeadSearchPhone(dncInputPhone);
+      setIsLeadSearchCollapsed(false);
+      void handleLeadSearch(dncInputPhone);
+    }
+  }, [dncInputPhone, handleLeadSearch]);
 
   useEffect(() => {
     const seedVerifiedFields = async () => {
@@ -4212,6 +4512,10 @@ const CallResultUpdate = () => {
                 <h2 className="text-lg font-semibold tracking-tight text-foreground">Confirm compliance before the live intake</h2>
               </div>
               {preCallCards}
+            </section>
+
+            <section className="space-y-3 scroll-mt-6">
+              {leadSearchSection}
             </section>
 
             <div className={`space-y-8 transition-all duration-500 ${!dncLookupSummary ? "pointer-events-none select-none opacity-30" : "opacity-100"}`} aria-disabled={!dncLookupSummary}>

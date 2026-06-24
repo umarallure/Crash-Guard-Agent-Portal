@@ -482,35 +482,6 @@ const InternalTransferChecker = () => {
                         </div>
                       )}
 
-                      {notesWithContent && notesWithContent.length > 0 && (
-                        <div className="pt-3 border-t-2 border-gray-200">
-                          <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground mb-3">
-                            <MessageSquare className="h-4 w-4" />
-                            Notes
-                          </div>
-                          <div className="space-y-3">
-                            {notesWithContent.map((n) => (
-                              <div key={n.id} className="border-l-4 border-l-blue-500 bg-blue-50/50 rounded-r-lg p-3">
-                                <div className="text-xs text-muted-foreground mb-1.5">
-                                  <span className="font-semibold text-foreground">
-                                    {n.agent || n.buffer_agent || "System"}
-                                  </span>
-                                  {n.status && (
-                                    <>
-                                      <span className="mx-1.5 text-gray-300">|</span>
-                                      <span>{n.status}</span>
-                                    </>
-                                  )}
-                                  <span className="mx-1.5 text-gray-300">|</span>
-                                  <span>{formatDate(n.created_at)}</span>
-                                </div>
-                                <div className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">{n.notes}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
                       {(attorneyName || brokerAttorney) && (
                         <div className="pt-3 border-t-2 border-gray-200">
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
@@ -541,6 +512,35 @@ const InternalTransferChecker = () => {
                                 </div>
                               </div>
                             )}
+                          </div>
+                        </div>
+                      )}
+
+                      {notesWithContent && notesWithContent.length > 0 && (
+                        <div className="pt-3 border-t-2 border-gray-200">
+                          <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground mb-3">
+                            <MessageSquare className="h-4 w-4" />
+                            Notes
+                          </div>
+                          <div className="space-y-3">
+                            {notesWithContent.map((n) => (
+                              <div key={n.id} className="border-l-4 border-l-blue-500 bg-blue-50/50 rounded-r-lg p-3">
+                                <div className="text-xs text-muted-foreground mb-1.5">
+                                  <span className="font-semibold text-foreground">
+                                    {n.agent || n.buffer_agent || "System"}
+                                  </span>
+                                  {n.status && (
+                                    <>
+                                      <span className="mx-1.5 text-gray-300">|</span>
+                                      <span>{n.status}</span>
+                                    </>
+                                  )}
+                                  <span className="mx-1.5 text-gray-300">|</span>
+                                  <span>{formatDate(n.created_at)}</span>
+                                </div>
+                                <div className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">{n.notes}</div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}
