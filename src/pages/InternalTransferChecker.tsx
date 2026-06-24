@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,12 +8,14 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Search,
   Loader2,
-  ExternalLink,
   Phone,
   User,
   CheckCircle2,
   XCircle,
   AlertCircle,
+  MessageSquare,
+  Scale,
+  Building2,
 } from "lucide-react";
 
 type Lead = {
@@ -26,6 +27,8 @@ type Lead = {
   submission_id: string | null;
   created_at: string | null;
   tag: string | null;
+  assigned_attorney_id: string | null;
+  assigned_broker_attorney_id: string | null;
 };
 
 type PortalStage = {
@@ -45,6 +48,15 @@ type StageInfoResult = {
   message: string;
   isAddable: boolean;
   pipeline: string;
+};
+
+type FlowNote = {
+  id: string;
+  notes: string | null;
+  created_at: string | null;
+  agent: string | null;
+  buffer_agent: string | null;
+  status: string | null;
 };
 
 const PIPELINE_COLORS: Record<string, string> = {
@@ -68,7 +80,6 @@ const PIPELINE_LABELS: Record<string, string> = {
 type SearchMode = "name" | "phone";
 
 const InternalTransferChecker = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
 
   const [searchMode, setSearchMode] = useState<SearchMode>("phone");
@@ -80,6 +91,13 @@ const InternalTransferChecker = () => {
   const [portalStages, setPortalStages] = useState<PortalStage[]>([]);
   const [stageRules, setStageRules] = useState<StageRule[]>([]);
   const [loadingMeta, setLoadingMeta] = useState(true);
+
+  const [flowNotes, setFlowNotes] = useState<Record<string, FlowNote[]>>({});
+  const [loadingNotes, setLoadingNotes] = useState(false);
+
+  const [attorneyNames, setAttorneyNames] = useState<Record<string, string>>({});
+  const [brokerAttorneyNames, setBrokerAttorneyNames] = useState<Record<string, { name: string; firm: string | null }>>({});
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
 
   useEffect(() => {
     const fetchMeta = async () => {
@@ -147,11 +165,14 @@ const InternalTransferChecker = () => {
 
     setIsLoading(true);
     setHasSearched(true);
+    setFlowNotes({});
+    setAttorneyNames({});
+    setBrokerAttorneyNames({});
 
     try {
       let query = supabase
         .from("leads")
-        .select("id, customer_full_name, phone_number, state, status, submission_id, created_at, tag")
+        .select("id, customer_full_name, phone_number, state, status, submission_id, created_at, tag, assigned_attorney_id, assigned_broker_attorney_id")
         .order("created_at", { ascending: false });
 
       if (searchMode === "name") {
@@ -166,7 +187,89 @@ const InternalTransferChecker = () => {
 
       if (error) throw error;
 
-      setResults((data as Lead[]) ?? []);
+      const leads = (data as Lead[]) ?? [];
+      setResults(leads);
+
+      const submissionIds: string[] = [];
+      const attorneyIds: string[] = [];
+      const brokerAttorneyIds: string[] = [];
+
+      for (const l of leads) {
+        if (l.submission_id) submissionIds.push(l.submission_id);
+        if (l.assigned_attorney_id) attorneyIds.push(l.assigned_attorney_id);
+        if (l.assigned_broker_attorney_id) brokerAttorneyIds.push(l.assigned_broker_attorney_id);
+      }
+
+      await Promise.all([
+        (async () => {
+          if (submissionIds.length === 0) return;
+          setLoadingNotes(true);
+          const { data: flowData, error: flowErr } = await supabase
+            .from("daily_deal_flow")
+            .select("id, submission_id, notes, created_at, agent, buffer_agent, status")
+            .in("submission_id", submissionIds)
+            .order("created_at", { ascending: false });
+
+          if (flowErr) throw flowErr;
+
+          if (flowData) {
+            const grouped: Record<string, FlowNote[]> = {};
+            for (const row of flowData) {
+              if (!grouped[row.submission_id]) grouped[row.submission_id] = [];
+              grouped[row.submission_id].push({
+                id: row.id,
+                notes: row.notes,
+                created_at: row.created_at,
+                agent: row.agent,
+                buffer_agent: row.buffer_agent,
+                status: row.status,
+              });
+            }
+            setFlowNotes(grouped);
+          }
+          setLoadingNotes(false);
+        })(),
+
+        (async () => {
+          if (attorneyIds.length === 0) return;
+          setLoadingAssignments(true);
+          const { data: profileData, error: profileErr } = await supabase
+            .from("profiles")
+            .select("user_id, display_name")
+            .in("user_id", attorneyIds);
+
+          if (profileErr) throw profileErr;
+
+          if (profileData) {
+            const nameMap: Record<string, string> = {};
+            for (const p of profileData) {
+              nameMap[p.user_id] = p.display_name || "Unknown Attorney";
+            }
+            setAttorneyNames(nameMap);
+          }
+          setLoadingAssignments(false);
+        })(),
+
+        (async () => {
+          if (brokerAttorneyIds.length === 0) return;
+          setLoadingAssignments(true);
+          const { data: brokerData, error: brokerErr } = await supabase
+            .from("broker_attorneys")
+            .select("id, attorney_name, firm_name")
+            .in("id", brokerAttorneyIds);
+
+          if (brokerErr) throw brokerErr;
+
+          if (brokerData) {
+            const nameMap: Record<string, { name: string; firm: string | null }> = {};
+            for (const b of brokerData) {
+              nameMap[b.id] = { name: b.attorney_name || "Unknown", firm: b.firm_name };
+            }
+            setBrokerAttorneyNames(nameMap);
+          }
+          setLoadingAssignments(false);
+        })(),
+      ]);
     } catch (err: any) {
       toast({ title: "Search failed", description: err.message, variant: "destructive" });
       setResults([]);
@@ -177,6 +280,21 @@ const InternalTransferChecker = () => {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSearch();
+  };
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "";
+    try {
+      return new Date(dateStr).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch {
+      return "";
+    }
   };
 
   if (loadingMeta) {
@@ -244,6 +362,9 @@ const InternalTransferChecker = () => {
                   setSearchValue("");
                   setResults([]);
                   setHasSearched(false);
+                  setFlowNotes({});
+                  setAttorneyNames({});
+                  setBrokerAttorneyNames({});
                 }}
                 className="h-14 px-4 rounded-xl shrink-0"
               >
@@ -269,88 +390,160 @@ const InternalTransferChecker = () => {
       )}
 
       {!isLoading && results.length > 0 && (
-        <div className="space-y-4 max-w-xl mx-auto">
+        <div className="space-y-6 max-w-xl mx-auto">
           <div className="text-sm text-muted-foreground">
             {results.length} lead{results.length !== 1 ? "s" : ""} found
+            {(loadingNotes || loadingAssignments) && (
+              <span className="ml-2">
+                <Loader2 className="h-3 w-3 inline animate-spin mr-1" />
+                loading details...
+              </span>
+            )}
           </div>
 
-          <div className="grid gap-4">
+          <div className="grid gap-6">
             {results.map((lead) => {
               const stageInfo = getStageInfo(lead.status);
+              const notes = lead.submission_id ? flowNotes[lead.submission_id] : undefined;
+              const notesWithContent = notes?.filter((n) => n.notes?.trim());
+              const attorneyName = lead.assigned_attorney_id ? attorneyNames[lead.assigned_attorney_id] : undefined;
+              const brokerAttorney = lead.assigned_broker_attorney_id ? brokerAttorneyNames[lead.assigned_broker_attorney_id] : undefined;
+
               return (
                 <Card key={lead.id}>
                   <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0 space-y-3">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <h3 className="text-lg font-semibold truncate">
-                            {lead.customer_full_name || "Unnamed Lead"}
-                          </h3>
-                          {lead.tag && (
-                            <Badge variant="outline" className="text-xs">
-                              {lead.tag}
-                            </Badge>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          {lead.phone_number && (
-                            <span className="flex items-center gap-1">
-                              <Phone className="h-3.5 w-3.5" />
-                              {lead.phone_number}
-                            </span>
-                          )}
-                          {lead.state && <span>{lead.state}</span>}
-                        </div>
-
-                        {stageInfo && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              {stageInfo?.pipeline && PIPELINE_LABELS[stageInfo.pipeline] && (
-                                <Badge
-                                  className={PIPELINE_COLORS[stageInfo.pipeline] || "bg-gray-100 text-gray-800"}
-                                >
-                                  {PIPELINE_LABELS[stageInfo.pipeline]}
-                                </Badge>
-                              )}
-                              {stageInfo && (
-                                <span className="text-xs text-muted-foreground">
-                                  {stageInfo.stageName.split(" - ").slice(1).join(" - ")}
-                                </span>
-                              )}
-                            </div>
-
-                            <div
-                              className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
-                                stageInfo.isAddable
-                                  ? "bg-green-50 text-green-800 border border-green-200"
-                                  : "bg-red-50 text-red-800 border border-red-200"
-                              }`}
-                            >
-                              {stageInfo.isAddable ? (
-                                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                              ) : (
-                                <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                              )}
-                              <span>{stageInfo.message}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {!stageInfo && lead.status && (
-                          <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-gray-50 text-gray-600 border border-gray-200">
-                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                            <span>Stage: {lead.status} — no transfer rule defined</span>
-                          </div>
-                        )}
-
-                        {!lead.status && (
-                          <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-gray-50 text-gray-600 border border-gray-200">
-                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                            <span>No stage status assigned</span>
-                          </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="text-lg font-semibold">
+                          {lead.customer_full_name || "Unnamed Lead"}
+                        </h3>
+                        {lead.tag && (
+                          <Badge variant="outline" className="text-xs">
+                            {lead.tag}
+                          </Badge>
                         )}
                       </div>
+
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        {lead.phone_number && (
+                          <span className="flex items-center gap-1">
+                            <Phone className="h-3.5 w-3.5" />
+                            {lead.phone_number}
+                          </span>
+                        )}
+                        {lead.state && <span>{lead.state}</span>}
+                      </div>
+
+                      {stageInfo && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            {stageInfo?.pipeline && PIPELINE_LABELS[stageInfo.pipeline] && (
+                              <Badge
+                                className={PIPELINE_COLORS[stageInfo.pipeline] || "bg-gray-100 text-gray-800"}
+                              >
+                                {PIPELINE_LABELS[stageInfo.pipeline]}
+                              </Badge>
+                            )}
+                            {stageInfo && (
+                              <span className="text-xs text-muted-foreground">
+                                {stageInfo.stageName.split(" - ").slice(1).join(" - ")}
+                              </span>
+                            )}
+                          </div>
+
+                          <div
+                            className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
+                              stageInfo.isAddable
+                                ? "bg-green-50 text-green-800 border border-green-200"
+                                : "bg-red-50 text-red-800 border border-red-200"
+                            }`}
+                          >
+                            {stageInfo.isAddable ? (
+                              <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                            ) : (
+                              <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                            )}
+                            <span>{stageInfo.message}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {!stageInfo && lead.status && (
+                        <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-gray-50 text-gray-600 border border-gray-200">
+                          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                          <span>Stage: {lead.status} — no transfer rule defined</span>
+                        </div>
+                      )}
+
+                      {!lead.status && (
+                        <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-gray-50 text-gray-600 border border-gray-200">
+                          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                          <span>No stage status assigned</span>
+                        </div>
+                      )}
+
+                      {notesWithContent && notesWithContent.length > 0 && (
+                        <div className="pt-3 border-t-2 border-gray-200">
+                          <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground mb-3">
+                            <MessageSquare className="h-4 w-4" />
+                            Notes
+                          </div>
+                          <div className="space-y-3">
+                            {notesWithContent.map((n) => (
+                              <div key={n.id} className="border-l-4 border-l-blue-500 bg-blue-50/50 rounded-r-lg p-3">
+                                <div className="text-xs text-muted-foreground mb-1.5">
+                                  <span className="font-semibold text-foreground">
+                                    {n.agent || n.buffer_agent || "System"}
+                                  </span>
+                                  {n.status && (
+                                    <>
+                                      <span className="mx-1.5 text-gray-300">|</span>
+                                      <span>{n.status}</span>
+                                    </>
+                                  )}
+                                  <span className="mx-1.5 text-gray-300">|</span>
+                                  <span>{formatDate(n.created_at)}</span>
+                                </div>
+                                <div className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">{n.notes}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {(attorneyName || brokerAttorney) && (
+                        <div className="pt-3 border-t-2 border-gray-200">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+                            <Scale className="h-3 w-3" />
+                            Currently submitted to Broker / Attorney
+                          </div>
+                          <div className="space-y-1.5">
+                            {attorneyName && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800 hover:bg-purple-100">
+                                  Attorney
+                                </Badge>
+                                <span>{attorneyName}</span>
+                              </div>
+                            )}
+                            {brokerAttorney && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-100">
+                                  Broker
+                                </Badge>
+                                <div>
+                                  <span>{brokerAttorney.name}</span>
+                                  {brokerAttorney.firm && (
+                                    <span className="text-muted-foreground ml-1">
+                                      ({brokerAttorney.firm})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
