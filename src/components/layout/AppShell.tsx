@@ -302,6 +302,12 @@ const AppShell = ({
         show: canAccessAgentPages,
       },
       {
+        label: 'Product Offering',
+        to: '/product-offering',
+        icon: <Tag className="h-4 w-4 text-current" />,
+        show: canAccessAgentPages,
+      },
+      {
         label: 'Lawyers Criteria',
         to: '/lawyer-requirements',
         icon: <Scale className="h-4 w-4 text-current" />,
