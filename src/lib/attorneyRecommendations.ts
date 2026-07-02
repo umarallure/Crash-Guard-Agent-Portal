@@ -41,6 +41,7 @@ type LawyerRequirementRow = {
   driver_id: string | null;
   did_number: string | null;
   submission_link: string | null;
+  is_active: boolean | null;
 };
 
 type BrokerAttorneyRequirementLinkRow = {
@@ -52,6 +53,11 @@ type BrokerAttorneyRequirementLinkRow = {
 type BrokerProfileRow = {
   user_id: string;
   company_name: string | null;
+};
+
+type AppUserStatusRow = {
+  user_id: string;
+  account_status: string | null;
 };
 
 type OrderRow = {
@@ -152,12 +158,25 @@ type SupabaseUntyped = {
 const supabaseUntyped = supabase as unknown as SupabaseUntyped;
 const KNOWN_STATE_CODES = new Set(US_STATES.map((state) => state.code));
 
+// Supabase returns plain error objects, not Error instances, so bubbling them up
+// renders as "[object Object]". Wrap them so the real message reaches the UI.
+const toRecommendationError = (error: SupabaseErrorLike | null | undefined, context: string): Error =>
+  new Error(error?.message?.trim() ? `${context}: ${error.message.trim()}` : context);
+
 const normalizeBool = (value: boolean | string | null | undefined): boolean => {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return false;
 
   const normalized = value.trim().toLowerCase();
   return normalized === "true" || normalized === "yes" || normalized === "y" || normalized === "1";
+};
+
+// Mirrors the lawyer onboarding portal's normalizeAccountStatus: a missing/blank
+// status is treated as active, so only an explicit non-active status hides a lawyer.
+const isInternalLawyerActive = (status: string | null | undefined): boolean => {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized === "active";
 };
 
 const normalizeKnownStateToken = (value: string | null | undefined): string => {
@@ -361,7 +380,7 @@ export const getAttorneyRecommendations = async (
     };
   }
 
-  const [internalProfilesResult, brokerProfilesResult, requirementsResult, brokerLinksResult, brokerAccountsResult, ordersResult] = await Promise.all([
+  const [internalProfilesResult, brokerProfilesResult, requirementsResult, brokerLinksResult, brokerAccountsResult, ordersResult, appUsersResult] = await Promise.all([
     supabaseUntyped
       .from("attorney_profiles")
       .select("id,user_id,full_name,primary_email,direct_phone,licensed_states,account_type,availability_status,case_rate_per_deal,criteria")
@@ -372,7 +391,7 @@ export const getAttorneyRecommendations = async (
       .eq("account_type", "broker_lawyer"),
     supabaseUntyped
       .from("lawyer_requirements")
-      .select("id,attorney_id,attorney_name,lawyer_type,doc_requirement,sol,states,police_report,insurance_report,medical_report,driver_id,did_number,submission_link")
+      .select("id,attorney_id,attorney_name,lawyer_type,doc_requirement,sol,states,police_report,insurance_report,medical_report,driver_id,did_number,submission_link,is_active")
       .eq("lawyer_type", "broker_lawyer")
       .order("attorney_name", { ascending: true }),
     supabaseUntyped
@@ -386,13 +405,17 @@ export const getAttorneyRecommendations = async (
       .select("id,lawyer_id,target_states,case_type,case_subtype,criteria,quota_total,quota_filled,status,expires_at,created_at")
       .eq("status", "OPEN")
       .order("created_at", { ascending: false }),
+    supabaseUntyped
+      .from("app_users")
+      .select("user_id,account_status")
+      .eq("role", "lawyer"),
   ]);
 
-  if (internalProfilesResult.error) throw internalProfilesResult.error;
-  if (brokerProfilesResult.error) throw brokerProfilesResult.error;
-  if (requirementsResult.error) throw requirementsResult.error;
-  if (brokerLinksResult.error) throw brokerLinksResult.error;
-  if (ordersResult.error) throw ordersResult.error;
+  if (internalProfilesResult.error) throw toRecommendationError(internalProfilesResult.error, "Failed to load internal attorney profiles");
+  if (brokerProfilesResult.error) throw toRecommendationError(brokerProfilesResult.error, "Failed to load broker attorney profiles");
+  if (requirementsResult.error) throw toRecommendationError(requirementsResult.error, "Failed to load lawyer requirements");
+  if (brokerLinksResult.error) throw toRecommendationError(brokerLinksResult.error, "Failed to load broker attorney links");
+  if (ordersResult.error) throw toRecommendationError(ordersResult.error, "Failed to load open orders");
 
   const internalProfiles = (internalProfilesResult.data ?? []) as AttorneyProfileRow[];
   const brokerProfiles = (brokerProfilesResult.data ?? []) as AttorneyProfileRow[];
@@ -401,6 +424,10 @@ export const getAttorneyRecommendations = async (
   // Broker account names are best-effort: a missing RLS grant should not break recommendations.
   const brokerAccounts = (brokerAccountsResult.error ? [] : brokerAccountsResult.data ?? []) as BrokerProfileRow[];
   const orderRows = (ordersResult.data ?? []) as OrderRow[];
+  // Lawyer account statuses are best-effort: if unavailable we fail open (show the lawyer)
+  // rather than break recommendations entirely.
+  const appUsers = (appUsersResult.error ? [] : appUsersResult.data ?? []) as AppUserStatusRow[];
+  const accountStatusByUserId = new Map(appUsers.map((row) => [row.user_id, row.account_status]));
 
   const profileByUserId = new Map(
     [...internalProfiles, ...brokerProfiles].map((profile) => [profile.user_id, profile])
@@ -426,6 +453,9 @@ export const getAttorneyRecommendations = async (
 
   const broker = requirements
     .filter((requirement) => requirement.lawyer_type === "broker_lawyer")
+    // Inactive broker attorneys (toggled off in the broker portal, projected onto
+    // lawyer_requirements.is_active) are not available for sending sales to.
+    .filter((requirement) => requirement.is_active !== false)
     .map<AttorneyRecommendation>((requirement) => {
       const profile = requirement.attorney_id ? profileByUserId.get(requirement.attorney_id) : null;
       const brokerLink = brokerLinkByRequirementId.get(requirement.id) ?? null;
@@ -481,6 +511,9 @@ export const getAttorneyRecommendations = async (
     });
 
   const internal = internalProfiles
+    // Only active internal lawyers (app_users.account_status) are selectable for
+    // sending cases; inactive accounts are hidden from recommendations entirely.
+    .filter((profile) => isInternalLawyerActive(accountStatusByUserId.get(profile.user_id)))
     .map<AttorneyRecommendation>((profile) => {
       const attorneyOrders = ordersByLawyerId.get(profile.user_id) ?? [];
       const stateMatchingOrders = attorneyOrders.filter((order) => order.target_states.includes(leadState));
