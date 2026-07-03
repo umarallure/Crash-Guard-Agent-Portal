@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Eye, Link2, Loader2, Plus, RefreshCw, SlidersHorizontal, StickyNote, UserPlus, X } from "lucide-react";
+import { Eye, Link2, Loader2, Plus, RefreshCw, SlidersHorizontal, UserPlus, X } from "lucide-react";
 import { usePipelineStages } from "@/hooks/usePipelineStages";
 import { ClaimDroppedCallModal } from "@/components/ClaimDroppedCallModal";
 import { CloserCreateLeadModal } from "@/components/CloserCreateLeadModal";
@@ -43,6 +43,8 @@ import {
   unassignLeadAgent,
 } from "@/lib/leadAssignments";
 import { getPortalRoleFlags } from "@/lib/userPermissions";
+import { PortalLeadCard } from "@/components/portal/PortalLeadCard";
+import { useSentToAttorney } from "@/hooks/useSentToAttorney";
 
 interface CloserPortalRow {
   id: string;
@@ -60,6 +62,7 @@ interface CloserPortalRow {
   assigned_agent_at?: string | null;
   tag?: string | null;
   assigned_attorney_id?: string | null;
+  assigned_broker_attorney_id?: string | null;
   status?: string;
   call_result?: string;
   carrier?: string;
@@ -471,6 +474,8 @@ const CloserPortalPage = () => {
     return filtered;
   };
 
+  const sentToByLeadId = useSentToAttorney(data);
+
   const leadVendorOptions = useMemo(() => {
     const set = new Set<string>();
     data.forEach((row) => {
@@ -557,6 +562,7 @@ const CloserPortalPage = () => {
           assigned_agent_at: getLeadRecordString(leadRecord, "assigned_agent_at") || null,
           tag: getLeadRecordString(leadRecord, "tag"),
           assigned_attorney_id: getLeadRecordString(leadRecord, "assigned_attorney_id") || null,
+          assigned_broker_attorney_id: getLeadRecordString(leadRecord, "assigned_broker_attorney_id") || null,
           carrier: getLeadRecordString(leadRecord, "carrier"),
           product_type: getLeadRecordString(leadRecord, "product_type"),
           notes: "",
@@ -1191,74 +1197,59 @@ const CloserPortalPage = () => {
                           </div>
                         ) : (
                           pageRows.map((row) => {
-                            const statusText = toDispositionLabel(row.status) || row.status || "No status";
                             const noteCount = noteCounts[row.id] ?? 0;
 
                             return (
-                              <Card
+                              <PortalLeadCard
                                 key={row.id}
-                                className="w-full cursor-pointer transition hover:shadow-md"
+                                name={row.insured_name}
+                                phone={row.client_phone_number}
+                                noteCount={noteCount}
+                                leadVendor={row.lead_vendor}
+                                tag={row.tag}
+                                tagToneClass={getLeadTagToneClass(row.tag)}
+                                sentTo={sentToByLeadId.get(row.id) ?? null}
+                                assignmentRibbonLabel={!isSuperAdmin && row.assigned_agent_id ? "Assigned to you" : null}
                                 onClick={() => handleView(row)}
-                              >
-                                <CardContent className="space-y-2 p-2.5">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0 flex-1 space-y-1.5">
-                                      <div className="truncate text-[1.05rem] font-semibold leading-tight tracking-[-0.01em]">
-                                        {row.insured_name || "—"}
-                                      </div>
-                                      <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-                                        <span className="truncate whitespace-nowrap tabular-nums">{row.client_phone_number || "—"}</span>
-                                        <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-foreground/80">
-                                          <StickyNote className="h-3.5 w-3.5" />
-                                          <span>{noteCount}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="flex shrink-0 flex-col items-stretch gap-1">
-                                      <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7 self-end"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void handleOpenLeadAction(row);
-                                        }}
-                                      >
-                                        <Eye className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-7 shrink-0 self-end gap-1 border-primary/40 px-2 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openClaimModal(row.submission_id);
-                                        }}
-                                      >
-                                        <UserPlus className="h-3 w-3" />
-                                        Claim
-                                      </Button>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex flex-col gap-1.5 pt-0.5">
-                                    <Badge variant="secondary" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[11px] font-semibold">
-                                      {row.lead_vendor || "—"}
+                                actions={
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 gap-1 border-primary/40 px-2 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openClaimModal(row.submission_id);
+                                      }}
+                                    >
+                                      <UserPlus className="h-3 w-3" />
+                                      Claim
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      aria-label="View lead"
+                                      title="View"
+                                      className="h-7 w-7"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void handleOpenLeadAction(row);
+                                      }}
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                }
+                                extraBadges={
+                                  row.linked_lead_id || linkedParentIds.has(row.id) ? (
+                                    <Badge variant="outline" className="max-w-full gap-1 truncate rounded-full px-2.5 py-0.5 text-[10.5px] font-medium">
+                                      <Link2 className="h-3 w-3" />
+                                      {row.linked_lead_id ? linkedRelationshipLabel(row.linked_relationship) : "Linked"}
                                     </Badge>
-                                    {row.tag ? (
-                                      <Badge className={`max-w-full w-fit truncate rounded-full border px-2.5 py-1 text-[10.5px] font-medium ${getLeadTagToneClass(row.tag)}`}>
-                                        {row.tag}
-                                      </Badge>
-                                    ) : null}
-                                    <Badge variant="outline" className="max-w-full w-fit truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
-                                      {statusText}
-                                    </Badge>
-                                    {(row.linked_lead_id || linkedParentIds.has(row.id)) ? (
-                                      <Badge variant="outline" className="max-w-full w-fit gap-1 truncate rounded-full px-2.5 py-1 text-[10.5px] font-medium">
-                                        <Link2 className="h-3 w-3" />
-                                        {row.linked_lead_id ? linkedRelationshipLabel(row.linked_relationship) : "Linked"}
-                                      </Badge>
-                                    ) : null}
+                                  ) : null
+                                }
+                                footer={
+                                  isSuperAdmin ? (
                                     <LeadAssignmentControl
                                       agents={assignmentAgents}
                                       assignedAgentId={row.assigned_agent_id}
@@ -1268,9 +1259,9 @@ const CloserPortalPage = () => {
                                         void handleLeadAssignmentChange(row, agentUserId);
                                       }}
                                     />
-                                  </div>
-                                </CardContent>
-                              </Card>
+                                  ) : null
+                                }
+                              />
                             );
                           })
                         )}
