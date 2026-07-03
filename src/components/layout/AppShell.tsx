@@ -296,12 +296,6 @@ const AppShell = ({
         show: canAccessAgentPages,
       },
       {
-        label: 'Products',
-        to: '/products',
-        icon: <Tag className="h-4 w-4 text-current" />,
-        show: canAccessAgentPages,
-      },
-      {
         label: 'Product Offering',
         to: '/product-offering',
         icon: <Tag className="h-4 w-4 text-current" />,

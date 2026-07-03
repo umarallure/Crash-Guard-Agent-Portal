@@ -50,7 +50,6 @@ import UserManagement from "./pages/UserManagement";
 import LawyerRequirements from "./pages/LawyerRequirements";
 import AlowareDialer from "./pages/AlowareDialer";
 import SlackWorkspace from "./pages/SlackWorkspace";
-import ProductsPage from "./pages/ProductsPage";
 import ProductOfferingPage from "./pages/ProductOfferingPage";
 import DeelPage from "./pages/DeelPage";
 import NotificationsPage from "./pages/NotificationsPage";
@@ -451,16 +450,6 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell title="Slack">
                     <SlackWorkspace />
-                  </AppShell>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/products"
-              element={
-                <ProtectedRoute>
-                  <AppShell title="Products">
-                    <ProductsPage />
                   </AppShell>
                 </ProtectedRoute>
               }
