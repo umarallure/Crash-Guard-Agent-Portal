@@ -1,4 +1,4 @@
-project_id = "gqhcjqxcvhgwsqfqgekh"
+project_id = "yfivkhczzywgttbgwtgr"
 
 [api]
 enabled = true
@@ -8,15 +8,12 @@ extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
 [db]
-enabled = true
 port = 54322
 shadow_port = 54320
 major_version = 15
 
 [realtime]
 enabled = true
-port = 54323
-tenant_id = "realtime-dev"
 
 [studio]
 enabled = true
@@ -44,15 +41,17 @@ verify_jwt = false
 [functions.docusign-connect-webhook]
 verify_jwt = false
 
+[functions.aloware-recording-webhook]
+verify_jwt = false
+
+[functions.get-lead-call-recordings]
+verify_jwt = true
+
 [auth]
 enabled = true
-port = 9999
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["https://localhost:3000"]
 jwt_expiry = 3600
-refresh_token_rotation_enabled = true
-security_update_password_require_reauthentication = true
 
 [edge_runtime]
 enabled = true
-port = 54326

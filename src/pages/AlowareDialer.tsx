@@ -9,7 +9,7 @@ const AlowareDialer = () => {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const dialerUrl = 'https://talk.aloware.com/team-inboxes';
+  const dialerUrl = import.meta.env.VITE_ALOWARE_DIALER_URL || 'https://app.aloware.com';
 
   useEffect(() => {
     const timer = setTimeout(() => {

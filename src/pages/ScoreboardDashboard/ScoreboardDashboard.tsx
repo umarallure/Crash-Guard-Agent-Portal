@@ -5,17 +5,15 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { subDays } from 'date-fns';
-import { Loader2, Eye, Phone, Play, Pause, Clock, Users, Briefcase } from 'lucide-react';
+import { Loader2, Eye, Users, Briefcase } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { searchAircallCalls, formatDuration, formatTimestamp } from '@/lib/aircall';
 import { FilterBar } from './components/FilterBar';
 import { WeeklyCallsCard } from './components/WeeklyCallsCard';
 import { QualificationDonutCard } from './components/QualificationDonutCard';
 import { AttorneyZonesCard } from './components/AttorneyZonesCard';
 import { OpportunitiesAreaCard } from './components/OpportunitiesAreaCard';
 import { QuickLinkCard } from './components/QuickLinkCard';
+import { LeadDetailsDialog } from './components/LeadDetailsDialog';
 import { formatDateUS } from '@/lib/dateUtils';
 import {
   bucketizeByDay,
@@ -36,6 +34,7 @@ import {
 
 interface FilteredRow {
   id: string;
+  submission_id: string;
   date: string | null;
   insured_name: string | null;
   client_phone_number: string | null;
@@ -104,22 +103,13 @@ const ScoreboardDashboard = () => {
   const [selectedFilter, setSelectedFilter] = useState<string>('total_transfers');
   const [filteredData, setFilteredData] = useState<FilteredRow[]>([]);
   const [filteredLoading, setFilteredLoading] = useState(false);
-  const [selectedNotes, setSelectedNotes] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 20;
-  const [showCallDialog, setShowCallDialog] = useState(false);
-  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
-  const [callRecordings, setCallRecordings] = useState<Array<{
-    id: number;
-    direction: string;
-    status: string;
-    duration: number;
-    started_at: number;
-    recording: string | null;
-    user: { name: string } | null;
-  }>>([]);
-  const [callsLoading, setCallsLoading] = useState(false);
-  const [playingRecording, setPlayingRecording] = useState<number | null>(null);
+  const [selectedDetails, setSelectedDetails] = useState<{
+    submissionId: string;
+    phoneNumber: string | null;
+    notes: string | null;
+  } | null>(null);
   const [isAdmin, setIsAdmin] = useState(() => {
     if (!user?.id) return false;
     try {
@@ -392,7 +382,7 @@ const ScoreboardDashboard = () => {
 
         const filteredQuery = supabase
           .from('daily_deal_flow')
-          .select('id, date, insured_name, client_phone_number, state, lead_vendor, agent, status, call_result, submitted_attorney, submitted_attorney_status, notes')
+          .select('id, submission_id, date, insured_name, client_phone_number, state, lead_vendor, agent, status, call_result, submitted_attorney, submitted_attorney_status, notes')
           .gte('date', startKey)
           .lte('date', endKey)
           .eq('is_callback', activityType === 'followup');
@@ -460,41 +450,6 @@ const ScoreboardDashboard = () => {
       title: "Refreshing...",
       description: "Fetching latest metrics",
     });
-  };
-
-  const handleDetailsClick = async (phoneNumber: string | null, notes: string | null = null) => {
-    if (!phoneNumber) return;
-
-    setSelectedNotes(notes);
-    setShowCallDialog(true);
-    setCallsLoading(true);
-    setCallRecordings([]);
-
-    try {
-      const { startKey, endKey } = getDateRange();
-      const fromTimestamp = Math.floor(new Date(`${startKey}T00:00:00Z`).getTime() / 1000);
-      const toTimestamp = Math.floor(new Date(`${endKey}T23:59:59Z`).getTime() / 1000);
-
-      const calls = await searchAircallCalls(phoneNumber, fromTimestamp, toTimestamp);
-      setCallRecordings(calls.map(call => ({
-        id: call.id,
-        direction: call.direction,
-        status: call.status,
-        duration: call.duration,
-        started_at: call.started_at,
-        recording: call.recording,
-        user: call.user,
-      })));
-    } catch (error) {
-      console.error('Error fetching calls:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load call recordings.",
-        variant: "destructive",
-      });
-    } finally {
-      setCallsLoading(false);
-    }
   };
 
   const showLeadStateColumn = true;
@@ -739,12 +694,11 @@ const ScoreboardDashboard = () => {
                                     size="sm"
                                     className="h-8 w-8 p-0 text-white/70 hover:bg-primary/15 hover:text-primary"
                                     onClick={() => {
-                                      setSelectedNotes(row.notes);
-                                      setSelectedPhone(row.client_phone_number);
-                                      setShowCallDialog(true);
-                                      if (row.client_phone_number) {
-                                        handleDetailsClick(row.client_phone_number, row.notes);
-                                      }
+                                      setSelectedDetails({
+                                        submissionId: row.submission_id,
+                                        phoneNumber: row.client_phone_number,
+                                        notes: row.notes,
+                                      });
                                     }}
                                   >
                                     <Eye className="h-4 w-4" />
@@ -809,109 +763,15 @@ const ScoreboardDashboard = () => {
             </div>
           </div>
 
-          {/* Call Recordings Dialog */}
-          <Dialog open={showCallDialog} onOpenChange={setShowCallDialog}>
-            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Details - {selectedPhone}</DialogTitle>
-              </DialogHeader>
-              <Tabs defaultValue="notes" className="w-full">
-                <TabsList className="w-full">
-                  <TabsTrigger
-                    value="notes"
-                    className="flex-1 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 dark:data-[state=active]:bg-blue-900 dark:data-[state=active]:text-blue-300"
-                  >
-                    Notes
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="recordings"
-                    className="flex-1 data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-emerald-900 dark:data-[state=active]:text-emerald-300"
-                  >
-                    Call Recordings
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="notes" className="mt-4">
-                  <div className="whitespace-pre-wrap text-sm">
-                    {selectedNotes || 'No notes available for this record.'}
-                  </div>
-                </TabsContent>
-                <TabsContent value="recordings" className="mt-4">
-                  {callsLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                    </div>
-                  ) : callRecordings.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No call recordings found for this phone number.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {callRecordings.map((call) => (
-                        <div key={call.id} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-full ${
-                              call.direction === 'inbound' ? 'bg-blue-100 dark:bg-blue-900' : 'bg-emerald-100 dark:bg-emerald-900'
-                            }`}>
-                              <Phone className={`h-4 w-4 ${
-                                call.direction === 'inbound' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
-                              }`} />
-                            </div>
-                            <div>
-                              <div className="font-medium text-sm">
-                                {call.direction === 'inbound' ? 'Incoming' : 'Outgoing'} Call
-                              </div>
-                              <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                <Clock className="h-3 w-3" />
-                                {formatTimestamp(call.started_at)}
-                                <span className="text-muted-foreground/60">•</span>
-                                {formatDuration(call.duration)}
-                                <span className="text-muted-foreground/60">•</span>
-                                {call.user?.name || 'Unknown'}
-                              </div>
-                            </div>
-                          </div>
-                          {call.recording ? (
-                            playingRecording === call.id ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setPlayingRecording(null)}
-                              >
-                                <Pause className="h-4 w-4 mr-1" />
-                                Stop
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => setPlayingRecording(call.id)}
-                              >
-                                <Play className="h-4 w-4 mr-1" />
-                                Play
-                              </Button>
-                            )
-                          ) : (
-                            <span className="text-xs text-muted-foreground">No recording</span>
-                          )}
-                        </div>
-                      ))}
-                      {playingRecording && callRecordings.find(c => c.id === playingRecording)?.recording && (
-                        <div className="mt-4 p-4 border rounded-lg bg-card">
-                          <audio
-                            controls
-                            autoPlay
-                            className="w-full"
-                            src={callRecordings.find(c => c.id === playingRecording)?.recording || ''}
-                            onEnded={() => setPlayingRecording(null)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
+          <LeadDetailsDialog
+            open={selectedDetails !== null}
+            submissionId={selectedDetails?.submissionId ?? null}
+            phoneNumber={selectedDetails?.phoneNumber ?? null}
+            notes={selectedDetails?.notes ?? null}
+            onOpenChange={(open) => {
+              if (!open) setSelectedDetails(null);
+            }}
+          />
           </div>
         </div>
       </div>

@@ -8,8 +8,10 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
+    "test:aloware": "tsx --test tests/aloware.test.ts",
     "preview": "vite preview",
-    "import-csv": "tsx scripts/import-csv-to-daily-deal-flow.ts"
+    "import-csv": "tsx scripts/import-csv-to-daily-deal-flow.ts",
+    "import:aloware-recordings": "tsx scripts/import-aloware-recordings.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
