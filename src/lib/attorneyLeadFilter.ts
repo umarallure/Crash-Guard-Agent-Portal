@@ -1,5 +1,5 @@
-import { matchesStateFilter, getStateMatchToken, type StateFilterOption } from "@/lib/stateFilter";
-import { matchesSolPeriodFilter } from "@/lib/solPeriods";
+import { matchesStateFilter, getStateMatchToken, type StateFilterOption } from "./stateFilter";
+import { matchesSolPeriodFilter } from "./solPeriods";
 
 export type AttorneyLeadFilterType = "internal_lawyer" | "broker_lawyer";
 
