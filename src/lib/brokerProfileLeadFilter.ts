@@ -1,14 +1,14 @@
 import { normalizeAttorneyCoverageStates } from "./attorneyLeadFilter";
-import { matchesSolPeriodFilter, type SolPeriod } from "./solPeriods";
+import { evaluateSol, getSolPeriodLabel, normalizeSolPeriod, type SolPeriod } from "./solPeriods";
 import { matchesStateFilter, type StateFilterOption } from "./stateFilter";
 
-export type BrokerAttorneyCoverageRule = {
+export type BrokerAttorneyRequirementRule = {
   id: string;
+  brokerAttorneyId?: string | null;
   attorneyName?: string | null;
-  coverageStates: string[];
-  coverageSolCriteria: string | null;
+  states: string[];
+  sol: string | null;
   isActive?: boolean | null;
-  deletedAt?: string | null;
 };
 
 export type BrokerProfileLeadFilterOption = {
@@ -21,7 +21,7 @@ export type BrokerProfileLeadFilterOption = {
   attorneyCount: number;
   coverageStates: string[];
   solCriteria: string[];
-  rules: BrokerAttorneyCoverageRule[];
+  rules: BrokerAttorneyRequirementRule[];
   searchText?: string;
 };
 
@@ -40,22 +40,34 @@ const BROKER_COVERAGE_SOL_LABELS: Record<string, string> = {
   "12_plus_months": "12 Month SOL",
 };
 
-export const mapBrokerCoverageSolCriteriaToSolPeriod = (
+export const mapBrokerRequirementSolToSolPeriod = (
   value: string | null | undefined,
 ): SolPeriod | null => {
   const normalized = String(value ?? "").trim();
-  return BROKER_COVERAGE_SOL_TO_SOL_PERIOD[normalized] ?? null;
+  return normalizeSolPeriod(normalized) ?? BROKER_COVERAGE_SOL_TO_SOL_PERIOD[normalized] ?? null;
 };
 
-export const getBrokerCoverageSolCriteriaLabel = (
+const normalizeBrokerRequirementSolForEvaluation = (
+  value: string | null | undefined,
+): string | null => {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+
+  return mapBrokerRequirementSolToSolPeriod(normalized) ?? normalized;
+};
+
+export const getBrokerRequirementSolLabel = (
   value: string | null | undefined,
 ): string => {
   const normalized = String(value ?? "").trim();
+  const solPeriod = normalizeSolPeriod(normalized);
+  if (solPeriod) return getSolPeriodLabel(solPeriod);
+
   return BROKER_COVERAGE_SOL_LABELS[normalized] ?? "Unknown SOL";
 };
 
-const isBrokerAttorneyRuleEligible = (rule: BrokerAttorneyCoverageRule) =>
-  rule.isActive !== false && !rule.deletedAt;
+const isBrokerAttorneyRuleEligible = (rule: BrokerAttorneyRequirementRule) =>
+  rule.isActive !== false;
 
 export const matchesBrokerProfileLeadFilter = (
   record: BrokerProfileLeadFilterRecord,
@@ -67,14 +79,11 @@ export const matchesBrokerProfileLeadFilter = (
   return brokerProfileFilter.rules
     .filter(isBrokerAttorneyRuleEligible)
     .some((rule) => {
-      const coverageStates = normalizeAttorneyCoverageStates(rule.coverageStates);
+      const coverageStates = normalizeAttorneyCoverageStates(rule.states);
       if (coverageStates.length === 0) return false;
 
       if (!matchesStateFilter(record.state, coverageStates, stateOptions)) return false;
 
-      const solPeriod = mapBrokerCoverageSolCriteriaToSolPeriod(rule.coverageSolCriteria);
-      if (!solPeriod) return false;
-
-      return matchesSolPeriodFilter(record.accident_date, solPeriod);
+      return evaluateSol(normalizeBrokerRequirementSolForEvaluation(rule.sol), record.accident_date).ok;
     });
 };

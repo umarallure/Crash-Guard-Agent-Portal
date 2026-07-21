@@ -25,6 +25,12 @@ type LawyerRequirementFilterRow = {
   lawyer_type: string | null;
   sol: string | null;
   states: unknown;
+  is_active: boolean | null;
+};
+
+type AppUserStatusRow = {
+  user_id: string | null;
+  account_status: string | null;
 };
 
 type SupabaseErrorLike = { message?: string } | null;
@@ -53,6 +59,9 @@ const normalizeSolValue = (value: string | null | undefined) => {
   const trimmed = String(value ?? "").trim();
   return trimmed || null;
 };
+
+const isActiveAccountStatus = (value: string | null | undefined) =>
+  String(value ?? "").trim().toLowerCase() === "active";
 
 const toInternalOption = (row: AttorneyProfileFilterRow): AttorneyLeadFilterOption | null => {
   const userId = String(row.user_id ?? "").trim();
@@ -118,26 +127,44 @@ export function useAttorneyLeadFilterOptions() {
 
       try {
         const supabaseClient = supabase as unknown as SupabaseFilterClient;
-        const [internalResult, brokerResult] = await Promise.all([
+        const [internalResult, activeLawyerAccountsResult, brokerResult] = await Promise.all([
           supabaseClient
             .from("attorney_profiles")
             .select("id,user_id,full_name,firm_name,primary_email,licensed_states,general_coverage,blocked_states,account_type")
             .eq("account_type", "internal_lawyer")
             .order("full_name", { ascending: true, nullsFirst: false }) as SupabaseQueryChain<AttorneyProfileFilterRow>,
           supabaseClient
+            .from("app_users")
+            .select("user_id,account_status,role")
+            .eq("role", "lawyer")
+            .order("user_id", { ascending: true, nullsFirst: false }) as SupabaseQueryChain<AppUserStatusRow>,
+          supabaseClient
             .from("lawyer_requirements")
-            .select("id,attorney_id,attorney_name,lawyer_type,sol,states")
+            .select("id,attorney_id,attorney_name,lawyer_type,sol,states,is_active")
             .eq("lawyer_type", "broker_lawyer")
+            .eq("is_active", true)
             .order("attorney_name", { ascending: true, nullsFirst: false }) as SupabaseQueryChain<LawyerRequirementFilterRow>,
         ]);
 
         if (cancelled) return;
 
         if (internalResult.error) throw internalResult.error;
+        if (activeLawyerAccountsResult.error) throw activeLawyerAccountsResult.error;
         if (brokerResult.error) throw brokerResult.error;
 
+        const activeInternalLawyerUserIds = new Set(
+          (activeLawyerAccountsResult.data ?? [])
+            .filter((row) => isActiveAccountStatus(row.account_status))
+            .map((row) => String(row.user_id ?? "").trim())
+            .filter(Boolean),
+        );
+        const activeInternalProfiles = (internalResult.data ?? []).filter((row) => {
+          const userId = String(row.user_id ?? "").trim();
+          return userId && activeInternalLawyerUserIds.has(userId);
+        });
+
         const nextOptions = [
-          ...((internalResult.data ?? []).map(toInternalOption).filter(Boolean) as AttorneyLeadFilterOption[]),
+          ...(activeInternalProfiles.map(toInternalOption).filter(Boolean) as AttorneyLeadFilterOption[]),
           ...((brokerResult.data ?? []).map(toBrokerOption).filter(Boolean) as AttorneyLeadFilterOption[]),
         ].sort(sortAttorneyOptions);
 

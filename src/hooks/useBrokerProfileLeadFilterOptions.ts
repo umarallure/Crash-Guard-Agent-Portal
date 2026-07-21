@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeAttorneyCoverageStates } from "@/lib/attorneyLeadFilter";
 import {
-  getBrokerCoverageSolCriteriaLabel,
-  mapBrokerCoverageSolCriteriaToSolPeriod,
-  type BrokerAttorneyCoverageRule,
+  getBrokerRequirementSolLabel,
+  mapBrokerRequirementSolToSolPeriod,
+  type BrokerAttorneyRequirementRule,
   type BrokerProfileLeadFilterOption,
 } from "@/lib/brokerProfileLeadFilter";
 
@@ -16,14 +16,20 @@ type BrokerProfileFilterRow = {
   primary_email: string | null;
 };
 
-type BrokerAttorneyCoverageRow = {
-  id: string | null;
+type BrokerAttorneyRequirementLinkRow = {
   broker_id: string | null;
+  broker_attorney_id: string | null;
+  lawyer_requirement_id: string | null;
+};
+
+type LawyerRequirementFilterRow = {
+  id: string | null;
+  attorney_id: string | null;
   attorney_name: string | null;
-  coverage_states: unknown;
-  coverage_sol_criteria: string | null;
+  lawyer_type: string | null;
+  states: unknown;
+  sol: string | null;
   is_active: boolean | null;
-  deleted_at: string | null;
 };
 
 type SupabaseErrorLike = { message?: string } | null;
@@ -61,35 +67,41 @@ const uniqueSorted = (values: Array<string | null | undefined>) =>
     ),
   ).sort((left, right) => left.localeCompare(right));
 
-const toCoverageRule = (row: BrokerAttorneyCoverageRow): BrokerAttorneyCoverageRule | null => {
+const toRequirementRule = (
+  row: LawyerRequirementFilterRow,
+  link: BrokerAttorneyRequirementLinkRow,
+): BrokerAttorneyRequirementRule | null => {
   const id = String(row.id ?? "").trim();
   if (!id) return null;
 
   return {
     id,
+    brokerAttorneyId: String(link.broker_attorney_id ?? "").trim() || null,
     attorneyName: String(row.attorney_name ?? "").trim() || null,
-    coverageStates: normalizeAttorneyCoverageStates(row.coverage_states),
-    coverageSolCriteria: String(row.coverage_sol_criteria ?? "").trim() || null,
+    states: normalizeAttorneyCoverageStates(row.states),
+    sol: String(row.sol ?? "").trim() || null,
     isActive: row.is_active,
-    deletedAt: row.deleted_at,
   };
 };
 
 const toBrokerProfileOption = (
   row: BrokerProfileFilterRow,
-  rules: BrokerAttorneyCoverageRule[],
+  rules: BrokerAttorneyRequirementRule[],
 ): BrokerProfileLeadFilterOption | null => {
   const userId = String(row.user_id ?? "").trim();
   if (!userId || rules.length === 0) return null;
 
   const label = buildBrokerLabel(row);
-  const coverageStates = uniqueSorted(rules.flatMap((rule) => rule.coverageStates));
+  const coverageStates = uniqueSorted(rules.flatMap((rule) => rule.states));
   const solCriteria = uniqueSorted(
     rules
-      .map((rule) => rule.coverageSolCriteria)
-      .filter((criteria) => Boolean(mapBrokerCoverageSolCriteriaToSolPeriod(criteria))),
+      .map((rule) => rule.sol)
+      .filter((criteria) => Boolean(mapBrokerRequirementSolToSolPeriod(criteria))),
   );
-  const solSearchText = solCriteria.map(getBrokerCoverageSolCriteriaLabel).join(" ");
+  const solSearchText = solCriteria.map(getBrokerRequirementSolLabel).join(" ");
+  const attorneyCount = new Set(
+    rules.map((rule) => rule.brokerAttorneyId || rule.id).filter(Boolean),
+  ).size;
 
   return {
     id: `broker-profile:${userId}`,
@@ -98,7 +110,7 @@ const toBrokerProfileOption = (
     companyName: row.company_name,
     fullName: row.full_name,
     primaryEmail: row.primary_email,
-    attorneyCount: rules.length,
+    attorneyCount,
     coverageStates,
     solCriteria,
     rules,
@@ -125,30 +137,44 @@ export function useBrokerProfileLeadFilterOptions() {
 
       try {
         const supabaseClient = supabase as unknown as SupabaseFilterClient;
-        const [profilesResult, attorneysResult] = await Promise.all([
+        const [profilesResult, linksResult, requirementsResult] = await Promise.all([
           supabaseClient
             .from("broker_profiles")
             .select("user_id,company_name,full_name,primary_email")
             .order("company_name", { ascending: true, nullsFirst: false }) as SupabaseQueryChain<BrokerProfileFilterRow>,
           supabaseClient
-            .from("broker_attorneys")
-            .select("id,broker_id,attorney_name,coverage_states,coverage_sol_criteria,is_active,deleted_at")
+            .from("broker_attorney_requirement_links")
+            .select("broker_id,broker_attorney_id,lawyer_requirement_id")
+            .order("broker_id", { ascending: true, nullsFirst: false }) as SupabaseQueryChain<BrokerAttorneyRequirementLinkRow>,
+          supabaseClient
+            .from("lawyer_requirements")
+            .select("id,attorney_id,attorney_name,lawyer_type,states,sol,is_active")
+            .eq("lawyer_type", "broker_lawyer")
             .eq("is_active", true)
-            .is("deleted_at", null)
-            .order("attorney_name", { ascending: true, nullsFirst: false }) as SupabaseQueryChain<BrokerAttorneyCoverageRow>,
+            .order("attorney_name", { ascending: true, nullsFirst: false }) as SupabaseQueryChain<LawyerRequirementFilterRow>,
         ]);
 
         if (cancelled) return;
 
         if (profilesResult.error) throw profilesResult.error;
-        if (attorneysResult.error) throw attorneysResult.error;
+        if (linksResult.error) throw linksResult.error;
+        if (requirementsResult.error) throw requirementsResult.error;
 
-        const rulesByBrokerId = new Map<string, BrokerAttorneyCoverageRule[]>();
-        for (const row of attorneysResult.data ?? []) {
-          const brokerId = String(row.broker_id ?? "").trim();
+        const requirementById = new Map(
+          (requirementsResult.data ?? [])
+            .map((requirement) => [String(requirement.id ?? "").trim(), requirement] as const)
+            .filter(([requirementId]) => Boolean(requirementId)),
+        );
+        const rulesByBrokerId = new Map<string, BrokerAttorneyRequirementRule[]>();
+        for (const link of linksResult.data ?? []) {
+          const brokerId = String(link.broker_id ?? "").trim();
           if (!brokerId) continue;
 
-          const rule = toCoverageRule(row);
+          const requirementId = String(link.lawyer_requirement_id ?? "").trim();
+          const requirement = requirementById.get(requirementId);
+          if (!requirement) continue;
+
+          const rule = toRequirementRule(requirement, link);
           if (!rule) continue;
 
           rulesByBrokerId.set(brokerId, [...(rulesByBrokerId.get(brokerId) ?? []), rule]);
