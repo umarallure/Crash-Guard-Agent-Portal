@@ -1,4 +1,4 @@
-import { US_STATES } from "@/lib/us-states";
+import { US_STATES } from "./us-states";
 
 export type StateFilterOption = {
   value: string;

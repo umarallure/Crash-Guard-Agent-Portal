@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { AttorneyLeadFilterSelect } from "@/components/AttorneyLeadFilterSelect";
+import { BrokerProfileLeadFilterSelect } from "@/components/BrokerProfileLeadFilterSelect";
 import {
   Select,
   SelectContent,
@@ -27,9 +28,11 @@ import { matchesStateFilter } from "@/lib/stateFilter";
 import { useSalesMapCoverageStates } from "@/hooks/useSalesMapCoverageStates";
 import { useBrokerSolFilterOptions } from "@/hooks/useBrokerSolFilterOptions";
 import { useAttorneyLeadFilterOptions } from "@/hooks/useAttorneyLeadFilterOptions";
+import { useBrokerProfileLeadFilterOptions } from "@/hooks/useBrokerProfileLeadFilterOptions";
 import { ALL_LEAD_TAGS_VALUE, getLeadTagToneClass, LEAD_TAG_OPTIONS } from "@/lib/leadTags";
 import { ALL_SOL_FILTER_VALUE, matchesSolPeriodFilter } from "@/lib/solPeriods";
 import { matchesAttorneyLeadFilter } from "@/lib/attorneyLeadFilter";
+import { matchesBrokerProfileLeadFilter } from "@/lib/brokerProfileLeadFilter";
 import { LeadAssignmentControl } from "@/components/LeadAssignmentControl";
 import {
   applyLeadAssignmentToRows,
@@ -214,6 +217,7 @@ const CloserPortalPage = () => {
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [brokerSolFilter, setBrokerSolFilter] = useState<string>(ALL_SOL_FILTER_VALUE);
   const [attorneyFilterId, setAttorneyFilterId] = useState<string>("");
+  const [brokerProfileFilterId, setBrokerProfileFilterId] = useState<string>("");
   const [columnPage, setColumnPage] = useState<Record<string, number>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [timeTick, setTimeTick] = useState(() => Date.now());
@@ -224,11 +228,24 @@ const CloserPortalPage = () => {
   const { stateOptions } = useSalesMapCoverageStates();
   const { solOptions } = useBrokerSolFilterOptions();
   const { options: attorneyFilterOptions, loading: attorneyFilterOptionsLoading } = useAttorneyLeadFilterOptions();
+  const { options: brokerProfileFilterOptions, loading: brokerProfileFilterOptionsLoading } = useBrokerProfileLeadFilterOptions();
   const selectedAttorneyFilter = useMemo(
     () => attorneyFilterOptions.find((option) => option.id === attorneyFilterId) ?? null,
     [attorneyFilterId, attorneyFilterOptions],
   );
-  const isAttorneyFilterActive = Boolean(selectedAttorneyFilter);
+  const selectedBrokerProfileFilter = useMemo(
+    () => brokerProfileFilterOptions.find((option) => option.id === brokerProfileFilterId) ?? null,
+    [brokerProfileFilterId, brokerProfileFilterOptions],
+  );
+  const isEligibilityFilterActive = Boolean(selectedAttorneyFilter || selectedBrokerProfileFilter);
+  const handleAttorneyFilterChange = (value: string) => {
+    setAttorneyFilterId(value);
+    if (value) setBrokerProfileFilterId("");
+  };
+  const handleBrokerProfileFilterChange = (value: string) => {
+    setBrokerProfileFilterId(value);
+    if (value) setAttorneyFilterId("");
+  };
   const currentOperationalDateKey = useMemo(
     () => getCloserPortalOperationalDateKey(timeTick) ?? "",
     [timeTick]
@@ -265,6 +282,11 @@ const CloserPortalPage = () => {
     if (!attorneyFilterId || attorneyFilterOptionsLoading) return;
     if (!selectedAttorneyFilter) setAttorneyFilterId("");
   }, [attorneyFilterId, attorneyFilterOptionsLoading, selectedAttorneyFilter]);
+
+  useEffect(() => {
+    if (!brokerProfileFilterId || brokerProfileFilterOptionsLoading) return;
+    if (!selectedBrokerProfileFilter) setBrokerProfileFilterId("");
+  }, [brokerProfileFilterId, brokerProfileFilterOptionsLoading, selectedBrokerProfileFilter]);
 
   useEffect(() => {
     let mounted = true;
@@ -419,11 +441,15 @@ const CloserPortalPage = () => {
   };
 
   const applyFilters = (records: CloserPortalRow[]) => {
-    let filtered = selectedAttorneyFilter
-      ? records.filter((record) => matchesAttorneyLeadFilter(record, selectedAttorneyFilter, stateOptions))
-      : records;
+    let filtered = records;
 
-    if (!selectedAttorneyFilter) {
+    if (selectedAttorneyFilter) {
+      filtered = filtered.filter((record) => matchesAttorneyLeadFilter(record, selectedAttorneyFilter, stateOptions));
+    } else if (selectedBrokerProfileFilter) {
+      filtered = filtered.filter((record) => matchesBrokerProfileLeadFilter(record, selectedBrokerProfileFilter, stateOptions));
+    }
+
+    if (!isEligibilityFilterActive) {
       filtered = filtered.filter((record) =>
         matchesTimeFilter(
           record,
@@ -615,7 +641,7 @@ const CloserPortalPage = () => {
 
   useEffect(() => {
     setFilteredData(applyFilters(data));
-  }, [activeSessionIds, brokerSolFilter, data, leadVendorFilter, selectedAttorneyFilter, searchTerm, selectedStates, statusFilter, tagFilter, timeFilter, timeTick, stateOptions, solOptions]);
+  }, [activeSessionIds, brokerSolFilter, data, leadVendorFilter, isEligibilityFilterActive, selectedAttorneyFilter, selectedBrokerProfileFilter, searchTerm, selectedStates, statusFilter, tagFilter, timeFilter, timeTick, stateOptions, solOptions]);
 
   useEffect(() => {
     if (closerStagesLoading) return;
@@ -663,6 +689,7 @@ const CloserPortalPage = () => {
 
   const hasActiveFilters =
     Boolean(attorneyFilterId) ||
+    Boolean(brokerProfileFilterId) ||
     timeFilter !== DEFAULT_CLOSER_PORTAL_TIME_FILTER ||
     statusFilter !== ALL_FILTER_VALUE ||
     selectedStates.length > 0 ||
@@ -672,6 +699,7 @@ const CloserPortalPage = () => {
 
   const resetFilters = () => {
     setAttorneyFilterId("");
+    setBrokerProfileFilterId("");
     setSearchTerm("");
     setTimeFilter(DEFAULT_CLOSER_PORTAL_TIME_FILTER);
     setStatusFilter(ALL_FILTER_VALUE);
@@ -987,7 +1015,7 @@ const CloserPortalPage = () => {
               <div className="flex-1" />
 
               <Badge variant="outline" className="px-3 py-1 shrink-0">
-                {isAttorneyFilterActive ? "Attorney" : CLOSER_PORTAL_TIME_FILTER_LABELS[timeFilter]}
+                {selectedAttorneyFilter ? "Attorney" : selectedBrokerProfileFilter ? "Broker" : CLOSER_PORTAL_TIME_FILTER_LABELS[timeFilter]}
               </Badge>
               <Badge variant="secondary" className="px-3 py-1 tabular-nums shrink-0">
                 {filteredData.length} records
@@ -1030,15 +1058,26 @@ const CloserPortalPage = () => {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-7">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attorney</label>
                       <AttorneyLeadFilterSelect
                         options={attorneyFilterOptions}
                         value={attorneyFilterId}
-                        onValueChange={setAttorneyFilterId}
+                        onValueChange={handleAttorneyFilterChange}
                         loading={attorneyFilterOptionsLoading}
                         placeholder="All Attorneys"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Broker Profile</label>
+                      <BrokerProfileLeadFilterSelect
+                        options={brokerProfileFilterOptions}
+                        value={brokerProfileFilterId}
+                        onValueChange={handleBrokerProfileFilterChange}
+                        loading={brokerProfileFilterOptionsLoading}
+                        placeholder="All Brokers"
                       />
                     </div>
 
@@ -1047,7 +1086,7 @@ const CloserPortalPage = () => {
                       <Select
                         value={timeFilter}
                         onValueChange={(value) => setTimeFilter(value as CloserPortalTimeFilter)}
-                        disabled={isAttorneyFilterActive}
+                        disabled={isEligibilityFilterActive}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Today" />
@@ -1064,7 +1103,7 @@ const CloserPortalPage = () => {
 
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lead Vendor</label>
-                      <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter} disabled={isAttorneyFilterActive}>
+                      <Select value={leadVendorFilter} onValueChange={setLeadVendorFilter} disabled={isEligibilityFilterActive}>
                         <SelectTrigger>
                           <SelectValue placeholder="All Vendors" />
                         </SelectTrigger>
@@ -1081,7 +1120,7 @@ const CloserPortalPage = () => {
 
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tag</label>
-                      <Select value={tagFilter} onValueChange={setTagFilter} disabled={isAttorneyFilterActive}>
+                      <Select value={tagFilter} onValueChange={setTagFilter} disabled={isEligibilityFilterActive}>
                         <SelectTrigger>
                           <SelectValue placeholder="All Tags" />
                         </SelectTrigger>
@@ -1098,7 +1137,7 @@ const CloserPortalPage = () => {
 
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stage</label>
-                      <Select value={statusFilter} onValueChange={setStatusFilter} disabled={isAttorneyFilterActive}>
+                      <Select value={statusFilter} onValueChange={setStatusFilter} disabled={isEligibilityFilterActive}>
                         <SelectTrigger>
                           <SelectValue placeholder="All Stages" />
                         </SelectTrigger>
@@ -1124,13 +1163,13 @@ const CloserPortalPage = () => {
                         maxVisibleBadges={null}
                         selectedDisplayMode="scroll"
                         highlightSelectedOptions={false}
-                        disabled={isAttorneyFilterActive}
+                        disabled={isEligibilityFilterActive}
                       />
                     </div>
 
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Broker SOL</label>
-                      <Select value={brokerSolFilter} onValueChange={setBrokerSolFilter} disabled={isAttorneyFilterActive}>
+                      <Select value={brokerSolFilter} onValueChange={setBrokerSolFilter} disabled={isEligibilityFilterActive}>
                         <SelectTrigger>
                           <SelectValue placeholder="All Broker SOLs" />
                         </SelectTrigger>
