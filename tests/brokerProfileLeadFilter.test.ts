@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  mapBrokerCoverageSolCriteriaToSolPeriod,
+  mapBrokerRequirementSolToSolPeriod,
   matchesBrokerProfileLeadFilter,
-  type BrokerAttorneyCoverageRule,
+  type BrokerAttorneyRequirementRule,
   type BrokerProfileLeadFilterOption,
 } from "../src/lib/brokerProfileLeadFilter.ts";
 
@@ -18,7 +18,7 @@ const dateMonthsAgo = (monthsAgo: number) => {
 };
 
 const brokerOption = (
-  rules: BrokerAttorneyCoverageRule[],
+  rules: BrokerAttorneyRequirementRule[],
 ): BrokerProfileLeadFilterOption => ({
   id: "broker:profile-1",
   label: "Broker Profile",
@@ -32,11 +32,11 @@ const brokerOption = (
 test("matches when one broker attorney covers the lead state and SOL deadline", () => {
   const option = brokerOption([
     {
-      id: "attorney-1",
-      coverageStates: ["CA", "TX"],
-      coverageSolCriteria: "6_12_months",
+      id: "requirement-1",
+      brokerAttorneyId: "attorney-1",
+      states: ["CA", "TX"],
+      sol: "6month",
       isActive: true,
-      deletedAt: null,
     },
   ]);
 
@@ -49,21 +49,14 @@ test("matches when one broker attorney covers the lead state and SOL deadline", 
   );
 });
 
-test("does not match inactive or deleted broker attorney rules", () => {
+test("does not match inactive broker attorney requirement rules", () => {
   const option = brokerOption([
     {
-      id: "inactive-attorney",
-      coverageStates: ["CA"],
-      coverageSolCriteria: "6_12_months",
+      id: "inactive-requirement",
+      brokerAttorneyId: "attorney-1",
+      states: ["CA"],
+      sol: "6month",
       isActive: false,
-      deletedAt: null,
-    },
-    {
-      id: "deleted-attorney",
-      coverageStates: ["CA"],
-      coverageSolCriteria: "6_12_months",
-      isActive: true,
-      deletedAt: "2026-01-01T00:00:00Z",
     },
   ]);
 
@@ -79,11 +72,11 @@ test("does not match inactive or deleted broker attorney rules", () => {
 test("does not match broker attorney rules without coverage states", () => {
   const option = brokerOption([
     {
-      id: "attorney-1",
-      coverageStates: [],
-      coverageSolCriteria: "6_12_months",
+      id: "requirement-1",
+      brokerAttorneyId: "attorney-1",
+      states: [],
+      sol: "6month",
       isActive: true,
-      deletedAt: null,
     },
   ]);
 
@@ -96,21 +89,21 @@ test("does not match broker attorney rules without coverage states", () => {
   );
 });
 
-test("uses OR behavior across multiple broker attorneys", () => {
+test("uses inclusive OR behavior across multiple broker attorneys", () => {
   const option = brokerOption([
     {
-      id: "attorney-1",
-      coverageStates: ["NY"],
-      coverageSolCriteria: "6_12_months",
+      id: "requirement-1",
+      brokerAttorneyId: "attorney-1",
+      states: ["NY"],
+      sol: "12month",
       isActive: true,
-      deletedAt: null,
     },
     {
-      id: "attorney-2",
-      coverageStates: ["CA"],
-      coverageSolCriteria: "6_12_months",
+      id: "requirement-2",
+      brokerAttorneyId: "attorney-2",
+      states: ["CA"],
+      sol: "6month",
       isActive: true,
-      deletedAt: null,
     },
   ]);
 
@@ -121,29 +114,45 @@ test("uses OR behavior across multiple broker attorneys", () => {
     ),
     true,
   );
+  assert.equal(
+    matchesBrokerProfileLeadFilter(
+      { state: "NY", accident_date: dateMonthsAgo(11) },
+      option,
+    ),
+    true,
+  );
+  assert.equal(
+    matchesBrokerProfileLeadFilter(
+      { state: "CA", accident_date: dateMonthsAgo(11) },
+      option,
+    ),
+    false,
+  );
 });
 
-test("maps broker SOL criteria to existing deadline periods", () => {
-  assert.equal(mapBrokerCoverageSolCriteriaToSolPeriod("6_12_months"), "6month");
-  assert.equal(mapBrokerCoverageSolCriteriaToSolPeriod("12_plus_months"), "12month");
-  assert.equal(mapBrokerCoverageSolCriteriaToSolPeriod("unknown"), null);
+test("maps lawyer requirement SOL values to existing deadline periods", () => {
+  assert.equal(mapBrokerRequirementSolToSolPeriod("6month"), "6month");
+  assert.equal(mapBrokerRequirementSolToSolPeriod("12month"), "12month");
+  assert.equal(mapBrokerRequirementSolToSolPeriod("6_12_months"), "6month");
+  assert.equal(mapBrokerRequirementSolToSolPeriod("12_plus_months"), "12month");
+  assert.equal(mapBrokerRequirementSolToSolPeriod("unknown"), null);
 
   const sixMonthOption = brokerOption([
     {
-      id: "attorney-1",
-      coverageStates: ["CA"],
-      coverageSolCriteria: "6_12_months",
+      id: "requirement-1",
+      brokerAttorneyId: "attorney-1",
+      states: ["CA"],
+      sol: "6month",
       isActive: true,
-      deletedAt: null,
     },
   ]);
   const twelveMonthOption = brokerOption([
     {
-      id: "attorney-2",
-      coverageStates: ["CA"],
-      coverageSolCriteria: "12_plus_months",
+      id: "requirement-2",
+      brokerAttorneyId: "attorney-2",
+      states: ["CA"],
+      sol: "12month",
       isActive: true,
-      deletedAt: null,
     },
   ]);
 
@@ -167,5 +176,25 @@ test("maps broker SOL criteria to existing deadline periods", () => {
       twelveMonthOption,
     ),
     false,
+  );
+});
+
+test("treats missing SOL as no SOL restriction", () => {
+  const option = brokerOption([
+    {
+      id: "requirement-1",
+      brokerAttorneyId: "attorney-1",
+      states: ["CA"],
+      sol: null,
+      isActive: true,
+    },
+  ]);
+
+  assert.equal(
+    matchesBrokerProfileLeadFilter(
+      { state: "CA", accident_date: dateMonthsAgo(30) },
+      option,
+    ),
+    true,
   );
 });

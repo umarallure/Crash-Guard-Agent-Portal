@@ -17,7 +17,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  getBrokerCoverageSolCriteriaLabel,
+  getBrokerRequirementSolLabel,
   type BrokerProfileLeadFilterOption,
 } from "@/lib/brokerProfileLeadFilter";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,7 @@ const getOptionSearchValue = (option: BrokerProfileLeadFilterOption) =>
     option.primaryEmail,
     option.searchText,
     option.coverageStates.join(" "),
-    option.solCriteria.map(getBrokerCoverageSolCriteriaLabel).join(" "),
+    option.solCriteria.map(getBrokerRequirementSolLabel).join(" "),
   ]
     .filter(Boolean)
     .join(" ");
@@ -60,7 +60,7 @@ function BrokerProfileOptionRow({
     : "No states";
   const extraCount = Math.max(0, option.coverageStates.length - 5);
   const solSummary = option.solCriteria.length > 0
-    ? option.solCriteria.map(getBrokerCoverageSolCriteriaLabel).join(", ")
+    ? option.solCriteria.map(getBrokerRequirementSolLabel).join(", ")
     : "No SOL";
 
   return (
