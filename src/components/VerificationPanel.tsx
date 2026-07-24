@@ -118,11 +118,10 @@ const verificationStepDefinitions: VerificationStepDefinition[] = [
     key: "accident_date",
     eyebrow: "3. Accident Date Verification",
     title: "Critical fraud checkpoint",
-    description: "Confirm the date multiple ways before moving deeper into the accident story.",
+    description: "Confirm the exact accident date before moving deeper into the accident story.",
     fieldNames: ["accident_date"],
     prompts: [
-      "Ask when the accident happened, then reconfirm the same date more than once.",
-      "Use day of week, season, weather, and time of day as consistency checks.",
+      "Ask when the accident happened and confirm the exact date.",
     ],
   },
   {
@@ -149,7 +148,6 @@ const verificationStepDefinitions: VerificationStepDefinition[] = [
       "Was a police report filed at the scene?",
       "Do you have the police report number or case number?",
       "Which police department or agency responded?",
-      "Do you remember the name of any officers who came to the scene?",
     ],
   },
   {
@@ -245,10 +243,9 @@ const driverPassengerOptions = [
   { value: "unknown", label: "Unknown" },
 ];
 
-const familiarityOptions = [
-  { value: "familiar", label: "Familiar Area" },
-  { value: "new_area", label: "Traveling Somewhere New" },
-  { value: "unknown", label: "Unknown" },
+const caseClassificationOptions = [
+  { value: "personal_auto", label: "Personal Auto" },
+  { value: "commercial_vehicle", label: "Commercial Vehicle" },
 ];
 
 const treatmentTimingOptions = [
@@ -265,11 +262,17 @@ const workImpactOptions = [
   { value: "unknown", label: "Unknown" },
 ];
 
+const painLevelOptions = Array.from({ length: 11 }, (_, painLevel) => ({
+  value: String(painLevel),
+  label: `${painLevel} / 10`,
+}));
+
 const stepQuestionBindings: Record<string, StepQuestionBinding[]> = {
   basic_information: [
     { key: "customer_full_name", prompt: "Full name: first, middle, last", fieldName: "customer_full_name" },
     { key: "phone_number", prompt: "Phone number: cell", fieldName: "phone_number" },
     { key: "alternate_phone", prompt: "Alternate phone if available", anchorFieldName: "phone_number", supplementalKey: "alternate_phone" },
+    { key: "preferred_callback_time_window", prompt: "Preferred callback time window", anchorFieldName: "phone_number", supplementalKey: "preferred_callback_time_window" },
     { key: "email", prompt: "Email address", fieldName: "email" },
     { key: "street_address", prompt: "Current address: street", fieldName: "street_address" },
     { key: "city", prompt: "Current address: city", fieldName: "city" },
@@ -279,9 +282,6 @@ const stepQuestionBindings: Record<string, StepQuestionBinding[]> = {
   ],
   accident_date: [
     { key: "accident_date", prompt: "Initial question: Can you tell me when your accident happened?", fieldName: "accident_date" },
-    { key: "day_of_week", prompt: "What day of the week was it?", anchorFieldName: "accident_date", supplementalKey: "day_of_week" },
-    { key: "holiday_event", prompt: "Was it around any holiday or special event?", anchorFieldName: "accident_date", supplementalKey: "holiday_event" },
-    { key: "weather", prompt: "What was the weather like that day?", anchorFieldName: "accident_date", supplementalKey: "weather" },
     { key: "time_of_day", prompt: "About what time of day did it happen?", anchorFieldName: "accident_date", supplementalKey: "time_of_day" },
     {
       key: "date_confirmation",
@@ -294,15 +294,8 @@ const stepQuestionBindings: Record<string, StepQuestionBinding[]> = {
   ],
   accident_location: [
     { key: "accident_city_state", prompt: "What city and state did the accident occur in?", anchorFieldName: "accident_location", supplementalKey: "city_state" },
+    { key: "incident_state", prompt: "Incident state", anchorFieldName: "accident_location", supplementalKey: "incident_state" },
     { key: "accident_street", prompt: "Can you tell me the street or intersection where it happened?", anchorFieldName: "accident_location", supplementalKey: "street_or_intersection" },
-    {
-      key: "area_familiarity",
-      prompt: "Were you familiar with that area, or were you traveling somewhere new?",
-      anchorFieldName: "accident_location",
-      supplementalKey: "area_familiarity",
-      inputType: "select",
-      options: familiarityOptions,
-    },
     {
       key: "driver_or_passenger",
       prompt: "Were you the driver or a passenger?",
@@ -320,13 +313,21 @@ const stepQuestionBindings: Record<string, StepQuestionBinding[]> = {
     },
   ],
   fault_liability: [
+    { key: "accident_type", prompt: "Accident type", anchorFieldName: "accident_scenario", supplementalKey: "accident_type" },
+    {
+      key: "case_classification",
+      prompt: "Case classification",
+      anchorFieldName: "accident_scenario",
+      supplementalKey: "case_classification",
+      inputType: "select",
+      options: caseClassificationOptions,
+    },
     {
       key: "accident_walkthrough",
       prompt: "Can you walk me through exactly how the accident happened?",
       fieldName: "accident_scenario",
       fullWidth: true,
     },
-    { key: "fault_opinion", prompt: "In your opinion, who was at fault for the accident?", anchorFieldName: "other_party_admit_fault", supplementalKey: "fault_opinion" },
     { key: "other_party_admit_fault", prompt: "Did the other driver admit fault at the scene?", fieldName: "other_party_admit_fault" },
     { key: "police_attended", prompt: "Did the police come to the scene?", fieldName: "police_attended" },
     { key: "traffic_citation", prompt: "Did anyone receive a traffic citation or ticket?", anchorFieldName: "other_party_admit_fault", supplementalKey: "traffic_citation", inputType: "select", options: yesNoOptions },
@@ -343,20 +344,20 @@ const stepQuestionBindings: Record<string, StepQuestionBinding[]> = {
       inputType: "select",
       options: policeAgencyOptions,
     },
-    { key: "officer_name", prompt: "Do you remember the name of any officers who came to the scene?", anchorFieldName: "police_attended", supplementalKey: "officer_name" },
     { key: "police_report", prompt: "Police report available to upload", customFieldKey: "police_report" },
   ],
   injury_verification: [
     { key: "injured_yes_no", prompt: "Were you injured in the accident?", anchorFieldName: "injuries", supplementalKey: "injured_in_accident", inputType: "select", options: yesNoOptions },
     { key: "injuries", prompt: "Can you tell me what parts of your body were hurt?", fieldName: "injuries", fullWidth: true },
+    { key: "pain_level", prompt: "Current pain level", anchorFieldName: "injuries", supplementalKey: "pain_level", inputType: "select", options: painLevelOptions },
     { key: "pain_timing", prompt: "Did you feel the pain immediately, or did it come later?", anchorFieldName: "injuries", supplementalKey: "pain_timing" },
     { key: "hospital_direct", prompt: "Did you go to the hospital directly from the accident scene?", anchorFieldName: "medical_attention", supplementalKey: "hospital_direct", inputType: "select", options: yesNoOptions },
     { key: "first_treatment_timing", prompt: "If not, when did you first seek medical attention - same day, next day, or later?", anchorFieldName: "medical_attention", supplementalKey: "first_treatment_timing", inputType: "select", options: treatmentTimingOptions },
     { key: "first_treatment_facility", prompt: "What was the name of the hospital or medical facility where you were first treated?", anchorFieldName: "medical_attention", supplementalKey: "first_treatment_facility" },
-    { key: "doctor_name", prompt: "Do you remember the doctor's name who treated you?", anchorFieldName: "medical_attention", supplementalKey: "doctor_name" },
     { key: "tests_completed", prompt: "What kind of tests did they do - X-rays, MRI, or CT scan?", anchorFieldName: "medical_attention", supplementalKey: "tests_completed" },
     { key: "currently_receiving_treatment", prompt: "Are you currently receiving treatment for your injuries?", anchorFieldName: "medical_attention", supplementalKey: "currently_receiving_treatment", inputType: "select", options: yesNoOptions },
     { key: "treatment_type", prompt: "What type of treatment - physical therapy, chiropractic, pain management, or surgery?", fieldName: "medical_attention", fullWidth: true },
+    { key: "surgery_required", prompt: "Will the potential client require surgery?", anchorFieldName: "medical_attention", supplementalKey: "surgery_required", inputType: "select", options: yesNoOptions },
     { key: "appointment_frequency", prompt: "How often do you have appointments - weekly or twice a week?", anchorFieldName: "medical_attention", supplementalKey: "appointment_frequency" },
     { key: "work_impact", prompt: "Are you able to work, or have your injuries prevented you from working?", anchorFieldName: "medical_attention", supplementalKey: "work_impact", inputType: "select", options: workImpactOptions },
     { key: "medical_treatment_proof", prompt: "Medical treatment proof available", customFieldKey: "medical_treatment_proof" },
@@ -378,10 +379,11 @@ const stepQuestionBindings: Record<string, StepQuestionBinding[]> = {
   ],
   driver_vehicle: [
     { key: "insured", prompt: "Was the caller insured?", fieldName: "insured" },
+    { key: "insurance_coverage_type", prompt: "Insurance coverage type", anchorFieldName: "insured", supplementalKey: "insurance_coverage_type" },
+    { key: "other_driver_has_insurance", prompt: "Does the other driver have insurance?", anchorFieldName: "insured", supplementalKey: "other_driver_has_insurance", inputType: "select", options: yesNoOptions },
     { key: "driver_license_reconfirm", prompt: "Your vehicle: driver's license number and state", fieldName: "driver_license" },
     { key: "vehicle_registration", prompt: "Your vehicle: plate number", fieldName: "vehicle_registration" },
     { key: "vehicle_make_model_year", prompt: "Your vehicle: make / model / year", anchorFieldName: "insured", supplementalKey: "vehicle_make_model_year" },
-    { key: "vehicle_vin", prompt: "Your vehicle: VIN if available", anchorFieldName: "insured", supplementalKey: "vehicle_vin" },
     { key: "insurance_company", prompt: "Your vehicle: insurance company", fieldName: "insurance_company" },
     { key: "policy_number", prompt: "Your vehicle: policy number", anchorFieldName: "insured", supplementalKey: "policy_number" },
     { key: "other_driver_name", prompt: "Other vehicle: other driver's name if known", anchorFieldName: "insured", supplementalKey: "other_driver_name" },
@@ -408,11 +410,19 @@ interface VerificationPanelProps {
   sessionId: string;
   onTransferReady?: () => void;
   onFieldVerified?: (fieldName: string, value: string, checked: boolean) => void;
+  onSupplementalAnswerChange?: (answerKey: string, value: string) => void;
   onStepFocus?: (stepEyebrow: string) => void;
   linkedSectionEyebrow?: string;
 }
 
-export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified, onStepFocus, linkedSectionEyebrow }: VerificationPanelProps) => {
+export const VerificationPanel = ({
+  sessionId,
+  onTransferReady,
+  onFieldVerified,
+  onSupplementalAnswerChange,
+  onStepFocus,
+  linkedSectionEyebrow,
+}: VerificationPanelProps) => {
   // Helper to get lead data from verificationItems
   const getLeadData = () => {
     const leadData: Record<string, string> = {};
@@ -502,6 +512,8 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
   const suppressedLinkedEyebrowRef = useRef<string | null>(null);
   const valueUpdateTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const pendingValueUpdatesRef = useRef<Record<string, { value: string; originalValue: string | null }>>({});
+  const supplementalUpdateTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pendingSupplementalUpdatesRef = useRef<Record<string, string>>({});
   
   const {
     session,
@@ -683,6 +695,22 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       });
       valueUpdateTimersRef.current = {};
       pendingValueUpdatesRef.current = {};
+
+      Object.entries(supplementalUpdateTimersRef.current).forEach(([itemId, timerId]) => {
+        clearTimeout(timerId);
+        const pendingNotes = pendingSupplementalUpdatesRef.current[itemId];
+        if (!pendingNotes) return;
+
+        void supabase
+          .from('verification_items')
+          .update({
+            notes: pendingNotes,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', itemId);
+      });
+      supplementalUpdateTimersRef.current = {};
+      pendingSupplementalUpdatesRef.current = {};
     };
   }, []);
 
@@ -1010,12 +1038,30 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
   const isAffirmative = (value: string) => value === "true" || value === "yes";
   const hasAnswer = (value: string) => value.trim().length > 0;
 
-  const updateSupplementalAnswer = async (fieldName: string, answerKey: string, nextValue: string) => {
+  const updateSupplementalAnswer = (fieldName: string, answerKey: string, nextValue: string) => {
     const item = itemByFieldName.get(fieldName);
     if (!item?.id) return;
 
+    let latestAnswers = supplementalAnswers[fieldName] || {};
+    const pendingNotes = pendingSupplementalUpdatesRef.current[item.id];
+    if (pendingNotes) {
+      try {
+        const parsed = JSON.parse(pendingNotes);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          latestAnswers = Object.fromEntries(
+            Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [
+              key,
+              String(value ?? ""),
+            ]),
+          );
+        }
+      } catch {
+        // Fall back to the current in-memory answers if pending notes are malformed.
+      }
+    }
+
     const nextAnswers = {
-      ...(supplementalAnswers[fieldName] || {}),
+      ...latestAnswers,
       [answerKey]: nextValue,
     };
 
@@ -1023,8 +1069,29 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
       ...prev,
       [fieldName]: nextAnswers,
     }));
+    onSupplementalAnswerChange?.(answerKey, nextValue);
 
-    await updateVerificationNotes(item.id, JSON.stringify(nextAnswers));
+    pendingSupplementalUpdatesRef.current[item.id] = JSON.stringify(nextAnswers);
+
+    if (supplementalUpdateTimersRef.current[item.id]) {
+      clearTimeout(supplementalUpdateTimersRef.current[item.id]);
+    }
+
+    supplementalUpdateTimersRef.current[item.id] = setTimeout(() => {
+      const pendingNotes = pendingSupplementalUpdatesRef.current[item.id];
+      delete supplementalUpdateTimersRef.current[item.id];
+      delete pendingSupplementalUpdatesRef.current[item.id];
+      if (!pendingNotes) return;
+
+      void updateVerificationNotes(item.id, pendingNotes).catch((error) => {
+        console.error("Failed to save supplemental verification answer:", error);
+        toast({
+          title: "Unable to save verification answer",
+          description: "Please try entering the answer again.",
+          variant: "destructive",
+        });
+      });
+    }, 500);
   };
 
   const getVisibleBindings = (stepKey: string) => {
@@ -1060,7 +1127,19 @@ export const VerificationPanel = ({ sessionId, onTransferReady, onFieldVerified,
         return isAffirmative(priorAttorneyInvolved) || Object.values(supplemental).some((value) => value === "yes");
       }
 
-      if (stepKey === "driver_vehicle" && binding.key !== "insured") {
+      if (stepKey === "driver_vehicle") {
+        if (
+          binding.key === "insured" ||
+          binding.key === "insurance_coverage_type" ||
+          binding.key === "other_driver_has_insurance"
+        ) {
+          return true;
+        }
+
+        if (["other_driver_name", "other_driver_insurance", "other_policy_number", "other_vehicle_make_model_color", "third_party_vehicle_registration"].includes(binding.key)) {
+          return supplementalAnswers.insured?.other_driver_has_insurance === "yes";
+        }
+
         return isAffirmative(getFieldValue("insured"));
       }
 

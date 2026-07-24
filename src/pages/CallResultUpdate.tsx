@@ -82,6 +82,31 @@ interface Lead {
   linked_relationship?: string | null;
 }
 
+interface LeadSearchResult {
+  id: string;
+  customer_full_name: string | null;
+  phone_number: string | null;
+  state: string | null;
+  status: string | null;
+  submission_id: string;
+  created_at: string | null;
+  tag: string | null;
+  assigned_attorney_id: string | null;
+  assigned_broker_attorney_id: string | null;
+}
+
+interface PortalStage {
+  pipeline: string;
+  key: string;
+  label: string;
+}
+
+interface StageRule {
+  stage_name: string;
+  message: string | null;
+  is_addable: boolean | null;
+}
+
 interface DncProviderDetail {
   provider: string;
   isTcpa: boolean;
@@ -110,8 +135,10 @@ interface ScriptSection {
   script?: string[];
   questions?: string[];
   checklist?: string[];
+  checklistLabel?: string;
   tips?: string[];
   redFlags?: string[];
+  redFlagsLabel?: string;
   notes?: string[];
 }
 
@@ -437,10 +464,14 @@ const RETAINER_AGREEMENT_SELECT_COLUMNS =
   "id,envelope_id,submission_id,lead_id,template_id,recipient_name,recipient_email,recipient_phone,delivery_method,status,sent_at,viewed_at,signed_at,declined_at,voided_at,last_synced_at,document_bucket,document_storage_path,document_file_name,document_content_type,document_size,document_stored_at,created_at,updated_at";
 
 const scriptHeaderCheckpoints = [
-  { label: "Date", hint: "Verify twice" },
-  { label: "Police", hint: "Primary proof" },
-  { label: "Medical", hint: "Second checkpoint" },
-  { label: "Attorney", hint: "Check releases" },
+  { label: "Timing", hint: "Within required SOL" },
+  { label: "Fault", hint: "Other driver at fault" },
+  { label: "Medical", hint: "Treated within 1 week" },
+  { label: "Treatment", hint: "Still treating" },
+  { label: "Proof", hint: "Police report accessible" },
+  { label: "Coverage", hint: "At least one vehicle insured" },
+  { label: "Counsel", hint: "No active attorney" },
+  { label: "Settlement", hint: "None signed or paid" },
 ] as const;
 
 const normalizePhoneForLookup = (value: string | null | undefined) => {
@@ -461,6 +492,56 @@ const firstNonEmptyValue = (...values: unknown[]) => {
   }
 
   return "";
+};
+
+const INTAKE_CHEAT_SHEET_EMPTY_VALUE = "Not captured";
+
+const normalizeBrokerCompanyName = (value: string | null | undefined) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+const configuredLaunchforwardBrokerId = String(
+  import.meta.env.VITE_LAUNCHFORWARD_BROKER_ID || "",
+).trim();
+
+const isLaunchforwardBroker = (
+  brokerId: string | null | undefined,
+  companyName: string | null | undefined,
+) => {
+  if (configuredLaunchforwardBrokerId) {
+    return String(brokerId || "").trim() === configuredLaunchforwardBrokerId;
+  }
+
+  return normalizeBrokerCompanyName(companyName) === "launchforward";
+};
+
+const formatIntakeCheatSheetDate = (value: string | null | undefined) => {
+  const date = parseLocalDateOnly(value);
+  if (!date) return firstNonEmptyValue(value) || INTAKE_CHEAT_SHEET_EMPTY_VALUE;
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+};
+
+const formatIntakeCheatSheetChoice = (value: string | null | undefined) => {
+  const normalized = firstNonEmptyValue(value);
+  if (!normalized) return INTAKE_CHEAT_SHEET_EMPTY_VALUE;
+
+  return normalized
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+};
+
+const formatIntakeCheatSheetYesNo = (value: unknown) => {
+  const flag = toBooleanFlag(value);
+  if (flag === true) return "Yes";
+  if (flag === false) return "No";
+  return formatIntakeCheatSheetChoice(typeof value === "string" ? value : "");
 };
 
 const buildClientAddressForContract = (
@@ -689,11 +770,11 @@ const summarizeDncLookup = (raw: unknown, phone: string): DncLookupSummary => {
 };
 
 const scriptHighlights = [
-  "10-15 minute intake target",
-  "Verify accident date multiple ways",
-  "Police report is the primary verification tool",
-  "Medical records are the second verification checkpoint",
-  "Do not proceed if fraud red flags appear",
+  "Run the 5-minute screen first",
+  "Every qualification gate must pass",
+  "Medical care must begin within 1 week",
+  "Police report and insurance are required",
+  "Stop and return any lead that fails a gate",
 ];
 
 const docusignDesktopGuideSteps = [
@@ -792,30 +873,67 @@ const callScriptTabs: ScriptTabDefinition[] = [
   {
     value: "flow",
     label: "Call Flow",
-    description: "Opening, intake basics, accident story, and liability.",
+    description: "Five-minute qualification gate, intake basics, accident story, and liability.",
     icon: "flow",
     sections: [
       {
-        eyebrow: "Purpose",
-        title: "Structured Intake With Verification",
+        eyebrow: "1. Five-Minute Screen",
+        title: "Qualify the lead before starting the full intake",
         summary:
-          "Collect all necessary accident information, detect coached or fraudulent claims through strategic verification questions, and ensure partner attorneys receive a complete, validated case file before consultation.",
+          "Ask these questions first and continue only when every qualification gate passes. A failed gate ends the full intake and moves the call to the publisher-return handoff.",
+        script: [
+          "Hello, welcome to Accident Claims Helpline. My name is [YOUR NAME], and I am part of the accident intake team.",
+          "Before we get started, I need to go through a brief call disclaimer. [COMPLETE CALL DISCLAIMER.]",
+          "Thank you, [CLIENT NAME]. My job is to take as little of your time as possible and see how I can best help.",
+          "I see you were involved in a motor vehicle accident in [MONTH]. What date did it happen?",
+          "We work with attorneys in [ACCIDENT STATE]. Let me quickly ask a few questions to see whether your case meets their initial guidelines.",
+        ],
+        questions: [
+          "Was the other driver at fault? Did the caller's vehicle strike the other vehicle first?",
+          "Were you injured, and did you receive medical treatment or go to a hospital within the first week? Tell me about that.",
+          "Are you still treating the injuries, such as through physical therapy, pain management, or chiropractic care?",
+          "Do you have a police report or medical documentation related to the accident?",
+          "Was your vehicle insured at the time? If not, was the at-fault driver's vehicle insured?",
+          "Are you currently working with an attorney, or have you worked with one on this accident before? If prior counsel ended, why?",
+          "Have you received any compensation from an insurance company or signed any settlement or release?",
+        ],
+        checklistLabel: "Continue only when all are true",
+        checklist: [
+          "Accident date is within the required statute-of-limitations window.",
+          "The other driver appears at fault; the caller did not cause the initial impact.",
+          "The caller has accident-related injuries and received medical care within the first week.",
+          "The caller continued treatment after the initial hospital or doctor visit and is still treating.",
+          "Police attended the scene, made a report, and the report is accessible.",
+          "At least one vehicle involved had active insurance at the time of the accident.",
+          "The caller has no active attorney; any prior representation ended for a clear, reviewable reason.",
+          "The caller has not received compensation and has not signed a settlement or release.",
+        ],
+        redFlagsLabel: "Stop — do not continue or transfer",
+        redFlags: [
+          "The accident is outside the required statute-of-limitations window.",
+          "The caller was at fault or struck the other vehicle first.",
+          "There is no injury, no medical care within the first week, or no continuing treatment.",
+          "Police did not attend, no report was made, or the report cannot be accessed.",
+          "Neither vehicle was insured at the time of the accident.",
+          "The caller has an active attorney, has been rejected repeatedly by other attorneys, or cannot explain and document how prior representation ended.",
+          "The caller received compensation or signed a settlement or release.",
+        ],
         notes: [
-          "Critical fraud indicators include accident date inconsistencies, hidden prior attorney representation, exaggerated injuries, and coached responses that do not match documentation.",
-          "Use cross-verification questions and document all responses for later validation against police reports and medical records.",
+          "If any answer fails a gate, stop the detailed intake, do not transfer the lead to an attorney, and use the publisher-return handoff below.",
+          "If every gate passes, continue to Basic Information and complete the full verified intake.",
         ],
       },
       {
-        eyebrow: "1. Call Opening",
-        title: "Set the tone and confirm availability",
+        eyebrow: "DQ Branch · If Not Qualified",
+        title: "Return the lead to the publisher without continuing intake",
         script: [
-          'Hello, thank you for calling Accident Claims Helpline. My name is [YOUR NAME]. I am part of the accident intake team.',
-          "I will ask you a few quick questions about your accident to see how we can assist you with your claim.",
-          "This will take about 10-15 minutes. Is now a good time to talk?",
+          "Primary handoff: Thank you for providing more context. Based on what you've shared, we have a different department that handles cases like yours. Please stay on the line while I transfer you; they will review your situation and help determine the best next step.",
+          "If the caller pushes back: Our department works with cases that must meet very specific attorney guidelines. I don't want to waste your time by sending your case somewhere it may not be accepted, so I will connect you with the department that handles cases like yours for further review.",
         ],
         tips: [
-          "Notice if they sound rushed or are reading from a script.",
-          "Coached callers may sound rehearsed or give overly perfect answers.",
+          "Keep the explanation warm, brief, and neutral; do not debate the failed criterion.",
+          "Return the DID to the publisher immediately after the handoff.",
+          "Record the specific failed qualification gate in the call result.",
         ],
       },
       {
@@ -841,15 +959,11 @@ const callScriptTabs: ScriptTabDefinition[] = [
           "Record their answer exactly, then make them confirm the same date more than once.",
         ],
         questions: [
-          "What day of the week was it?",
-          "Was it around any holiday or special event?",
-          "What was the weather like that day?",
           "About what time of day did it happen?",
           "So just to confirm, that was [REPEAT DATE]? And that was about [X] months ago, correct?",
         ],
         redFlags: [
-          "They claim the accident was 11 months ago but cannot remember the day of week or season.",
-          'They quickly say "within 12 months" but stay vague on the exact date.',
+          "They cannot provide an exact accident date within the required limitations window.",
           "The date changes when asked different ways.",
           "They hesitate or sound coached when giving the date.",
         ],
@@ -864,7 +978,6 @@ const callScriptTabs: ScriptTabDefinition[] = [
         questions: [
           "What city and state did the accident occur in?",
           "Can you tell me the street or intersection where it happened?",
-          "Were you familiar with that area, or were you traveling somewhere new?",
           "Were you the driver or a passenger?",
           "If passenger: who was driving, and what is their relationship to you?",
         ],
@@ -879,7 +992,7 @@ const callScriptTabs: ScriptTabDefinition[] = [
         title: "Capture the full story before conclusions",
         questions: [
           "Can you walk me through exactly how the accident happened?",
-          "In your opinion, who was at fault for the accident?",
+          "Was the other driver at fault, and did your vehicle make the initial impact?",
           "Did the other driver admit fault at the scene?",
           "Did the police come to the scene?",
           "Did anyone receive a traffic citation or ticket?",
@@ -906,7 +1019,6 @@ const callScriptTabs: ScriptTabDefinition[] = [
           "Was a police report filed at the scene?",
           "If yes: do you have the police report number or case number?",
           "Which police department or agency responded - city police, state police, or sheriff?",
-          "Do you remember the name of any officers who came to the scene?",
         ],
         notes: [
           "The police report should confirm the actual accident date, exact location and time, fault determination, injuries reported at the scene, and whether an ambulance was called.",
@@ -926,7 +1038,6 @@ const callScriptTabs: ScriptTabDefinition[] = [
           "Did you go to the hospital directly from the accident scene?",
           "If not, when did you first seek medical attention - same day, next day, or later?",
           "What was the name of the hospital or medical facility where you were first treated?",
-          "Do you remember the doctor's name who treated you?",
           "What kind of tests did they do - X-rays, MRI, or CT scan?",
           "Are you currently receiving treatment for your injuries?",
           "What type of treatment - physical therapy, chiropractic, pain management, or surgery?",
@@ -935,7 +1046,7 @@ const callScriptTabs: ScriptTabDefinition[] = [
         ],
         redFlags: [
           "Claims serious injuries but never went to the ER or saw a doctor immediately.",
-          "Cannot name the hospital, doctor, or facility where they were treated.",
+          "Cannot name the hospital or medical facility where they were treated.",
           "Says they are in treatment but cannot describe what kind or how often.",
           "Injuries described do not match the mechanism of accident.",
           "Claims severe injuries but is working full-time with no restrictions.",
@@ -998,7 +1109,7 @@ const callScriptTabs: ScriptTabDefinition[] = [
         eyebrow: "10. Driver & Vehicle Information",
         title: "Collect both sides of the vehicle file",
         checklist: [
-          "Your vehicle: driver's license number and state, vehicle make/model/year, plate number, VIN if available, insurance company, policy number.",
+          "Your vehicle: driver's license number and state, vehicle make/model/year, plate number, insurance company, and policy number.",
           "Other vehicle: other driver's name if known, other driver's insurance company, other policy number if available, other vehicle make/model/color.",
         ],
       },
@@ -1058,12 +1169,13 @@ const callScriptTabs: ScriptTabDefinition[] = [
         eyebrow: "Internal Qualification Checklist",
         title: "Everything that must be true before attorney transfer",
         checklist: [
-          "Accident occurred within 12 months and the date was verified multiple ways.",
-          "Injury is confirmed with specific details and a treatment timeline.",
+          "Accident occurred within the required statute-of-limitations window and the exact date is confirmed.",
+          "Injury is confirmed, medical care began within the first week, and the caller is still treating.",
           "Liability is verified and the other party appears at fault.",
           "Police report is available or retrievable with a case number.",
+          "At least one vehicle had active insurance at the time of the accident.",
           "No active attorney, or a release letter has been obtained from prior counsel.",
-          "No settlement or release has been signed.",
+          "No compensation has been received, and no settlement or release has been signed.",
           "Document portal link has been sent by SMS and email.",
           "Retainer agreement is signed and confirmed in CRM.",
           "No red flags detected and the story remains consistent.",
@@ -1073,11 +1185,13 @@ const callScriptTabs: ScriptTabDefinition[] = [
         eyebrow: "Fraud Red Flags Summary",
         title: "Do not proceed if these appear",
         redFlags: [
-          "Accident date is within 12 months but the caller stays vague on the exact date, day of week, weather, or time of day.",
+          "The accident is outside the required limitations window or the caller cannot provide an exact date.",
           "Date changes when asked multiple ways or sounds rehearsed.",
-          "Serious injury is claimed but there was no ER visit, no immediate treatment, or no identifiable doctor or facility.",
+          "An injury is claimed but medical treatment did not begin within the first week or the caller is no longer treating.",
           "Injuries do not match the accident description or treatment story.",
-          "Caller says no attorney but later admits consultations, signed paperwork, or prior representation without a release letter.",
+          "No accessible police report or no insurance coverage on either vehicle.",
+          "Caller has active counsel, reports repeated attorney rejections, or cannot document the end of prior representation.",
+          "Caller received compensation or signed a settlement or release.",
         ],
       },
       {
@@ -1124,6 +1238,7 @@ const CallResultUpdate = () => {
   const [verificationSessionId, setVerificationSessionId] = useState<string | null>(null);
   const [showVerificationPanel, setShowVerificationPanel] = useState(false);
   const [verifiedFieldValues, setVerifiedFieldValues] = useState<Record<string, string>>({});
+  const [verificationSupplementalValues, setVerificationSupplementalValues] = useState<Record<string, string>>({});
   const [verificationProgress, setVerificationProgress] = useState(0);
   const [currentAssignedAttorneyId, setCurrentAssignedAttorneyId] = useState<string | null>(assignedAttorneyId || null);
   const [contractRecipientEmail, setContractRecipientEmail] = useState("");
@@ -1148,12 +1263,12 @@ const CallResultUpdate = () => {
   const [dncInputPhone, setDncInputPhone] = useState("");
   const [isDisclaimerCollapsed, setIsDisclaimerCollapsed] = useState(false);
   const [leadSearchPhone, setLeadSearchPhone] = useState("");
-  const [leadSearchResults, setLeadSearchResults] = useState<any[]>([]);
+  const [leadSearchResults, setLeadSearchResults] = useState<LeadSearchResult[]>([]);
   const [leadSearchLoading, setLeadSearchLoading] = useState(false);
   const [leadSearchError, setLeadSearchError] = useState<string | null>(null);
   const [leadSearchHasSearched, setLeadSearchHasSearched] = useState(false);
-  const [portalStages, setPortalStages] = useState<any[]>([]);
-  const [stageRules, setStageRules] = useState<any[]>([]);
+  const [portalStages, setPortalStages] = useState<PortalStage[]>([]);
+  const [stageRules, setStageRules] = useState<StageRule[]>([]);
   const [attorneyNamesInternal, setAttorneyNamesInternal] = useState<Record<string, string>>({});
   const [brokerAttorneyNamesInternal, setBrokerAttorneyNamesInternal] = useState<Record<string, { name: string; firm: string | null }>>({});
   const [isLeadSearchCollapsed, setIsLeadSearchCollapsed] = useState(false);
@@ -1193,7 +1308,7 @@ const CallResultUpdate = () => {
         console.error('Error fetching verification sessions:', error);
         return;
       }
-
+      
       // Get the most recent session (first in the ordered list)
       if (sessions && sessions.length > 0) {
         const latestSession = sessions[0];
@@ -1303,7 +1418,7 @@ const CallResultUpdate = () => {
     for (const ps of portalStages) {
       if (ps.key === statusKey) {
         const stageName = `${ps.pipeline} - ${ps.label}`;
-        const rule = stageRules.find((r: any) => r.stage_name === stageName);
+        const rule = stageRules.find((stageRule) => stageRule.stage_name === stageName);
         return {
           pipeline: ps.pipeline,
           label: ps.label,
@@ -1896,7 +2011,7 @@ const CallResultUpdate = () => {
     }
     return (
       <div className="space-y-3 animate-fade-in">
-          {leadSearchResults.map((ld: any) => {
+          {leadSearchResults.map((ld) => {
             const stageInfo = getStageInfo(ld.status);
             const attorneyName = ld.assigned_attorney_id ? attorneyNamesInternal[ld.assigned_attorney_id] : undefined;
             const brokerAttorney = ld.assigned_broker_attorney_id ? brokerAttorneyNamesInternal[ld.assigned_broker_attorney_id] : undefined;
@@ -2161,7 +2276,7 @@ const CallResultUpdate = () => {
                         {section.checklist?.length ? (
                           <div>
                             <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                              Checklist
+                              {section.checklistLabel ?? "Checklist"}
                             </div>
                             <ul className="space-y-1 text-[13px] leading-6 text-foreground">
                               {section.checklist.map((item) => (
@@ -2193,7 +2308,7 @@ const CallResultUpdate = () => {
                         {section.redFlags?.length ? (
                           <div className="rounded-md bg-rose-50/70 px-3.5 py-2.5 dark:bg-rose-500/10">
                             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-700 dark:text-rose-300">
-                              Red Flags
+                              {section.redFlagsLabel ?? "Red Flags"}
                             </div>
                             <ul className="space-y-1 text-[12px] leading-5 text-rose-900 dark:text-rose-100">
                               {section.redFlags.map((item) => (
@@ -2248,6 +2363,21 @@ const CallResultUpdate = () => {
     attorneyFulfillmentMode === "broker" &&
     Boolean(selectedSubmittedLawyer) &&
     selectedSubmittedLawyer?.isNoCoverage !== true;
+  const selectedBrokerCompanyName =
+    selectedSubmittedLawyer &&
+    selectedSubmittedLawyer.isNoCoverage !== true &&
+    "broker_name" in selectedSubmittedLawyer
+      ? String(selectedSubmittedLawyer.broker_name || "").trim()
+      : "";
+  const selectedBrokerId =
+    selectedSubmittedLawyer &&
+    selectedSubmittedLawyer.isNoCoverage !== true &&
+    "broker_id" in selectedSubmittedLawyer
+      ? String(selectedSubmittedLawyer.broker_id || "").trim()
+      : "";
+  const isLaunchforwardBrokerSelected =
+    hasSelectedBrokerLawyer &&
+    isLaunchforwardBroker(selectedBrokerId, selectedBrokerCompanyName);
   const selectedHandoffAttorneyLabel =
     attorneyFulfillmentMode === "broker"
       ? selectedSubmittedLawyer?.attorney_name || ""
@@ -2315,6 +2445,157 @@ const CallResultUpdate = () => {
   const handoffCallerFullName =
     String(contractRecipientName || lead?.customer_full_name || "").trim() || "the client";
   const handoffCallerFirstName = getPreferredFirstName(contractRecipientName || lead?.customer_full_name);
+  const brokerIntakeCheatSheetSections = useMemo(() => {
+    const fullName = firstNonEmptyValue(
+      verifiedFieldValues.customer_full_name,
+      lead?.customer_full_name,
+    );
+    const nameParts = fullName.split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] || INTAKE_CHEAT_SHEET_EMPTY_VALUE;
+    const lastName =
+      nameParts.length > 1
+        ? nameParts[nameParts.length - 1]
+        : INTAKE_CHEAT_SHEET_EMPTY_VALUE;
+    const clientAddress =
+      buildClientAddressForContract(verifiedFieldValues, lead) ||
+      INTAKE_CHEAT_SHEET_EMPTY_VALUE;
+    const painLevel = firstNonEmptyValue(verificationSupplementalValues.pain_level);
+
+    return [
+      {
+        title: "Client's Info",
+        fields: [
+          { label: "First Name", value: firstName },
+          { label: "Last Name", value: lastName },
+          {
+            label: "Phone",
+            value:
+              firstNonEmptyValue(verifiedFieldValues.phone_number, lead?.phone_number) ||
+              INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+          {
+            label: "Email",
+            value:
+              firstNonEmptyValue(verifiedFieldValues.email, lead?.email) ||
+              INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+          {
+            label: "Date of Birth",
+            value: formatIntakeCheatSheetDate(
+              firstNonEmptyValue(verifiedFieldValues.date_of_birth, lead?.date_of_birth),
+            ),
+          },
+          { label: "Client's Address", value: clientAddress },
+          {
+            label: "Incident State",
+            value:
+              firstNonEmptyValue(
+                verificationSupplementalValues.incident_state,
+                verificationSupplementalValues.city_state,
+                verifiedFieldValues.state,
+                lead?.state,
+              ) || INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+          {
+            label: "Preferred Callback Time Window",
+            value:
+              firstNonEmptyValue(
+                verificationSupplementalValues.preferred_callback_time_window,
+              ) || INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+        ],
+      },
+      {
+        title: "Case Details",
+        fields: [
+          {
+            label: "Incident Date",
+            value: formatIntakeCheatSheetDate(
+              firstNonEmptyValue(verifiedFieldValues.accident_date, lead?.accident_date),
+            ),
+          },
+          {
+            label: "Accident Type",
+            value:
+              firstNonEmptyValue(verificationSupplementalValues.accident_type) ||
+              INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+          {
+            label: "Case Classification",
+            value: formatIntakeCheatSheetChoice(
+              verificationSupplementalValues.case_classification,
+            ),
+          },
+          {
+            label: "PC Driver or Passenger?",
+            value: formatIntakeCheatSheetChoice(
+              verificationSupplementalValues.driver_or_passenger,
+            ),
+          },
+          {
+            label: "Case Description",
+            value:
+              firstNonEmptyValue(
+                verifiedFieldValues.accident_scenario,
+                lead?.accident_scenario,
+              ) || INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+        ],
+      },
+      {
+        title: "Insurance Details",
+        fields: [
+          {
+            label: "Insurance Coverage Type",
+            value:
+              firstNonEmptyValue(
+                verificationSupplementalValues.insurance_coverage_type,
+              ) || INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+          {
+            label: "Other Driver Has Insurance?",
+            value: formatIntakeCheatSheetYesNo(
+              verificationSupplementalValues.other_driver_has_insurance,
+            ),
+          },
+        ],
+      },
+      {
+        title: "Treatment Details",
+        fields: [
+          {
+            label: "Injury Description",
+            value:
+              firstNonEmptyValue(verifiedFieldValues.injuries, lead?.injuries) ||
+              INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+          {
+            label: "Pain Level",
+            value: painLevel
+              ? `${painLevel} / 10`
+              : INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+          {
+            label: "Will PC Require Surgery?",
+            value: formatIntakeCheatSheetYesNo(
+              verificationSupplementalValues.surgery_required,
+            ),
+          },
+        ],
+      },
+      {
+        title: "Police Report",
+        fields: [
+          {
+            label: "Police Report Number",
+            value:
+              firstNonEmptyValue(verificationSupplementalValues.report_case_number) ||
+              INTAKE_CHEAT_SHEET_EMPTY_VALUE,
+          },
+        ],
+      },
+    ];
+  }, [lead, verificationSupplementalValues, verifiedFieldValues]);
 
   useEffect(() => {
     setHandoffDidCopied(false);
@@ -2938,6 +3219,74 @@ const CallResultUpdate = () => {
     </Card>
   );
 
+  const brokerIntakeCheatSheetCard = (
+    <Card className={scriptGuideCardClass}>
+      <CardHeader className={`${scriptGuideHeaderClass} px-5 py-4`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="text-sm font-bold tracking-tight text-white">
+              Broker Intake Cheat Sheet
+            </CardTitle>
+            <p className="text-xs leading-5 text-slate-200/80">
+              Verified lead details are collected here for quick reference while completing a broker intake.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant="outline"
+              className="rounded-full border-white/15 bg-white/8 px-2.5 py-1 text-[10px] font-semibold text-slate-100"
+            >
+              {selectedBrokerCompanyName || "Broker company unavailable"}
+            </Badge>
+            <Badge className="rounded-full border border-white/15 bg-white/12 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-white/12">
+              {selectedHandoffAttorneyLabel || "Selected broker attorney"}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5 px-5 py-5">
+        {brokerIntakeCheatSheetSections.map((section) => (
+          <section key={section.title} className="space-y-2.5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-zinc-300">
+              {section.title}
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+              {section.fields.map((field) => (
+                <div
+                  key={field.label}
+                  className="min-w-0 rounded-lg border border-slate-200/80 bg-slate-50/60 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.03]"
+                >
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                    {field.label}
+                  </div>
+                  <div
+                    className={`mt-1 break-words text-sm leading-5 ${
+                      field.value === INTAKE_CHEAT_SHEET_EMPTY_VALUE
+                        ? "italic text-muted-foreground"
+                        : "font-medium text-foreground"
+                    }`}
+                  >
+                    {field.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+
+        {!isLaunchforwardBrokerSelected ? (
+          <Alert className="border-amber-200 bg-amber-50/80 dark:border-amber-400/25 dark:bg-amber-500/10">
+            <ShieldAlert className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+            <AlertTitle className="text-amber-900 dark:text-amber-100">No broker intake form configured</AlertTitle>
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
+              The Launchforward injury claim form is intentionally hidden for this broker attorney.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+
   const intakeFormCard = (
     <Card className={handoffCardClass}>
       <Collapsible open={!isIntakeFormCollapsed} onOpenChange={(open) => setIsIntakeFormCollapsed(!open)}>
@@ -2947,7 +3296,7 @@ const CallResultUpdate = () => {
               <div className={uploadIconClass}>
                 <Scale className="h-4 w-4" />
               </div>
-              <div className="text-sm font-semibold text-white">Injury Claim Intake</div>
+              <div className="text-sm font-semibold text-white">Launchforward Injury Claim Intake</div>
             </div>
             <CollapsibleTrigger asChild>
               <button
@@ -2968,7 +3317,7 @@ const CallResultUpdate = () => {
           <div className="h-[600px] overflow-hidden">
             <iframe
               src="https://cases.caraccidentpayout.com/orbit"
-              title="Injury Claim Intake Form"
+              title="Launchforward Injury Claim Intake Form"
               className="h-full w-full border-0"
               allow="clipboard-write"
             />
@@ -3330,22 +3679,12 @@ const CallResultUpdate = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-4 xl:min-w-[20rem]">
-                  <div className="rounded-lg bg-background px-3 py-2">
-                    <div className="font-semibold text-foreground">Date</div>
-                    <div>Verify twice</div>
-                  </div>
-                  <div className="rounded-lg bg-background px-3 py-2">
-                    <div className="font-semibold text-foreground">Police</div>
-                    <div>Primary proof</div>
-                  </div>
-                  <div className="rounded-lg bg-background px-3 py-2">
-                    <div className="font-semibold text-foreground">Medical</div>
-                    <div>Second checkpoint</div>
-                  </div>
-                  <div className="rounded-lg bg-background px-3 py-2">
-                    <div className="font-semibold text-foreground">Attorney</div>
-                    <div>Check releases</div>
-                  </div>
+                  {scriptHeaderCheckpoints.map(({ label, hint }) => (
+                    <div key={label} className="rounded-lg bg-background px-3 py-2">
+                      <div className="font-semibold text-foreground">{label}</div>
+                      <div>{hint}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -3438,7 +3777,9 @@ const CallResultUpdate = () => {
                               ) : null}
                               {section.checklist?.length ? (
                                 <div>
-                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Checklist</div>
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                    {section.checklistLabel ?? "Checklist"}
+                                  </div>
                                   <ul className="space-y-2 text-sm leading-6 text-foreground">
                                     {section.checklist.map((item) => (
                                       <li key={item} className="flex gap-2">
@@ -3464,7 +3805,9 @@ const CallResultUpdate = () => {
                               ) : null}
                               {section.redFlags?.length ? (
                                 <div className="rounded-lg border border-rose-200 bg-rose-50/80 px-4 py-3 dark:border-rose-400/30 dark:bg-rose-500/10">
-                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800 dark:text-rose-300">Red Flags</div>
+                                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-800 dark:text-rose-300">
+                                    {section.redFlagsLabel ?? "Red Flags"}
+                                  </div>
                                   <ul className="space-y-2 text-sm leading-6 text-rose-950 dark:text-rose-100">
                                     {section.redFlags.map((item) => (
                                       <li key={item} className="flex gap-2">
@@ -3687,34 +4030,69 @@ const CallResultUpdate = () => {
   }, [dncInputPhone, handleLeadSearch]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const seedVerifiedFields = async () => {
-      if (!verificationSessionId) return;
+      if (!verificationSessionId) {
+        setVerificationSupplementalValues({});
+        return;
+      }
 
       try {
         const { data: items, error } = await supabase
           .from('verification_items')
-          .select('field_name, verified_value, original_value')
-          .eq('session_id', verificationSessionId)
-          .eq('is_verified', true);
+          .select('field_name, verified_value, original_value, notes, is_verified')
+          .eq('session_id', verificationSessionId);
 
         if (error) throw error;
 
         const seeded: Record<string, string> = {};
-        (items || []).forEach((item: { field_name: string; verified_value: unknown; original_value: unknown }) => {
-          const value = item.verified_value ?? item.original_value ?? '';
-          if (!value || value === 'null' || value === 'undefined') return;
-          seeded[item.field_name] = String(value);
+        const supplemental: Record<string, string> = {};
+        (items || []).forEach((item: {
+          field_name: string;
+          verified_value: unknown;
+          original_value: unknown;
+          notes: string | null;
+          is_verified: boolean | null;
+        }) => {
+          if (item.is_verified) {
+            const value = item.verified_value ?? item.original_value ?? '';
+            if (value && value !== 'null' && value !== 'undefined') {
+              seeded[item.field_name] = String(value);
+            }
+          }
+
+          if (!item.notes) return;
+
+          try {
+            const parsed = JSON.parse(item.notes);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+
+            Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+              const normalizedValue = String(value ?? "").trim();
+              if (normalizedValue) supplemental[key] = normalizedValue;
+            });
+          } catch {
+            // Ignore legacy plain-text notes; cheat-sheet values use structured supplemental answers.
+          }
         });
+
+        if (cancelled) return;
 
         if (Object.keys(seeded).length > 0) {
           setVerifiedFieldValues(prev => ({ ...prev, ...seeded }));
         }
+        setVerificationSupplementalValues(supplemental);
       } catch (e) {
         console.error('Error seeding verified fields:', e);
       }
     };
 
-    seedVerifiedFields();
+    void seedVerifiedFields();
+
+    return () => {
+      cancelled = true;
+    };
   }, [verificationSessionId]);
 
   // Load contract templates from mappings first, then fall back to live DocuSign lookups.
@@ -3870,7 +4248,7 @@ const CallResultUpdate = () => {
     if (lead?.customer_full_name && !contractRecipientName) {
       setContractRecipientName(lead.customer_full_name);
     }
-  }, [lead?.customer_full_name]);
+  }, [contractRecipientName, lead?.customer_full_name]);
 
   useEffect(() => {
     if (lead?.email && !contractRecipientEmail) {
@@ -4196,6 +4574,13 @@ const CallResultUpdate = () => {
       return next;
     });
   };
+
+  const handleSupplementalAnswerChange = useCallback((answerKey: string, value: string) => {
+    setVerificationSupplementalValues((prev) => ({
+      ...prev,
+      [answerKey]: value,
+    }));
+  }, []);
 
   const processLeadFromJotForm = async () => {
     setProcessing(true);
@@ -4538,6 +4923,7 @@ const CallResultUpdate = () => {
                     sessionId={verificationSessionId}
                     onTransferReady={handleTransferReady}
                     onFieldVerified={handleFieldVerifiedWithSync}
+                    onSupplementalAnswerChange={handleSupplementalAnswerChange}
                     onStepFocus={handleVerificationStepFocus}
                     linkedSectionEyebrow={linkedScriptSectionEyebrow || undefined}
                   />
@@ -4591,9 +4977,18 @@ const CallResultUpdate = () => {
               </div>
               {hasSelectedBrokerLawyer ? (
                 <div
+                  ref={revealRef("broker-intake-cheat-sheet")}
+                  className={`${revealMotionClass} ${revealClass("broker-intake-cheat-sheet", "translate-y-4")}`}
+                  style={revealTransition(190)}
+                >
+                  {brokerIntakeCheatSheetCard}
+                </div>
+              ) : null}
+              {isLaunchforwardBrokerSelected ? (
+                <div
                   ref={revealRef("intake-form-card")}
                   className={`${revealMotionClass} ${revealClass("intake-form-card", "translate-y-4")}`}
-                  style={revealTransition(190)}
+                  style={revealTransition(210)}
                 >
                   {intakeFormCard}
                 </div>
